@@ -58,7 +58,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v14.1 - Edición B*Bot Link...");
+        this.log("Iniciando Ron v14.2 - Edición Voz Grave...");
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
                 height: '1', width: '1', videoId: 'dQw4w9WgXcQ',
@@ -470,7 +470,7 @@ const ronFace = {
         const voices = window.speechSynthesis.getVoices();
         const best = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('es'));
         if (best) u.voice = best;
-        u.lang = 'es-ES'; u.pitch = 2.0; u.rate = 1.1;
+        u.lang = 'es-ES'; u.pitch = 1.4; u.rate = 1.1;
         u.onstart = () => this.mouthContainer.classList.add('mouth-vibrate');
         u.onend = () => { 
             this.mouthContainer.classList.remove('mouth-vibrate'); 
