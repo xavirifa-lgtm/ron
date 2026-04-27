@@ -234,6 +234,25 @@ const ronFace = {
     handleInput(text) {
         const t = text.toLowerCase();
         
+        // --- MÚSICA Y LISTAS (v10.3) ---
+        if (t.includes("pon música") || t.includes("pon musica") || t.includes("ponme la canción") || t.includes("reproduce") || t.includes("pon la lista")) {
+            let isPlaylist = t.includes("lista");
+            let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon /gi, "").trim();
+            if (search) {
+                this.setExpression('star');
+                let phrase = isPlaylist ? `¡Bip! Buscando la lista de ${search}. ¡Diversión asegurada!` : `¡Bip! Marchando música de ${search}.`;
+                this.speak(phrase);
+                // Si es lista, añadimos el término 'playlist' a la búsqueda para forzar a YouTube a buscar listas
+                this.playMusic(isPlaylist ? `${search} playlist` : search);
+                return;
+            }
+        }
+
+        if (t.includes("para la música") || t.includes("para la musica") || t.includes("quita la música") || t.includes("para ron")) {
+            this.stopMusic();
+            return this.speak("¡Bip! Música fuera. ¡Silencio absoluto!");
+        }
+
         // Identidad (Local)
         if (t.includes("quién soy") || t.includes("sabes mi nombre")) {
             return this.speak(this.currentUser ? `¡Bip! ¡Claro! Eres mi gran amigo ${this.currentUser}.` : "Aún no sé quién eres, ¡pero quiero ser tu amigo!");
@@ -418,6 +437,21 @@ const ronFace = {
     },
 
     stopGlitchEffect() { if (this.glitchInterval) clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
+    
+    // FUNCIÓN DE MÚSICA (v10.2 - INVISIBLE)
+    playMusic(query) {
+        const player = document.getElementById('ron-music-player');
+        // El truco del listType=search permite reproducir sin tener el ID del vídeo
+        const url = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1`;
+        player.src = url;
+        this.log(`Reproduciendo invisible: ${query}`);
+    },
+
+    stopMusic() {
+        const player = document.getElementById('ron-music-player');
+        player.src = "";
+    },
+
     updateMouth(d) { this.mouth.setAttribute('d', d); },
     goFullscreen() { const d = document.documentElement; if (!document.fullscreenElement) (d.requestFullscreen || d.webkitRequestFullScreen).call(d).catch(()=>{}); }
 };
