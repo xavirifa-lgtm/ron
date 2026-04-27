@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión Ultra-Robusta v3.0
+ * Ron B*Bot AI - Versión Ultra-Robusta v4.0 (Anti-Eco)
  */
 
 const ronFace = {
@@ -21,6 +21,7 @@ const ronFace = {
     isThinking: false,
     isSpeaking: false,
     isInitialized: false,
+    lastSpeechEndTime: 0,
     currentUser: null,
     knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
     apiKey: localStorage.getItem('ron_groq_key'),
@@ -29,17 +30,14 @@ const ronFace = {
         console.log(msg);
         if (this.debug) {
             this.debug.innerHTML += `<br>> ${msg}`;
+            // Mantener scroll al final
+            this.debug.scrollTop = this.debug.scrollHeight;
         }
     },
 
     async preInit() {
         this.log("Sistemas en espera...");
-        
-        if (!this.powerBtn) {
-            this.log("ERROR: No se encontró el botón de encendido.");
-            return;
-        }
-
+        if (!this.powerBtn) return;
         this.powerBtn.onclick = async () => {
             this.log("Iniciando secuencia de arranque...");
             this.powerBtn.style.display = 'none';
@@ -48,25 +46,20 @@ const ronFace = {
     },
 
     async init() {
-        this.log("Comprobando librerías...");
         if (typeof faceapi === 'undefined') {
-            this.log("ERROR: face-api.js no cargó. Revisa tu conexión a internet.");
+            this.log("ERROR: face-api.js no cargó.");
             return;
         }
 
-        this.log("Cargando IA Visual...");
         try {
+            this.log("Cargando IA Visual...");
             await this.loadModels();
-            this.log("Modelos listos.");
-            
             this.log("Accediendo a sensores ópticos...");
             await this.startCamera();
-            this.log("Cámara lista.");
             
             this.setupInteractions();
             this.checkApiKey();
             
-            // Ocultar pantalla de boot
             this.bootScreen.classList.add('hidden');
             this.isInitialized = true;
             
@@ -75,10 +68,10 @@ const ronFace = {
             this.startVisionLoop();
             this.startListening();
             
-            this.speak("¡Bip! Sistemas al cien por cien. Hola, soy Ron.");
+            this.speak("¡Bip! Sistemas listos. Hola, soy Ron.");
             this.goFullscreen();
         } catch (err) {
-            this.log(`FALLO DE SISTEMA: ${err.message}`);
+            this.log(`FALLO: ${err.message}`);
             this.setExpression('glitch');
         }
     },
@@ -116,55 +109,55 @@ const ronFace = {
         };
     },
 
-    // --- ESCUCHA ---
+    // --- ESCUCHA (CON FILTRO DE ECO) ---
     startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            this.log("Aviso: Tu navegador no soporta orejas (STT).");
-            return;
-        }
+        if (!SpeechRecognition) return;
 
-        if (this.recognition) return; // Evitar duplicados
+        if (this.recognition) return;
 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
         this.recognition.continuous = false; 
-        
+
         this.recognition.onresult = (e) => {
             const text = e.results[0][0].transcript;
             
-            // Ignorar si es eco de lo que acaba de decir
-            if (this.lastSpokenText && text.toLowerCase().includes(this.lastSpokenText.toLowerCase().substring(0, 10))) {
-                return; 
+            // --- BLOQUEO DE ECO ---
+            const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
+            if (this.isSpeaking || timeSinceLastSpeech < 2500) {
+                console.log("Ignorando eco...");
+                return;
             }
 
-            this.log(`Ron ha oído: "${text}"`);
+            this.log(`He oído: "${text}"`);
             this.chat(text);
         };
 
         this.recognition.onend = () => {
-            if (!this.isSpeaking && this.isInitialized) {
+            const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
+            if (!this.isSpeaking && this.isInitialized && timeSinceLastSpeech > 2000) {
                 setTimeout(() => {
                     try { this.recognition.start(); } catch(e) {}
-                }, 400);
+                }, 500);
             }
         };
 
         this.recognition.onerror = (e) => {
-            if (e.error !== 'no-speech') {
-                this.log(`Error micro: ${e.error}`);
-            }
+            if (e.error === 'not-allowed') this.log("Error: Micrófono bloqueado.");
         };
 
-        try { this.recognition.start(); this.log("Micrófono activado."); } catch(e) {}
+        try { this.recognition.start(); } catch(e) {}
     },
 
     // --- VISIÓN ---
     async startVisionLoop() {
         setInterval(async () => {
             if (this.isThinking || this.isSpeaking || !this.isInitialized) return;
-            const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-            if (det.length > 0) this.processDetections(det[0]);
+            try {
+                const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+                if (det.length > 0) this.processDetections(det[0]);
+            } catch(e) {}
         }, 3000);
     },
 
@@ -180,11 +173,11 @@ const ronFace = {
         if (match) {
             if (this.currentUser !== match) {
                 this.currentUser = match;
-                this.speak(`¡Hola de nuevo ${match}!`);
+                this.speak(`¡Bip! Hola ${match}.`);
             }
         } else {
             this.currentUser = 'desconocido';
-            this.speak("Cara nueva. ¿Cómo te llamas?");
+            this.speak("¿Cómo te llamas?");
             const n = prompt("Ron no te conoce. ¿Tu nombre?");
             if (n) {
                 this.knownFaces.push({ label: n, descriptor: Array.from(descriptor) });
@@ -197,14 +190,7 @@ const ronFace = {
 
     // --- DIÁLOGO ---
     async chat(text) {
-        if (!this.apiKey) {
-            this.log("ERROR: No hay API Key de Groq configurada.");
-            this.apiModal.classList.remove('hidden');
-            return;
-        }
-        if (this.isThinking) return;
-
-        this.log("Ron está pensando...");
+        if (!this.apiKey || this.isThinking) return;
         this.isThinking = true;
         this.setExpression('thinking');
         try {
@@ -214,45 +200,45 @@ const ronFace = {
                 body: JSON.stringify({
                     model: "llama-3.1-8b-instant",
                     messages: [
-                        { role: "system", content: "Eres Ron B-Bot. Muy optimista, gracioso, español. Respuestas cortas. Usa ¡Bip!." }, 
+                        { role: "system", content: "Eres Ron B-Bot. Optimista, español. Respuestas muy cortas." }, 
                         { role: "user", content: text }
                     ]
                 })
             });
             const data = await res.json();
-            if (data.error) throw new Error(data.error.message);
-            
             this.isThinking = false;
             this.setExpression('neutral');
             this.speak(data.choices[0].message.content);
         } catch (e) { 
-            this.log(`Error Cerebro: ${e.message}`);
             this.isThinking = false; 
-            this.setExpression('glitch'); 
+            this.setExpression('glitch');
+            this.log("Error en el cerebro Groq.");
         }
     },
 
-    // --- VOZ ---
+    // --- VOZ (CON BLOQUEO RADICAL) ---
     speak(text) {
         if (!window.speechSynthesis || !this.isInitialized) return;
         
-        // Detener escucha antes de hablar
-        try { this.recognition.stop(); } catch(e) {}
-        this.lastSpokenText = text;
+        this.isSpeaking = true;
+        try { this.recognition.abort(); } catch(e) {} // Forzar cierre del micro
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'es-ES'; u.pitch = 1.8; u.rate = 1.1;
-
-        u.onstart = () => { this.isSpeaking = true; this.setTalking(true); };
+        u.onstart = () => this.setTalking(true);
         u.onend = () => { 
-            this.isSpeaking = false; this.setTalking(false); 
+            this.setTalking(false); 
+            this.lastSpeechEndTime = Date.now();
+            this.isSpeaking = false; 
             if (this.state === 'surprise') this.setExpression('neutral');
             
-            // Esperar 1.5 segundos antes de volver a escuchar
+            // Esperar 2.5 segundos de silencio absoluto
             setTimeout(() => { 
-                if (!this.isSpeaking) try { this.recognition.start(); } catch(e){} 
-            }, 1500);
+                if (!this.isSpeaking) {
+                    try { this.recognition.start(); } catch(e) {}
+                }
+            }, 2500);
         };
         window.speechSynthesis.speak(u);
     },
