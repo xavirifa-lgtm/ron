@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v7';
+const CACHE_NAME = 'ron-bot-v8';
 const ASSETS = [
   './',
   'index.html',

@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión Ultra-Robusta v4.0 (Anti-Eco)
+ * Ron B*Bot AI - Versión 5.0 (SILENCIO TOTAL)
  */
 
 const ronFace = {
@@ -30,16 +30,14 @@ const ronFace = {
         console.log(msg);
         if (this.debug) {
             this.debug.innerHTML += `<br>> ${msg}`;
-            // Mantener scroll al final
             this.debug.scrollTop = this.debug.scrollHeight;
         }
     },
 
     async preInit() {
-        this.log("Sistemas en espera...");
+        this.log("Esperando arranque v5.0...");
         if (!this.powerBtn) return;
         this.powerBtn.onclick = async () => {
-            this.log("Iniciando secuencia de arranque...");
             this.powerBtn.style.display = 'none';
             await this.init();
         };
@@ -47,14 +45,14 @@ const ronFace = {
 
     async init() {
         if (typeof faceapi === 'undefined') {
-            this.log("ERROR: face-api.js no cargó.");
+            this.log("ERROR: face-api no encontrada.");
             return;
         }
 
         try {
-            this.log("Cargando IA Visual...");
+            this.log("Cargando cerebro visual...");
             await this.loadModels();
-            this.log("Accediendo a sensores ópticos...");
+            this.log("Abriendo sensores...");
             await this.startCamera();
             
             this.setupInteractions();
@@ -71,8 +69,7 @@ const ronFace = {
             this.speak("¡Bip! Sistemas listos. Hola, soy Ron.");
             this.goFullscreen();
         } catch (err) {
-            this.log(`FALLO: ${err.message}`);
-            this.setExpression('glitch');
+            this.log(`ERROR: ${err.message}`);
         }
     },
 
@@ -109,25 +106,39 @@ const ronFace = {
         };
     },
 
-    // --- ESCUCHA (CON FILTRO DE ECO) ---
+    // --- ESCUCHA (FILTRO RADICAL v5.0) ---
     startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
-
-        if (this.recognition) return;
+        if (!SpeechRecognition || this.recognition) return;
 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
         this.recognition.continuous = false; 
 
+        this.recognition.onstart = () => {
+            // Ojos azules cuando escucha
+            if (!this.isSpeaking && !this.isThinking) {
+                document.documentElement.style.setProperty('--ron-eye-color', '#00f');
+            }
+        };
+
         this.recognition.onresult = (e) => {
             const text = e.results[0][0].transcript;
-            
-            // --- BLOQUEO DE ECO ---
             const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
-            if (this.isSpeaking || timeSinceLastSpeech < 2500) {
-                console.log("Ignorando eco...");
+            
+            // 1. Bloqueo por tiempo (4 segundos)
+            if (this.isSpeaking || timeSinceLastSpeech < 4000) {
+                this.log(`Ignorado (Eco probable): "${text}"`);
                 return;
+            }
+
+            // 2. Bloqueo por palabra clave
+            const lowerText = text.toLowerCase();
+            if (lowerText.includes("ron") || lowerText.includes("soy ron") || lowerText.includes("bip")) {
+                if (timeSinceLastSpeech < 6000) {
+                    this.log(`Ignorado (Me he oído a mí mismo): "${text}"`);
+                    return;
+                }
             }
 
             this.log(`He oído: "${text}"`);
@@ -136,15 +147,12 @@ const ronFace = {
 
         this.recognition.onend = () => {
             const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
-            if (!this.isSpeaking && this.isInitialized && timeSinceLastSpeech > 2000) {
+            // Solo reiniciar si no estamos hablando y ha pasado tiempo
+            if (!this.isSpeaking && this.isInitialized && timeSinceLastSpeech > 3000) {
                 setTimeout(() => {
                     try { this.recognition.start(); } catch(e) {}
-                }, 500);
+                }, 1000);
             }
-        };
-
-        this.recognition.onerror = (e) => {
-            if (e.error === 'not-allowed') this.log("Error: Micrófono bloqueado.");
         };
 
         try { this.recognition.start(); } catch(e) {}
@@ -158,7 +166,7 @@ const ronFace = {
                 const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
                 if (det.length > 0) this.processDetections(det[0]);
             } catch(e) {}
-        }, 3000);
+        }, 4000);
     },
 
     async processDetections(detection) {
@@ -193,6 +201,9 @@ const ronFace = {
         if (!this.apiKey || this.isThinking) return;
         this.isThinking = true;
         this.setExpression('thinking');
+        // Ojos amarillos al pensar
+        document.documentElement.style.setProperty('--ron-eye-color', '#ff0');
+
         try {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
@@ -200,7 +211,7 @@ const ronFace = {
                 body: JSON.stringify({
                     model: "llama-3.1-8b-instant",
                     messages: [
-                        { role: "system", content: "Eres Ron B-Bot. Optimista, español. Respuestas muy cortas." }, 
+                        { role: "system", content: "Eres Ron B-Bot. Optimista. Respuestas de máximo 5 palabras." }, 
                         { role: "user", content: text }
                     ]
                 })
@@ -212,16 +223,18 @@ const ronFace = {
         } catch (e) { 
             this.isThinking = false; 
             this.setExpression('glitch');
-            this.log("Error en el cerebro Groq.");
         }
     },
 
-    // --- VOZ (CON BLOQUEO RADICAL) ---
+    // --- VOZ ---
     speak(text) {
         if (!window.speechSynthesis || !this.isInitialized) return;
         
         this.isSpeaking = true;
-        try { this.recognition.abort(); } catch(e) {} // Forzar cierre del micro
+        // Ojos rojos al hablar
+        document.documentElement.style.setProperty('--ron-eye-color', '#f00');
+        
+        try { this.recognition.abort(); } catch(e) {}
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -231,14 +244,14 @@ const ronFace = {
             this.setTalking(false); 
             this.lastSpeechEndTime = Date.now();
             this.isSpeaking = false; 
-            if (this.state === 'surprise') this.setExpression('neutral');
+            document.documentElement.style.setProperty('--ron-eye-color', '#fff');
             
-            // Esperar 2.5 segundos de silencio absoluto
+            this.log("Esperando silencio total...");
             setTimeout(() => { 
                 if (!this.isSpeaking) {
                     try { this.recognition.start(); } catch(e) {}
                 }
-            }, 2500);
+            }, 4000); // 4 segundos de muro
         };
         window.speechSynthesis.speak(u);
     },
