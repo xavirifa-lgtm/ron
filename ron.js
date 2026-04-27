@@ -132,6 +132,12 @@ const ronFace = {
         
         this.recognition.onresult = (e) => {
             const text = e.results[0][0].transcript;
+            
+            // Ignorar si es eco de lo que acaba de decir
+            if (this.lastSpokenText && text.toLowerCase().includes(this.lastSpokenText.toLowerCase().substring(0, 10))) {
+                return; 
+            }
+
             this.log(`Ron ha oído: "${text}"`);
             this.chat(text);
         };
@@ -228,14 +234,25 @@ const ronFace = {
 
     // --- VOZ ---
     speak(text) {
-        if (!window.speechSynthesis) return;
+        if (!window.speechSynthesis || !this.isInitialized) return;
+        
+        // Detener escucha antes de hablar
+        try { this.recognition.stop(); } catch(e) {}
+        this.lastSpokenText = text;
+
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'es-ES'; u.pitch = 1.8; u.rate = 1.1;
+
         u.onstart = () => { this.isSpeaking = true; this.setTalking(true); };
         u.onend = () => { 
             this.isSpeaking = false; this.setTalking(false); 
-            setTimeout(() => { try { this.recognition.start(); } catch(e){} }, 300);
+            if (this.state === 'surprise') this.setExpression('neutral');
+            
+            // Esperar 1.5 segundos antes de volver a escuchar
+            setTimeout(() => { 
+                if (!this.isSpeaking) try { this.recognition.start(); } catch(e){} 
+            }, 1500);
         };
         window.speechSynthesis.speak(u);
     },
