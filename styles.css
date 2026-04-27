@@ -113,14 +113,15 @@ body, html {
     height: 120px;
     background-color: var(--ron-eye-color);
     border-radius: 50%;
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.5s ease;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
-    clip-path: circle(50% at 50% 50%); /* Base redonda */
+    box-shadow: 0 0 15px rgba(0,0,0,0.2);
 }
 
-/* FORMAS DE EXPRESIÓN */
+/* FORMAS DE EXPRESIÓN COMPATIBLES */
 .eye.happy {
-    clip-path: path('M 10,30 A 20,20 0,0,1 50,30 A 20,20 0,0,1 90,30 Q 90,60 50,90 Q 10,60 10,30 Z');
+    /* Forma de corazón simplificada con polígono */
+    clip-path: polygon(50% 100%, 100% 35%, 80% 0%, 50% 25%, 20% 0%, 0% 35%);
     width: 100px;
     height: 100px;
 }
@@ -133,24 +134,24 @@ body, html {
 }
 
 .eye.surprise {
-    clip-path: circle(50% at 50% 50%);
     width: 140px;
     height: 140px;
+    border-radius: 50%;
 }
 
 .eye.fear {
-    clip-path: circle(40% at 50% 50%);
     width: 40px;
     height: 40px;
+    border-radius: 50%;
     animation: eye-shake 0.1s infinite;
 }
 
 .eye.flat {
-    clip-path: inset(40% 0 40% 0 round 10px);
-    height: 120px; /* Se recorta por el inset */
+    height: 30px;
+    border-radius: 10px;
 }
 
-/* ANIMACIONES DE VIDA */
+/* ANIMACIONES */
 @keyframes eye-pulse {
     from { transform: scale(1); filter: brightness(1); }
     to { transform: scale(1.1); filter: brightness(1.4); }
@@ -164,8 +165,13 @@ body, html {
     100% { transform: translate(0,0); }
 }
 
+@keyframes blink-anim {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(0.01); }
+}
+
 .eye.blink {
-    transform: scaleY(0.01);
+    animation: blink-anim 0.15s ease-in-out;
 }
 
 /* Animación de Habla */

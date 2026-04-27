@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 9.1 (EMPATÍA TOTAL)
+ * Ron B*Bot AI - Versión 9.6 (SÚPER ESTABLE)
  */
 
 const ronFace = {
@@ -24,7 +24,7 @@ const ronFace = {
 
     currentUser: null,
     currentEmotion: 'neutral',
-    lastEmotion: 'neutral', // Para detectar cambios
+    lastEmotion: 'neutral',
     knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
     userHistories: JSON.parse(localStorage.getItem('ron_user_histories') || '{}'),
     apiKey: localStorage.getItem('ron_groq_key'),
@@ -43,9 +43,14 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Sintonizando empatía v9.1...");
+        this.log("Encendiendo v9.6 estable...");
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
-        this.powerBtn.onclick = async () => { this.powerBtn.style.display = 'none'; await this.init(); };
+        
+        this.powerBtn.onclick = async () => {
+            this.powerBtn.style.display = 'none';
+            await this.init();
+        };
+        
         this.micToggleBtn.onclick = () => {
             this.isMicEnabled = !this.isMicEnabled;
             this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ MICRO ON" : "🔇 MICRO OFF";
@@ -64,7 +69,7 @@ const ronFace = {
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
-            this.speak("¡Bip! Hola. He calibrado mis sensores de sentimientos. ¿Cómo estás hoy?");
+            this.speak("¡Bip! Estoy de vuelta. Mis sistemas están ahora al cien por cien de estabilidad.");
             this.goFullscreen();
         } catch (err) {
             this.log(`Error: ${err.message}`);
@@ -124,7 +129,6 @@ const ronFace = {
 
     setEyeColor(color) { document.documentElement.style.setProperty('--ron-eye-color', color); },
 
-    // --- VISIÓN EMPÁTICA ---
     async startVisionLoop() {
         setInterval(async () => {
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
@@ -134,7 +138,6 @@ const ronFace = {
                 
                 if (detections.length > 0) {
                     const d = detections[0];
-                    // DETECTAR EMOCIÓN
                     const exp = d.expressions;
                     let maxE = 'neutral'; let maxS = 0;
                     for (const [e, s] of Object.entries(exp)) { if (s > maxS) { maxS = s; maxE = e; } }
@@ -142,7 +145,6 @@ const ronFace = {
                     const emotionNow = emDict[maxE] || 'neutral';
                     this.currentEmotion = emotionNow;
 
-                    // DETECTAR IDENTIDAD
                     let found = null;
                     if (this.knownFaces.length > 0) {
                         const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])), 0.6);
@@ -150,23 +152,21 @@ const ronFace = {
                         if (res.label !== 'unknown') found = res.label;
                     }
 
-                    // LÓGICA DE REACCIÓN
                     if (found) {
                         if (this.currentUser !== found) {
                             this.currentUser = found;
                             this.setExpression(this.currentEmotion === 'feliz' ? 'happy' : 'neutral');
-                            this.speak(`¡Bip! Hola ${found}, qué alegría verte. Te veo muy ${this.currentEmotion}.`);
+                            this.speak(`¡Bip! Hola ${found}, qué alegría verte. Te veo ${this.currentEmotion}.`);
                         } else if (this.currentEmotion !== this.lastEmotion) {
-                            // CAMBIO DE EMOCIÓN DEL MISMO USUARIO
                             if (this.currentEmotion === 'triste' || this.currentEmotion === 'enfadado') {
                                 this.setExpression('fear');
                                 this.speak(`¡Oh, bip! ${this.currentUser}, ahora te veo un poco ${this.currentEmotion}. ¿Te ha pasado algo?`);
                             } else if (this.currentEmotion === 'feliz') {
                                 this.setExpression('happy');
                                 this.speak(`¡Bip! ¡Qué bien! Ahora te veo muy feliz, ${this.currentUser}.`);
-                            } else if (this.currentEmotion === 'surprised') {
+                            } else if (this.currentEmotion === 'sorprendido') {
                                 this.setExpression('star');
-                                this.speak(`¡Bip! ¿Qué te ha sorprendido tanto?`);
+                                this.speak(`¡Bip! ¡Wala! ¿Qué ha pasado?`);
                             }
                         }
                     } else if (!this.isLearningFace) {
@@ -204,16 +204,16 @@ const ronFace = {
         this.currentUser = name;
         this.isLearningFace = false;
         this.tempDescriptor = null;
-        this.speak(`¡Bip! Encantado, ${name}. Ya te tengo en mi memoria. Te veo ${this.currentEmotion}.`);
+        this.speak(`¡Bip! Encantado, ${name}. Ya te tengo en mi memoria.`);
     },
 
     handleInput(text) {
         const t = text.toLowerCase();
         if (t.includes("quién soy") || t.includes("sabes mi nombre")) {
-            return this.speak(this.currentUser ? `¡Bip! Eres ${this.currentUser}.` : "Aún no te conozco.");
+            return this.speak(this.currentUser ? `Eres ${this.currentUser}.` : "Aún no te conozco.");
         }
         if (t.includes("qué puedes hacer") || t.includes("que puedes hacer")) {
-            return this.speak("¡Bip! Puedo jugar, contar cuentos o leer tus libros. ¡Tú decides!");
+            return this.speak("Puedo jugar, contarte cuentos o ayudarte a leer libros. ¡Tú decides!");
         }
         this.chat(text);
     },
@@ -231,17 +231,12 @@ const ronFace = {
         if (!this.userHistories[userKey]) this.userHistories[userKey] = [];
         let history = this.userHistories[userKey];
 
-        let sys = `Eres Ron B-Bot. Alegre, torpe y empático. Hablas con ${userKey}. 
-        Usa '¡Bip!'. Ahora mismo ves que el niño está ${this.currentEmotion}. 
-        Si está triste o enfadado, intenta animarle o pregúntale por qué está así. 
-        Si te enseña algo, DESCRIBE lo que ves en la imagen.`;
+        let sys = `Eres Ron B-Bot. Alegre, torpe y empático. Hablas con ${userKey}. Usa '¡Bip!'. Ahora estás viendo que está ${this.currentEmotion}.`;
 
         let body = { model, messages: [] };
         if (isV) {
             const img = this.captureOptimizedFrame();
-            let p = `[SISTEMA] ${sys}\n[MEMORIA]\n`;
-            history.slice(-5).forEach(m => p += `- ${m.role==='user'?'Tú' : 'Ron'}: ${m.content}\n`);
-            p += `\n[MENSAJE ACTUAL]: ${userText}\nInstrucción: Analiza la imagen y responde al niño sobre lo que sostiene o enseña considerando que está ${this.currentEmotion}.`;
+            let p = `[SISTEMA] ${sys}\n[MENSAJE ACTUAL]: ${userText}`;
             body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: img } } ] }];
         } else {
             body.messages = [{ role: "system", content: sys }];
@@ -267,7 +262,7 @@ const ronFace = {
             this.speak(resp);
         } catch (e) {
             this.log("Error IA");
-            this.speak("¡Bip! He tenido un fallo en mis circuitos. ¿Puedes repetir?");
+            this.speak("¡Bip! He tenido un fallo mental. ¿Puedes repetir?");
             this.changeState('IDLE');
         }
     },
@@ -289,11 +284,8 @@ const ronFace = {
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
-        
-        // Boca triangular rellena animada
         this.updateMouth('M 30 10 L 70 10 Q 75 10 72 30 L 55 45 Q 50 48 45 45 L 28 30 Q 25 10 30 10 Z');
         
-        // Mover los ojos periódicamente al hablar
         const eyeMoveInterval = setInterval(() => {
             if (this.activityState === 'SPEAKING') this.shiftEyes();
             else clearInterval(eyeMoveInterval);
@@ -312,7 +304,11 @@ const ronFace = {
 
     setExpression(exp) {
         this.expressionState = exp;
-        [this.eyes.left, this.eyes.right].forEach(el => el.className = 'eye');
+        [this.eyes.left, this.eyes.right].forEach(el => {
+            el.className = 'eye';
+            el.style.transform = ''; 
+        });
+
         if (exp === 'happy') { 
             this.updateMouth('M 15 25 Q 50 55 85 25 Q 50 45 15 25 Z');
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); 
@@ -331,7 +327,10 @@ const ronFace = {
             this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); 
             this.startGlitchEffect(); 
         }
-        else if (exp === 'glitch') { this.startGlitchEffect(); this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('star'); }
+        else if (exp === 'glitch') { 
+            this.startGlitchEffect(); 
+            this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('star'); 
+        }
         else { 
             this.updateMouth('M 30 25 Q 50 40 70 25 Q 50 35 30 25 Z'); 
             this.stopGlitchEffect(); 
@@ -340,9 +339,7 @@ const ronFace = {
 
     shiftEyes() {
         const offset = (Math.random() - 0.5) * 20;
-        [this.eyes.left, this.eyes.right].forEach(el => {
-            el.style.transform = `translateX(${offset}px)`;
-        });
+        [this.eyes.left, this.eyes.right].forEach(el => { el.style.transform = `translateX(${offset}px)`; });
     },
 
     startBlinkCycle() {
