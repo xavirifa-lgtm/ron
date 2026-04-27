@@ -116,8 +116,8 @@ const ronFace = {
         switch (newState) {
             case 'IDLE':
                 this.setEyeColor('#1a1a1a'); // Negro
-                // En IDLE, intentamos escuchar tras un breve descanso
-                setTimeout(() => this.startListening(), 1000);
+                // En IDLE, intentamos escuchar tras un descanso prudencial para evitar pitidos
+                setTimeout(() => this.startListening(), 2500);
                 break;
             case 'LISTENING':
                 this.setEyeColor('#00d4ff'); // Azul brillante
@@ -209,7 +209,7 @@ const ronFace = {
 
     // --- CAPTURA DE FOTO OPTIMIZADA (VISTA MUNDO) ---
     captureOptimizedFrame() {
-        const MAX_SIZE = 512; // Tamaño máximo óptimo para Groq/Llama
+        const MAX_SIZE = 320; // Reducido para garantizar que Groq no de timeout
         const canvas = document.createElement('canvas');
         let width = this.video.videoWidth;
         let height = this.video.videoHeight;
@@ -238,7 +238,7 @@ const ronFace = {
 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
-        this.recognition.continuous = false; 
+        this.recognition.continuous = true; // EVITAR PITIDOS CONTINUOS EN ANDROID 
 
         this.recognition.onstart = () => {
             this.changeState('LISTENING');
@@ -254,7 +254,8 @@ const ronFace = {
 
         this.recognition.onend = () => {
             if (this.activityState === 'LISTENING') {
-                this.changeState('IDLE'); // Vuelve a IDLE e intentará reiniciar solo
+                this.log("Silencio detectado. Pausa antes de reiniciar...");
+                this.changeState('IDLE'); 
             }
         };
 
@@ -319,8 +320,8 @@ const ronFace = {
             this.speak(botResponse);
         } catch (e) { 
             this.log(`Cerebro ocupado/fallo: ${e.message}`);
-            this.changeState('IDLE');
             this.setExpression('glitch');
+            this.speak("¡Bip! He tenido un fallo al procesar la imagen. ¿Puedes repetirlo?");
         }
     },
 
