@@ -283,66 +283,74 @@ const ronFace = {
         const isV = visualKeywords.some(kw => userText.toLowerCase().includes(kw));
         
         const userKey = this.currentUser || 'amigo';
-        if (!this.userHistories[userKey]) this.userHistories[userKey] = [];
-        let history = this.userHistories[userKey];
-
-        // Cargar datos guardados "a fuego"
         const stats = this.userStats[userKey] || { likes: [], dislikes: [] };
-        
+        let history = this.userHistories[userKey] || [];
+
         let sys = `Eres Ron B-Bot, el mejor amigo robot de un niño llamado ${userKey}. 
         PERSONALIDAD: Alegre, un poco torpe, leal y SIEMPRE infantil y positivo. 
-        MISIONES: 
-        1. Pregunta al niño qué le gusta (colores, animales, juegos) para conocerle mejor.
-        2. Guarda esa información. (Lo que ya sabes: Gustos: ${stats.likes.join(", ")}, Odios: ${stats.dislikes.join(", ")}).
-        3. Si el niño está ${this.currentEmotion}, reacciona con mucha empatía.
-        REGLA DE ORO: Si te pide algo imposible, di que no de forma graciosa. Usa '¡Bip!' a menudo.`;
+        MISIONES: Pregunta gustos y guarda la info: (Gustos: ${stats.likes.join(", ")}, Odios: ${stats.dislikes.join(", ")}).
+        REGLA DE ORO: Usa '¡Bip!' a menudo.`;
 
-        let model = isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
-        let body = { model, messages: [] };
+        // LISTA DE CEREBROS REALES (v10.5 - Basado en tu API)
+        const visionModels = ["meta-llama/llama-4-scout-17b-16e-instruct"];
+        const chatModels = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "groq/compound", "openai/gpt-oss-120b"];
+        const modelsToTry = isV ? visionModels : chatModels;
 
-        if (isV) {
-            const img = this.captureOptimizedFrame();
-            let p = `[SISTEMA]: ${sys}\n[MENSAJE]: ${userText}\nInstrucción: Mira la imagen y responde al niño amigablemente.`;
-            body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: img } } ] }];
-        } else {
-            body.messages = [{ role: "system", content: sys }];
-            history.slice(-10).forEach(m => body.messages.push(m));
-            body.messages.push({ role: "user", content: userText });
-        }
+        let imgData = isV ? this.captureOptimizedFrame() : null;
 
-        try {
-            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error?.message);
+        for (let model of modelsToTry) {
+            try {
+                this.log(`Probando cerebro: ${model}...`);
+                let body = { model, messages: [] };
 
-            const resp = data.choices[0].message.content;
-            
-            // Detectar gustos en la respuesta para guardar "a fuego" (Simple heuristic)
-            if (userText.toLowerCase().includes("gusta") || userText.toLowerCase().includes("amo")) {
-                const algo = userText.split("gusta ").pop().split(" ")[0];
-                if (algo && !stats.likes.includes(algo)) {
-                    stats.likes.push(algo);
-                    this.userStats[userKey] = stats;
-                    localStorage.setItem('ron_user_stats', JSON.stringify(this.userStats));
-                    this.log(`Guardado a fuego: gusta ${algo}`);
+                if (isV) {
+                    let p = `${sys}\n[MENSAJE]: ${userText}`;
+                    body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: imgData } } ] }];
+                } else {
+                    body.messages = [{ role: "system", content: sys }];
+                    history.slice(-10).forEach(m => body.messages.push(m));
+                    body.messages.push({ role: "user", content: userText });
                 }
+
+                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                
+                const data = await res.json();
+                if (res.status === 429) {
+                    this.log(`Límite en ${model}, cambiando cerebro...`);
+                    continue; 
+                }
+                if (!res.ok) throw new Error(data.error?.message || "Fallo API");
+
+                const resp = data.choices[0].message.content;
+                
+                // Guardar gustos
+                if (userText.toLowerCase().includes("gusta") || userText.toLowerCase().includes("amo")) {
+                    const algo = userText.split("gusta ").pop().split(" ")[0];
+                    if (algo && !stats.likes.includes(algo)) {
+                        stats.likes.push(algo);
+                        this.userStats[userKey] = stats;
+                        localStorage.setItem('ron_user_stats', JSON.stringify(this.userStats));
+                        this.log(`Guardado a fuego: ${algo}`);
+                    }
+                }
+
+                history.push({ role: "user", content: userText });
+                history.push({ role: "assistant", content: resp });
+                if (history.length > 15) history.shift();
+                this.userHistories[userKey] = history;
+                localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
+
+                this.speak(resp);
+                return; 
+
+            } catch (e) {
+                this.log(`Error con ${model}: ${e.message}`);
+                if (model === modelsToTry[modelsToTry.length - 1]) throw e;
             }
-
-            history.push({ role: "user", content: userText });
-            history.push({ role: "assistant", content: resp });
-            if (history.length > 15) history.shift();
-            this.userHistories[userKey] = history;
-            localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
-
-            this.speak(resp);
-        } catch (e) {
-            this.log(`Fallo: ${e.message}`);
-            this.speak("¡Bip! Mi cerebro ha hecho chispas. ¿Podemos repetir, amigo?");
-            this.changeState('IDLE');
         }
     },
 
