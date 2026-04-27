@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 8.5 (MEMORIA SELECTIVA Y MULTI-USUARIO)
+ * Ron B*Bot AI - Versión 8.7 (CEREBRO LOCAL + NUBE OPTIMIZADA)
  */
 
 const ronFace = {
@@ -17,17 +17,17 @@ const ronFace = {
     powerBtn: document.getElementById('power-btn'),
     micToggleBtn: document.getElementById('mic-toggle-btn'),
 
-    // MÁQUINA DE ESTADOS
+    // ESTADO
     activityState: 'BOOTING', 
     expressionState: 'neutral', 
     isMicEnabled: true,
     isLearningFace: false,
     tempDescriptor: null,
 
-    // MEMORIA Y CONTEXTO
-    currentUser: null,
+    // MEMORIA LOCAL (Pura)
+    currentUser: null, // Nombre de la persona identificada por face-api
     currentEmotion: 'neutral',
-    knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'), // [{label: 'Xavi', descriptor: [...]}]
+    knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
     userHistories: JSON.parse(localStorage.getItem('ron_user_histories') || '{}'),
     apiKey: localStorage.getItem('ron_groq_key'),
 
@@ -45,23 +45,20 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Sincronizando Ron v8.5...");
+        this.log("Sincronizando Ron v8.7...");
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         
-        if (this.micToggleBtn) {
-            this.micToggleBtn.onclick = () => {
-                this.isMicEnabled = !this.isMicEnabled;
-                this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ MICRO ON" : "🔇 MICRO OFF";
-                this.micToggleBtn.classList.toggle('off', !this.isMicEnabled);
-                if (this.isMicEnabled && this.activityState === 'IDLE') this.startListening();
-            };
-        }
-        if (this.powerBtn) {
-            this.powerBtn.onclick = async () => {
-                this.powerBtn.style.display = 'none';
-                await this.init();
-            };
-        }
+        this.powerBtn.onclick = async () => {
+            this.powerBtn.style.display = 'none';
+            await this.init();
+        };
+        
+        this.micToggleBtn.onclick = () => {
+            this.isMicEnabled = !this.isMicEnabled;
+            this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ MICRO ON" : "🔇 MICRO OFF";
+            this.micToggleBtn.classList.toggle('off', !this.isMicEnabled);
+            if (this.isMicEnabled && this.activityState === 'IDLE') this.startListening();
+        };
     },
 
     async init() {
@@ -69,13 +66,12 @@ const ronFace = {
             await this.loadModels();
             await this.startCamera();
             this.setupInteractions();
-            this.listAvailableVoices();
             this.bootScreen.classList.add('hidden');
             this.changeState('IDLE');
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
-            this.speak("¡Bip! Sistemas listos. Estoy listo para reconocerte.");
+            this.speak("¡Bip! Hola. Estoy listo para reconocerte.");
             this.goFullscreen();
         } catch (err) {
             this.log(`Error: ${err.message}`);
@@ -106,7 +102,7 @@ const ronFace = {
                 localStorage.setItem('ron_groq_key', key);
                 this.apiKey = key;
                 this.apiModal.classList.add('hidden');
-                this.speak("¡Cerebro vinculado!");
+                this.speak("¡Cerebro listo!");
             }
         };
     },
@@ -114,10 +110,7 @@ const ronFace = {
     listAvailableVoices() {
         const voices = window.speechSynthesis.getVoices();
         const esVoices = voices.filter(v => v.lang.startsWith('es'));
-        if (esVoices.length > 0) {
-            this.log(`Voces ES: ${esVoices.length} (Google/Helena recomendadas)`);
-            esVoices.forEach(v => console.log(`Voz detectada: ${v.name}`));
-        }
+        if (esVoices.length > 0) this.log(`Voces ES: ${esVoices.length}`);
     },
 
     changeState(newState) {
@@ -136,61 +129,50 @@ const ronFace = {
 
     setEyeColor(color) { document.documentElement.style.setProperty('--ron-eye-color', color); },
 
+    // --- IDENTIFICACIÓN 100% LOCAL ---
     async startVisionLoop() {
         setInterval(async () => {
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
             try {
                 const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions().withFaceDescriptors();
-                if (det.length > 0) this.processDetections(det[0]);
-                else this.currentUser = null;
+                
+                if (det.length > 0) {
+                    const d = det[0];
+                    // Emoción
+                    const expressions = d.expressions;
+                    let maxEmotion = 'neutral'; let maxScore = 0;
+                    for (const [emotion, score] of Object.entries(expressions)) {
+                        if (score > maxScore) { maxScore = score; maxEmotion = emotion; }
+                    }
+                    const emDict = { happy: 'feliz', sad: 'triste', angry: 'enfadado', surprised: 'sorprendido', neutral: 'neutral' };
+                    this.currentEmotion = emDict[maxEmotion] || 'neutral';
+
+                    // Identidad
+                    let name = null;
+                    if (this.knownFaces.length > 0) {
+                        const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])));
+                        const res = matcher.findBestMatch(d.descriptor);
+                        if (res.label !== 'unknown') name = res.label;
+                    }
+
+                    if (name) {
+                        if (this.currentUser !== name) {
+                            this.currentUser = name;
+                            this.log(`Hola, ${name}`);
+                            this.speak(`¡Bip! Hola ${name}, qué alegría verte de nuevo.`);
+                        }
+                    } else if (!this.isLearningFace) {
+                        // Desconocido
+                        this.currentUser = null;
+                        this.tempDescriptor = Array.from(d.descriptor);
+                        this.isLearningFace = true;
+                        this.speak("¡Bip! Hola. No te conozco. ¿Cómo te llamas?");
+                    }
+                } else {
+                    this.currentUser = null;
+                }
             } catch(e) {}
         }, 3000); 
-    },
-
-    async processDetections(detection) {
-        const expressions = detection.expressions;
-        let maxEmotion = 'neutral'; let maxScore = 0;
-        for (const [emotion, score] of Object.entries(expressions)) {
-            if (score > maxScore) { maxScore = score; maxEmotion = emotion; }
-        }
-        const emDict = { happy: 'feliz', sad: 'triste', angry: 'enfadado', surprised: 'sorprendido', neutral: 'neutral' };
-        this.currentEmotion = emDict[maxEmotion] || 'neutral';
-
-        let identifiedName = null;
-        if (this.knownFaces.length > 0) {
-            const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])));
-            const res = matcher.findBestMatch(detection.descriptor);
-            if (res.label !== 'unknown') identifiedName = res.label;
-        }
-
-        if (identifiedName) {
-            if (this.currentUser !== identifiedName) {
-                this.currentUser = identifiedName;
-                this.log(`Reconocido: ${identifiedName}`);
-                this.speak(`¡Hola de nuevo, ${identifiedName}! Me alegra volver a verte. ¿Qué quieres hacer hoy?`);
-            }
-        } else {
-            // Usuario desconocido
-            if (this.activityState === 'IDLE' && !this.isLearningFace) {
-                this.log("Nueva cara detectada...");
-                this.tempDescriptor = Array.from(detection.descriptor);
-                this.isLearningFace = true;
-                this.speak("¡Bip! No te conozco. ¿Cómo te llamas?");
-            }
-        }
-    },
-
-    captureOptimizedFrame() {
-        const MAX_SIZE = 1024;
-        const canvas = document.createElement('canvas');
-        let w = this.video.videoWidth; let h = this.video.videoHeight;
-        if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
-        else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.translate(w, 0); ctx.scale(-1, 1);
-        ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.8);
     },
 
     startListening() {
@@ -206,22 +188,45 @@ const ronFace = {
             if (this.isLearningFace && this.tempDescriptor) {
                 this.saveNewUser(text);
             } else {
-                this.chat(text);
+                this.handleInput(text);
             }
         };
         this.recognition.onend = () => { if (this.activityState === 'LISTENING') this.changeState('IDLE'); };
         try { this.recognition.start(); } catch(e) { this.changeState('IDLE'); }
     },
 
-    saveNewUser(name) {
-        const cleanName = name.replace("Me llamo ", "").replace("Mi nombre es ", "").trim();
-        this.knownFaces.push({ label: cleanName, descriptor: this.tempDescriptor });
+    saveNewUser(text) {
+        const name = text.replace(/me llamo |mi nombre es /gi, "").trim();
+        this.knownFaces.push({ label: name, descriptor: this.tempDescriptor });
         localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
-        this.currentUser = cleanName;
+        this.currentUser = name;
         this.isLearningFace = false;
         this.tempDescriptor = null;
-        this.log(`Nuevo usuario guardado: ${cleanName}`);
-        this.speak(`¡Encantado de conocerte, ${cleanName}! He guardado tu cara en mi base de datos. ¿Qué quieres hacer?`);
+        this.speak(`¡Encantado de conocerte, ${name}! Te he guardado en mi base de datos. ¿Qué quieres hacer?`);
+    },
+
+    // --- MANEJO DE ENTRADA (LOCAL VS NUBE) ---
+    async handleInput(userText) {
+        const textLower = userText.toLowerCase();
+
+        // 1. Preguntas de Identidad (RESPUESTA LOCAL INSTANTÁNEA)
+        if (textLower.includes("quién soy") || textLower.includes("sabes quién soy") || textLower.includes("sabes mi nombre")) {
+            if (this.currentUser) {
+                this.speak(`¡Bip! Claro que lo sé. Eres ${this.currentUser} y hoy te veo un poco ${this.currentEmotion}.`);
+            } else {
+                this.speak("¡Bip! Aún no estoy seguro de quién eres. ¿Me lo recuerdas?");
+            }
+            return;
+        }
+
+        // 2. Preguntas sobre qué puede hacer
+        if (textLower.includes("qué puedes hacer") || textLower.includes("que puedes hacer")) {
+            this.speak("¡Bip! Puedo jugar a la búsqueda del tesoro, contarte cuentos o ayudarte a leer tus libros. ¡Tú decides!");
+            return;
+        }
+
+        // 3. Todo lo demás va a Groq (Híbrido)
+        this.chat(userText);
     },
 
     async chat(userText) {
@@ -233,54 +238,63 @@ const ronFace = {
         const isVisualRequest = visualKeywords.some(kw => userText.toLowerCase().includes(kw));
         
         let model = isVisualRequest ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
-        
-        // Memoria específica del usuario
-        if (!this.userHistories[this.currentUser]) this.userHistories[this.currentUser] = [];
-        let history = this.userHistories[this.currentUser];
+        const userKey = this.currentUser || 'amigo_desconocido';
+        if (!this.userHistories[userKey]) this.userHistories[userKey] = [];
+        let history = this.userHistories[userKey];
 
-        let sysPrompt = `Eres Ron B-Bot. Alegre, torpe, leal. Usa '¡Bip!'. 
-        Identidad: Estás hablando con ${this.currentUser || 'un humano'}. No lo confundas con objetos que te enseñe. 
-        Reglas:
-        1. No ofrezcas juegos a menos que pregunten "¿qué podemos hacer?".
-        2. Si piden algo imposible, di que no puedes de forma graciosa.
-        3. Si enseñan algo, descríbelo SOLO si preguntan "¿qué es esto?".
-        Usuario actual: ${this.currentUser}. Emoción: ${this.currentEmotion}.`;
+        let sysPrompt = `Eres Ron B-Bot. Alegre, torpe, leal. 
+        IMPORTANTE: Estás hablando con ${userKey}. Si te enseña algo, es un OBJETO, no lo confundas con el usuario.
+        Usuario: ${userKey}. Emoción: ${this.currentEmotion}.
+        Si el niño pide algo imposible, di que no puedes de forma graciosa.`;
 
-        let contentPayload = [];
+        let body = { model, messages: [] };
         if (isVisualRequest) {
             const imageData = this.captureOptimizedFrame();
-            let promptVisual = `[SISTEMA] ${sysPrompt}\n[MEMORIA DE ${this.currentUser}]\n`;
-            history.slice(-5).forEach(m => promptVisual += `- ${m.role === 'user' ? 'Tú' : 'Ron'}: ${m.content}\n`);
-            promptVisual += `\n[MENSAJE ACTUAL]: ${userText}`;
-            contentPayload = [ { type: "text", text: promptVisual }, { type: "image_url", image_url: { url: imageData } } ];
+            let p = `[SISTEMA] ${sysPrompt}\n[HISTORIAL CON ${userKey}]\n`;
+            history.slice(-5).forEach(m => p += `- ${m.role==='user'?'Tú':'Ron'}: ${m.content}\n`);
+            p += `\n[MENSAJE]: ${userText}`;
+            body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: imageData } } ] }];
         } else {
-            let messages = [{ role: "system", content: sysPrompt }];
-            history.slice(-10).forEach(m => messages.push(m));
-            messages.push({ role: "user", content: userText });
-            contentPayload = messages;
+            body.messages = [{ role: "system", content: sysPrompt }];
+            history.slice(-10).forEach(m => body.messages.push(m));
+            body.messages.push({ role: "user", content: userText });
         }
 
         try {
-            const body = isVisualRequest ? { model, messages: [{ role: "user", content: contentPayload }] } : { model, messages: contentPayload };
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
             const data = await res.json();
+            if (!data.choices?.[0]) throw new Error();
             const botResponse = data.choices[0].message.content;
             
             history.push({ role: "user", content: userText });
             history.push({ role: "assistant", content: botResponse });
             if (history.length > 20) history = history.slice(-20);
-            this.userHistories[this.currentUser] = history;
+            this.userHistories[userKey] = history;
             localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
 
             this.speak(botResponse);
         } catch (e) {
-            this.log(`Error: ${e.message}`);
+            this.log("Fallo IA.");
+            this.speak("¡Bip! He tenido un cortocircuito mental. ¿Puedes repetir?");
             this.changeState('IDLE');
         }
+    },
+
+    captureOptimizedFrame() {
+        const MAX_SIZE = 1024;
+        const canvas = document.createElement('canvas');
+        let w = this.video.videoWidth; let h = this.video.videoHeight;
+        if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
+        else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.translate(w, 0); ctx.scale(-1, 1);
+        ctx.drawImage(this.video, 0, 0, w, h);
+        return canvas.toDataURL('image/jpeg', 0.8);
     },
 
     speak(text) {
