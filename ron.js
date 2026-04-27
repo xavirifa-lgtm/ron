@@ -234,15 +234,15 @@ const ronFace = {
     handleInput(text) {
         const t = text.toLowerCase();
         
-        // --- MÚSICA Y LISTAS (v10.3) ---
-        if (t.includes("pon música") || t.includes("pon musica") || t.includes("ponme la canción") || t.includes("reproduce") || t.includes("pon la lista")) {
+        // --- MÚSICA Y LISTAS (v10.6) ---
+        const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
+        if (musicKeywords.some(kw => t.includes(kw)) && (t.includes("pon") || t.includes("reproduce") || t.includes("busca"))) {
             let isPlaylist = t.includes("lista");
-            let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon /gi, "").trim();
-            if (search) {
+            let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon |busca |quiero escuchar /gi, "").trim();
+            if (search && search.length > 2) {
                 this.setExpression('star');
-                let phrase = isPlaylist ? `¡Bip! Buscando la lista de ${search}. ¡Diversión asegurada!` : `¡Bip! Marchando música de ${search}.`;
+                let phrase = isPlaylist ? `¡Bip! Buscando la lista de ${search}.` : `¡Bip! Marchando música de ${search}.`;
                 this.speak(phrase);
-                // Si es lista, añadimos el término 'playlist' a la búsqueda para forzar a YouTube a buscar listas
                 this.playMusic(isPlaylist ? `${search} playlist` : search);
                 return;
             }
@@ -288,8 +288,11 @@ const ronFace = {
 
         let sys = `Eres Ron B-Bot, el mejor amigo robot de un niño llamado ${userKey}. 
         PERSONALIDAD: Alegre, un poco torpe, leal y SIEMPRE infantil y positivo. 
+        HABILIDADES ESPECIALES: 
+        - PUEDES PONER MÚSICA: Si el niño te pide música o una canción, acepta encantado. 
+        - RECONOCIMIENTO: Sabes quién es el niño y qué le gusta.
         MISIONES: Pregunta gustos y guarda la info: (Gustos: ${stats.likes.join(", ")}, Odios: ${stats.dislikes.join(", ")}).
-        REGLA DE ORO: Usa '¡Bip!' a menudo.`;
+        REGLA DE ORO: Si te pide música, di algo como "¡Bip! ¡Marchando música!" y yo (el sistema) la pondré.`;
 
         // LISTA DE CEREBROS REALES (v10.5 - Basado en tu API)
         const visionModels = ["meta-llama/llama-4-scout-17b-16e-instruct"];
