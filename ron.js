@@ -140,6 +140,9 @@ const ronFace = {
         let currentIndex = 0;
 
         document.body.addEventListener('click', (e) => {
+            // Intentar entrar en pantalla completa real (oculta barras de Android/iOS)
+            this.goFullscreen();
+
             currentIndex = (currentIndex + 1) % expressions.length;
             this.setExpression(expressions[currentIndex]);
             
@@ -150,9 +153,25 @@ const ronFace = {
 
         // Soporte para teclas
         window.addEventListener('keydown', (e) => {
+            if (e.key === 'f') this.goFullscreen();
             if (e.key === 'g') this.setExpression('glitch');
             if (e.key === 'n') this.setExpression('neutral');
         });
+    },
+
+    goFullscreen() {
+        const doc = window.document;
+        const docEl = doc.documentElement;
+
+        const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+        
+        if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+            if (requestFullScreen) {
+                requestFullScreen.call(docEl).catch(err => {
+                    console.log(`Error al intentar modo inmersivo: ${err.message}`);
+                });
+            }
+        }
     }
 };
 
