@@ -231,7 +231,7 @@ const ronFace = {
 
     // --- CAPTURA DE FOTO OPTIMIZADA (VISTA MUNDO) ---
     captureOptimizedFrame() {
-        const MAX_SIZE = 1024; // Resolución HD para reconocimiento de alta precisión
+        const MAX_SIZE = 1024; 
         const canvas = document.createElement('canvas');
         let width = this.video.videoWidth;
         let height = this.video.videoHeight;
@@ -245,9 +245,27 @@ const ronFace = {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
+
+        // Voltear horizontalmente si la cámara está espejada (común en selfies)
+        // para que la IA lea el texto correctamente
+        ctx.translate(width, 0);
+        ctx.scale(-1, 1);
         ctx.drawImage(this.video, 0, 0, width, height);
         
-        return canvas.toDataURL('image/jpeg', 0.6); 
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+        // MOSTRAR PREVIEW EN EL LOG PARA EL USUARIO
+        if (this.fixedLog) {
+            const preview = document.createElement('img');
+            preview.src = dataUrl;
+            preview.style.width = '60px';
+            preview.style.height = 'auto';
+            preview.style.border = '1px solid #0f0';
+            preview.style.marginTop = '5px';
+            this.fixedLog.appendChild(preview);
+        }
+
+        return dataUrl; 
     },
 
     // --- ESCUCHA ---
