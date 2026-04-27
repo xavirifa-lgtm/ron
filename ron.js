@@ -10,7 +10,6 @@ const ronFace = {
     mouth: document.getElementById('mouth-path'),
     mouthContainer: document.querySelector('.mouth-svg'),
     glitchOverlay: document.getElementById('glitch-overlay'),
-    hat: document.getElementById('beanie-hat'),
 
     // Estado actual
     state: 'neutral',
@@ -121,10 +120,6 @@ const ronFace = {
         this.glitchOverlay.innerHTML = '';
     },
 
-    toggleHat() {
-        this.hat.classList.toggle('hidden');
-    },
-
     // Actualizar curva de la boca (Mouth Path)
     updateMouth(d) {
         this.mouth.setAttribute('d', d);
@@ -145,12 +140,6 @@ const ronFace = {
         let currentIndex = 0;
 
         document.body.addEventListener('click', (e) => {
-            // Si hacemos click arriba a la derecha, toggle hat
-            if (e.clientX > window.innerWidth * 0.8 && e.clientY < window.innerHeight * 0.2) {
-                this.toggleHat();
-                return;
-            }
-
             currentIndex = (currentIndex + 1) % expressions.length;
             this.setExpression(expressions[currentIndex]);
             
@@ -161,11 +150,21 @@ const ronFace = {
 
         // Soporte para teclas
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'h') this.toggleHat();
             if (e.key === 'g') this.setExpression('glitch');
             if (e.key === 'n') this.setExpression('neutral');
         });
     }
 };
+
+// Registro de Service Worker para PWA (permite ocultar la barra de navegación)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
+            console.log('Ron PWA listo:', reg.scope);
+        }).catch(err => {
+            console.log('Error PWA:', err);
+        });
+    });
+}
 
 window.onload = () => ronFace.init();
