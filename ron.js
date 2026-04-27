@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 8.0 (COMPAÑERO DE JUEGOS Y LECTURA)
+ * Ron B*Bot AI - Versión 8.5 (MEMORIA SELECTIVA Y MULTI-USUARIO)
  */
 
 const ronFace = {
@@ -21,12 +21,14 @@ const ronFace = {
     activityState: 'BOOTING', 
     expressionState: 'neutral', 
     isMicEnabled: true,
+    isLearningFace: false,
+    tempDescriptor: null,
 
     // MEMORIA Y CONTEXTO
     currentUser: null,
     currentEmotion: 'neutral',
-    knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
-    conversationHistory: JSON.parse(localStorage.getItem('ron_history') || '[]'),
+    knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'), // [{label: 'Xavi', descriptor: [...]}]
+    userHistories: JSON.parse(localStorage.getItem('ron_user_histories') || '{}'),
     apiKey: localStorage.getItem('ron_groq_key'),
 
     log(msg) {
@@ -43,7 +45,9 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v8.0...");
+        this.log("Sincronizando Ron v8.5...");
+        window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
+        
         if (this.micToggleBtn) {
             this.micToggleBtn.onclick = () => {
                 this.isMicEnabled = !this.isMicEnabled;
@@ -65,14 +69,13 @@ const ronFace = {
             await this.loadModels();
             await this.startCamera();
             this.setupInteractions();
-            this.log("Cerebro activado.");
             this.listAvailableVoices();
             this.bootScreen.classList.add('hidden');
             this.changeState('IDLE');
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
-            this.speak("¡Bip! Hola, soy Ron, tu mejor amigo fuera de la caja. ¿Quieres que juguemos a algo, que te cuente un cuento o que practiquemos lectura?");
+            this.speak("¡Bip! Sistemas listos. Estoy listo para reconocerte.");
             this.goFullscreen();
         } catch (err) {
             this.log(`Error: ${err.message}`);
@@ -82,10 +85,12 @@ const ronFace = {
 
     async loadModels() {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+        ]);
     },
 
     async startCamera() {
@@ -94,8 +99,6 @@ const ronFace = {
         return new Promise(res => this.video.onloadedmetadata = res);
     },
 
-    checkApiKey() { if (!this.apiKey) this.apiModal.classList.remove('hidden'); },
-
     setupInteractions() {
         this.saveBtn.onclick = () => {
             const key = this.apiKeyInput.value.trim();
@@ -103,9 +106,18 @@ const ronFace = {
                 localStorage.setItem('ron_groq_key', key);
                 this.apiKey = key;
                 this.apiModal.classList.add('hidden');
-                this.speak("¡Cerebro activado!");
+                this.speak("¡Cerebro vinculado!");
             }
         };
+    },
+
+    listAvailableVoices() {
+        const voices = window.speechSynthesis.getVoices();
+        const esVoices = voices.filter(v => v.lang.startsWith('es'));
+        if (esVoices.length > 0) {
+            this.log(`Voces ES: ${esVoices.length} (Google/Helena recomendadas)`);
+            esVoices.forEach(v => console.log(`Voz detectada: ${v.name}`));
+        }
     },
 
     changeState(newState) {
@@ -126,12 +138,13 @@ const ronFace = {
 
     async startVisionLoop() {
         setInterval(async () => {
-            if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING') return;
+            if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
             try {
                 const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions().withFaceDescriptors();
                 if (det.length > 0) this.processDetections(det[0]);
+                else this.currentUser = null;
             } catch(e) {}
-        }, 5000); 
+        }, 3000); 
     },
 
     async processDetections(detection) {
@@ -143,10 +156,27 @@ const ronFace = {
         const emDict = { happy: 'feliz', sad: 'triste', angry: 'enfadado', surprised: 'sorprendido', neutral: 'neutral' };
         this.currentEmotion = emDict[maxEmotion] || 'neutral';
 
+        let identifiedName = null;
         if (this.knownFaces.length > 0) {
             const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])));
             const res = matcher.findBestMatch(detection.descriptor);
-            if (res.label !== 'unknown') this.currentUser = res.label;
+            if (res.label !== 'unknown') identifiedName = res.label;
+        }
+
+        if (identifiedName) {
+            if (this.currentUser !== identifiedName) {
+                this.currentUser = identifiedName;
+                this.log(`Reconocido: ${identifiedName}`);
+                this.speak(`¡Hola de nuevo, ${identifiedName}! Me alegra volver a verte. ¿Qué quieres hacer hoy?`);
+            }
+        } else {
+            // Usuario desconocido
+            if (this.activityState === 'IDLE' && !this.isLearningFace) {
+                this.log("Nueva cara detectada...");
+                this.tempDescriptor = Array.from(detection.descriptor);
+                this.isLearningFace = true;
+                this.speak("¡Bip! No te conozco. ¿Cómo te llamas?");
+            }
         }
     },
 
@@ -169,14 +199,29 @@ const ronFace = {
         if (!SpeechRecognition) return;
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
-        this.recognition.onstart = () => { this.changeState('LISTENING'); this.log("Escuchando..."); };
+        this.recognition.onstart = () => { this.changeState('LISTENING'); };
         this.recognition.onresult = (e) => {
             const text = e.results[0][0].transcript;
-            this.log(`> ${text}`);
-            this.chat(text);
+            this.log(`U: ${text}`);
+            if (this.isLearningFace && this.tempDescriptor) {
+                this.saveNewUser(text);
+            } else {
+                this.chat(text);
+            }
         };
         this.recognition.onend = () => { if (this.activityState === 'LISTENING') this.changeState('IDLE'); };
         try { this.recognition.start(); } catch(e) { this.changeState('IDLE'); }
+    },
+
+    saveNewUser(name) {
+        const cleanName = name.replace("Me llamo ", "").replace("Mi nombre es ", "").trim();
+        this.knownFaces.push({ label: cleanName, descriptor: this.tempDescriptor });
+        localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
+        this.currentUser = cleanName;
+        this.isLearningFace = false;
+        this.tempDescriptor = null;
+        this.log(`Nuevo usuario guardado: ${cleanName}`);
+        this.speak(`¡Encantado de conocerte, ${cleanName}! He guardado tu cara en mi base de datos. ¿Qué quieres hacer?`);
     },
 
     async chat(userText) {
@@ -184,30 +229,33 @@ const ronFace = {
         this.changeState('THINKING');
         this.setExpression('thinking');
 
-        const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'lectura', 'libro'];
+        const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro'];
         const isVisualRequest = visualKeywords.some(kw => userText.toLowerCase().includes(kw));
         
         let model = isVisualRequest ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
         
-        let sysPrompt = `Eres Ron B-Bot, el compañero de juegos. Personalidad: alegre, torpe, leal, optimista. Usa '¡Bip!'.
-        CAPACIDADES: 
-        1. JUEGOS: 'Búsqueda del Tesoro' (pides un objeto y lo validas por cámara), 'Simón Dice' (pides una emoción y la validas), 'Veo Veo'.
-        2. CUENTACUENTOS: Cuentas historias cortas y divertidas.
-        3. LECTURA: Si te enseñan un libro/texto, léelo en voz alta y ayuda al usuario a practicar.
-        
-        Si el usuario pregunta 'a qué jugamos' o 'qué podemos hacer', ofrece estas opciones de forma divertida.
-        Usuario actual: ${this.currentUser || 'amigo'}. Emoción detectada: ${this.currentEmotion}.`;
+        // Memoria específica del usuario
+        if (!this.userHistories[this.currentUser]) this.userHistories[this.currentUser] = [];
+        let history = this.userHistories[this.currentUser];
+
+        let sysPrompt = `Eres Ron B-Bot. Alegre, torpe, leal. Usa '¡Bip!'. 
+        Identidad: Estás hablando con ${this.currentUser || 'un humano'}. No lo confundas con objetos que te enseñe. 
+        Reglas:
+        1. No ofrezcas juegos a menos que pregunten "¿qué podemos hacer?".
+        2. Si piden algo imposible, di que no puedes de forma graciosa.
+        3. Si enseñan algo, descríbelo SOLO si preguntan "¿qué es esto?".
+        Usuario actual: ${this.currentUser}. Emoción: ${this.currentEmotion}.`;
 
         let contentPayload = [];
         if (isVisualRequest) {
             const imageData = this.captureOptimizedFrame();
-            let promptVisual = `[SISTEMA] ${sysPrompt}\n[HISTORIAL]\n`;
-            this.conversationHistory.slice(-5).forEach(m => promptVisual += `- ${m.role === 'user' ? 'Tú' : 'Ron'}: ${m.content}\n`);
-            promptVisual += `\n[MENSAJE]: ${userText}`;
+            let promptVisual = `[SISTEMA] ${sysPrompt}\n[MEMORIA DE ${this.currentUser}]\n`;
+            history.slice(-5).forEach(m => promptVisual += `- ${m.role === 'user' ? 'Tú' : 'Ron'}: ${m.content}\n`);
+            promptVisual += `\n[MENSAJE ACTUAL]: ${userText}`;
             contentPayload = [ { type: "text", text: promptVisual }, { type: "image_url", image_url: { url: imageData } } ];
         } else {
             let messages = [{ role: "system", content: sysPrompt }];
-            this.conversationHistory.slice(-10).forEach(m => messages.push(m));
+            history.slice(-10).forEach(m => messages.push(m));
             messages.push({ role: "user", content: userText });
             contentPayload = messages;
         }
@@ -222,79 +270,40 @@ const ronFace = {
             const data = await res.json();
             const botResponse = data.choices[0].message.content;
             
-            this.conversationHistory.push({ role: "user", content: userText });
-            this.conversationHistory.push({ role: "assistant", content: botResponse });
-            if (this.conversationHistory.length > 15) this.conversationHistory.shift();
-            localStorage.setItem('ron_history', JSON.stringify(this.conversationHistory));
+            history.push({ role: "user", content: userText });
+            history.push({ role: "assistant", content: botResponse });
+            if (history.length > 20) history = history.slice(-20);
+            this.userHistories[this.currentUser] = history;
+            localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
 
             this.speak(botResponse);
         } catch (e) {
-            this.log(`Error IA: ${e.message}`);
+            this.log(`Error: ${e.message}`);
             this.changeState('IDLE');
-            this.setExpression('glitch');
         }
-    },
-
-    listAvailableVoices() {
-        const voices = window.speechSynthesis.getVoices();
-        const esVoices = voices.filter(v => v.lang.startsWith('es'));
-        this.log(`Voces ES: ${esVoices.length} encontradas.`);
-        esVoices.forEach(v => this.log(`- ${v.name}`));
     },
 
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
-        
-        // Boca cuadrada redondeada para hablar (como en la foto 2)
         this.updateMouth('M 35 10 L 65 10 Q 75 10 75 20 L 75 30 Q 75 40 65 40 L 35 40 Q 25 40 25 30 L 25 20 Q 25 10 35 10');
-        
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        
-        // Buscar una voz mejor si existe (Google o Microsoft Helena)
         const voices = window.speechSynthesis.getVoices();
-        const bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Helena') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('es'));
+        const bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('es'));
         if (bestVoice) u.voice = bestVoice;
-
-        u.lang = 'es-ES';
-        u.pitch = 1.6; // Ron tiene voz un poco aguda
-        u.rate = 1.1;
-        
+        u.lang = 'es-ES'; u.pitch = 1.6; u.rate = 1.1;
         u.onstart = () => this.mouthContainer.classList.add('mouth-vibrate');
-        u.onend = () => { 
-            this.mouthContainer.classList.remove('mouth-vibrate'); 
-            this.setExpression('neutral'); // Volver a sonrisa neutral
-            setTimeout(() => this.changeState('IDLE'), 1000); 
-        };
+        u.onend = () => { this.mouthContainer.classList.remove('mouth-vibrate'); this.setExpression('neutral'); setTimeout(() => this.changeState('IDLE'), 1000); };
         window.speechSynthesis.speak(u);
     },
 
     setExpression(exp) {
         this.expressionState = exp;
         [this.eyes.left, this.eyes.right].forEach(el => el.className = 'eye');
-        
-        if (exp === 'happy') { 
-            this.updateMouth('M 15 15 Q 50 50 85 15'); // Gran sonrisa
-            this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); 
-        }
-        else if (exp === 'surprise') { 
-            this.updateMouth('M 35 15 Q 50 45 65 15'); // Oh!
-            this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise'); 
-        }
-        else if (exp === 'thinking') { 
-            this.updateMouth('M 30 25 Q 50 25 70 25'); // Línea plana
-            this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); 
-            this.startGlitchEffect(); 
-        }
-        else if (exp === 'glitch') { 
-            this.startGlitchEffect(); 
-            this.eyes.left.classList.add('glitch-left'); this.eyes.right.classList.add('glitch-right'); 
-        }
-        else { 
-            this.updateMouth('M 25 25 Q 50 40 75 25'); // Sonrisa suave neutral (Foto 1)
-            this.stopGlitchEffect(); 
-        }
+        if (exp === 'thinking') { this.updateMouth('M 30 25 Q 50 25 70 25'); this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); this.startGlitchEffect(); }
+        else if (exp === 'glitch') { this.startGlitchEffect(); this.eyes.left.classList.add('glitch-left'); this.eyes.right.classList.add('glitch-right'); }
+        else { this.updateMouth('M 25 25 Q 50 40 75 25'); this.stopGlitchEffect(); }
     },
 
     startBlinkCycle() {
