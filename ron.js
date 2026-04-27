@@ -1,181 +1,255 @@
 /**
- * Ron B*Bot AI - Motor de Animación de Cara
+ * Ron B*Bot AI - Cerebro, Visión y Voz
  */
 
 const ronFace = {
-    eyes: {
-        left: document.getElementById('eye-left'),
-        right: document.getElementById('eye-right')
-    },
+    // Referencias DOM
+    eyes: { left: document.getElementById('eye-left'), right: document.getElementById('eye-right') },
     mouth: document.getElementById('mouth-path'),
     mouthContainer: document.querySelector('.mouth-svg'),
     glitchOverlay: document.getElementById('glitch-overlay'),
+    video: document.getElementById('webcam'),
+    apiModal: document.getElementById('api-modal'),
+    apiKeyInput: document.getElementById('groq-key-input'),
+    saveBtn: document.getElementById('save-api-key'),
 
-    // Estado actual
+    // Estado
     state: 'neutral',
+    isThinking: false,
+    isSpeaking: false,
+    currentUser: null,
+    knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
+    apiKey: localStorage.getItem('ron_groq_key'),
 
-    init() {
-        console.log("Ron activado. ¡Bip-bup!");
+    async init() {
+        console.log("Despertando a Ron...");
+        this.setExpression('thinking');
+        
+        // 1. Cargar Modelos de IA (Desde CDN para GitHub Pages)
+        await this.loadModels();
+        
+        // 2. Iniciar Cámara
+        await this.startCamera();
+        
+        // 3. Setup UI
+        this.setupInteractions();
+        this.checkApiKey();
+        
         this.setExpression('neutral');
         this.startBlinkCycle();
-        this.setupInteractions();
+        
+        // 4. Bucle de Visión
+        this.startVisionLoop();
+        
+        this.speak("¡Hola! Soy Ron, tu mejor amigo fuera de la caja. ¡Bip!");
     },
 
-    // Ciclo de parpadeo aleatorio
+    async loadModels() {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        console.log("Modelos de visión cargados.");
+    },
+
+    async startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+            this.video.srcObject = stream;
+        } catch (err) {
+            console.error("Error cámara:", err);
+        }
+    },
+
+    checkApiKey() {
+        if (!this.apiKey) {
+            this.apiModal.classList.remove('hidden');
+        }
+    },
+
+    setupInteractions() {
+        this.saveBtn.onclick = () => {
+            const key = this.apiKeyInput.value.trim();
+            if (key) {
+                localStorage.setItem('ron_groq_key', key);
+                this.apiKey = key;
+                this.apiModal.classList.add('hidden');
+                this.speak("¡Cerebro activado! Ahora puedo pensar.");
+            }
+        };
+
+        document.body.addEventListener('click', () => this.goFullscreen());
+    },
+
+    // --- MOTOR DE VISIÓN ---
+    async startVisionLoop() {
+        setInterval(async () => {
+            if (this.isThinking || this.isSpeaking) return;
+
+            const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptors();
+
+            if (detections.length > 0) {
+                this.processDetections(detections[0]);
+            }
+        }, 2000);
+    },
+
+    async processDetections(detection) {
+        const descriptor = detection.descriptor;
+        let match = null;
+
+        // Buscar cara conocida
+        if (this.knownFaces.length > 0) {
+            const faceMatcher = new faceapi.FaceMatcher(this.knownFaces.map(f => 
+                new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])
+            ));
+            const bestMatch = faceMatcher.findBestMatch(descriptor);
+            if (bestMatch.label !== 'unknown') match = bestMatch.label;
+        }
+
+        if (match) {
+            if (this.currentUser !== match) {
+                this.currentUser = match;
+                this.setExpression('happy');
+                this.chat(`¡Hola ${match}! Te reconozco. ¿Qué vamos a hacer hoy?`);
+            }
+        } else {
+            // Cara nueva detectada
+            this.currentUser = 'desconocido';
+            this.setExpression('surprise');
+            this.chat("¡Bip! Cara nueva detectada. No sé quién eres. ¿Cómo te llamas?");
+            // Esperar respuesta (esto es simplificado, en un chat real esperaríamos input)
+            // Para este prototipo, usaremos un prompt si no hay voz activada
+            const name = prompt("Ron no te conoce. ¿Cuál es tu nombre?");
+            if (name) {
+                this.saveNewFace(name, descriptor);
+            }
+        }
+    },
+
+    saveNewFace(name, descriptor) {
+        this.knownFaces.push({ label: name, descriptor: Array.from(descriptor) });
+        localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
+        this.currentUser = name;
+        this.speak(`¡Encantado de conocerte, ${name}! Te he guardado en mi base de datos de amigos.`);
+    },
+
+    // --- MOTOR DE DIÁLOGO (GROQ) ---
+    async chat(userText) {
+        if (!this.apiKey) return;
+        this.isThinking = true;
+        this.setExpression('thinking');
+
+        try {
+            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "llama-3.1-8b-instant",
+                    messages: [
+                        { role: "system", content: "Eres Ron, el robot B-Bot de la película 'Ron's Gone Wrong'. Eres extremadamente optimista, un poco torpe, hablas en español y tu objetivo es ser el mejor amigo de tu usuario. Usa expresiones como '¡Bip!', '¡Increíble!' y refiere a las cosas como si fueras un robot aprendiendo. Tus respuestas deben ser cortas y graciosas." },
+                        { role: "user", content: userText }
+                    ]
+                })
+            });
+
+            const data = await response.json();
+            const reply = data.choices[0].message.content;
+            this.isThinking = false;
+            this.setExpression('neutral');
+            this.speak(reply);
+        } catch (err) {
+            console.error("Error Groq:", err);
+            this.isThinking = false;
+            this.setExpression('glitch');
+        }
+    },
+
+    // --- MOTOR DE VOZ (TTS) ---
+    speak(text) {
+        if (!window.speechSynthesis) return;
+        
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'es-ES';
+        
+        // Ajustes para voz de Ron (más agudo y robótico)
+        utterance.pitch = 1.8;
+        utterance.rate = 1.1;
+
+        utterance.onstart = () => {
+            this.isSpeaking = true;
+            this.setTalking(true);
+        };
+        utterance.onend = () => {
+            this.isSpeaking = false;
+            this.setTalking(false);
+            if (this.state === 'surprise') this.setExpression('neutral');
+        };
+
+        window.speechSynthesis.speak(utterance);
+    },
+
+    // --- UI Y ANIMACIONES (Existentes) ---
+    setExpression(expression) {
+        this.state = expression;
+        [this.eyes.left, this.eyes.right].forEach(el => el.className = 'eye');
+        this.stopGlitchEffect();
+
+        switch(expression) {
+            case 'happy': this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); this.updateMouth('M 5 15 Q 50 45 95 15'); break;
+            case 'surprise': this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise'); this.updateMouth('M 30 25 Q 50 35 70 25'); break;
+            case 'glitch': this.eyes.left.classList.add('glitch-left'); this.eyes.right.classList.add('glitch-right'); this.updateMouth('M 20 20 L 40 25 L 60 15 L 80 20'); this.startGlitchEffect(); break;
+            case 'thinking': this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); this.updateMouth('M 20 20 Q 50 20 80 20'); this.startGlitchEffect(); break;
+            default: this.updateMouth('M 10 20 Q 50 40 90 20');
+        }
+    },
+
     startBlinkCycle() {
         const blink = () => {
-            if (this.state === 'neutral') {
-                this.eyes.left.classList.add('blink');
-                this.eyes.right.classList.add('blink');
-                
-                setTimeout(() => {
-                    this.eyes.left.classList.remove('blink');
-                    this.eyes.right.classList.remove('blink');
-                }, 150);
+            if (this.state === 'neutral' && !this.isSpeaking) {
+                [this.eyes.left, this.eyes.right].forEach(el => el.classList.add('blink'));
+                setTimeout(() => [this.eyes.left, this.eyes.right].forEach(el => el.classList.remove('blink')), 150);
             }
             setTimeout(blink, Math.random() * 4000 + 2000);
         };
         blink();
     },
 
-    // Cambiar expresión emocional
-    setExpression(expression) {
-        this.state = expression;
-        console.log(`Expresión cambiada a: ${expression}`);
-        
-        // Limpiar clases previas
-        [this.eyes.left, this.eyes.right].forEach(el => {
-            el.className = 'eye'; // Reset a base
-        });
-        this.stopGlitchEffect();
-
-        switch(expression) {
-            case 'happy':
-            case 'laugh':
-                this.eyes.left.classList.add('happy');
-                this.eyes.right.classList.add('happy');
-                this.updateMouth('M 5 15 Q 50 45 95 15');
-                break;
-            
-            case 'surprise':
-                this.eyes.left.classList.add('surprise');
-                this.eyes.right.classList.add('surprise');
-                this.updateMouth('M 30 25 Q 50 35 70 25');
-                break;
-
-            case 'glitch':
-                this.eyes.left.classList.add('glitch-left');
-                this.eyes.right.classList.add('glitch-right');
-                this.updateMouth('M 20 20 L 40 25 L 60 15 L 80 20'); // Boca en zigzag
-                this.startGlitchEffect();
-                break;
-
-            case 'singing':
-                this.eyes.left.classList.add('happy');
-                this.eyes.right.classList.add('happy');
-                this.updateMouth('M 30 20 Q 50 10 70 20 Q 50 30 30 20'); // Boca circular/O
-                this.setTalking(true);
-                break;
-
-            case 'energized':
-                this.eyes.left.classList.add('energized');
-                this.eyes.right.classList.add('energized');
-                this.updateMouth('M 10 20 Q 50 45 90 20');
-                break;
-
-            case 'thinking':
-                this.eyes.left.classList.add('flat');
-                this.eyes.right.classList.add('flat');
-                this.updateMouth('M 20 20 Q 50 20 80 20'); // Boca plana
-                this.startGlitchEffect();
-                break;
-
-            default: // neutral
-                this.updateMouth('M 10 20 Q 50 40 90 20');
-        }
-    },
-
-    // Sistema de Glitch Visual
     startGlitchEffect() {
-        this.stopGlitchEffect(); // Evitar duplicados
+        this.stopGlitchEffect();
         this.glitchInterval = setInterval(() => {
             const block = document.createElement('div');
             block.className = 'glitch-block';
-            
-            // Posición y tamaño aleatorio
-            const size = Math.random() * 100 + 20;
-            block.style.width = `${size}px`;
-            block.style.height = `${size / 2}px`;
+            block.style.width = `${Math.random() * 100 + 20}px`;
+            block.style.height = `${Math.random() * 50 + 10}px`;
             block.style.left = `${Math.random() * 100}vw`;
             block.style.top = `${Math.random() * 100}vh`;
-            
             this.glitchOverlay.appendChild(block);
-            
             setTimeout(() => block.remove(), 200);
-        }, 100);
+        }, 150);
     },
 
-    stopGlitchEffect() {
-        clearInterval(this.glitchInterval);
-        this.glitchOverlay.innerHTML = '';
-    },
-
-    // Actualizar curva de la boca (Mouth Path)
-    updateMouth(d) {
-        this.mouth.setAttribute('d', d);
-    },
-
-    // Simular habla (Vibración)
-    setTalking(isTalking) {
-        if (isTalking) {
-            this.mouthContainer.classList.add('mouth-vibrate');
-        } else {
-            this.mouthContainer.classList.remove('mouth-vibrate');
-        }
-    },
-
-    setupInteractions() {
-        // Ciclo de expresiones al hacer click
-        const expressions = ['neutral', 'happy', 'surprise', 'glitch', 'singing', 'energized', 'thinking'];
-        let currentIndex = 0;
-
-        document.body.addEventListener('click', (e) => {
-            // Intentar entrar en pantalla completa real (oculta barras de Android/iOS)
-            this.goFullscreen();
-
-            currentIndex = (currentIndex + 1) % expressions.length;
-            this.setExpression(expressions[currentIndex]);
-            
-            if (expressions[currentIndex] === 'singing') {
-                setTimeout(() => this.setTalking(false), 2000);
-            }
-        });
-
-        // Soporte para teclas
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'f') this.goFullscreen();
-            if (e.key === 'g') this.setExpression('glitch');
-            if (e.key === 'n') this.setExpression('neutral');
-        });
-    },
-
+    stopGlitchEffect() { clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
+    updateMouth(d) { this.mouth.setAttribute('d', d); },
+    setTalking(isTalking) { isTalking ? this.mouthContainer.classList.add('mouth-vibrate') : this.mouthContainer.classList.remove('mouth-vibrate'); },
+    
     goFullscreen() {
-        const doc = window.document;
-        const docEl = doc.documentElement;
-
-        const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
-        
-        if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-            if (requestFullScreen) {
-                requestFullScreen.call(docEl).catch(err => {
-                    console.log(`Error al intentar modo inmersivo: ${err.message}`);
-                });
-            }
+        const docEl = document.documentElement;
+        if (!document.fullscreenElement) {
+            (docEl.requestFullscreen || docEl.webkitRequestFullScreen).call(docEl).catch(() => {});
         }
     }
 };
 
-// Registro de Service Worker para PWA (permite ocultar la barra de navegación)
+// Registro de Service Worker para PWA
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').then(reg => {

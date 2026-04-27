@@ -9,12 +9,23 @@
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- Librería de Visión IA -->
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 </head>
 <body>
     <div id="ron-app" class="ron-container">
-        <!-- Capa de Visión (Opcional para debug) -->
-        <video id="webcam" autoplay playsinline style="display: none;"></video>
-        <canvas id="vision-canvas" style="display: none;"></canvas>
+        <!-- Capa de Visión Oculta -->
+        <video id="webcam" autoplay playsinline muted style="display: none;"></video>
+        
+        <!-- Configuración de API (Solo se muestra si falta la clave) -->
+        <div id="api-modal" class="api-modal hidden">
+            <div class="modal-content">
+                <h2>Configuración de Cerebro</h2>
+                <p>Introduce tu API Key de Groq para que Ron pueda hablar:</p>
+                <input type="password" id="groq-key-input" placeholder="gsk_...">
+                <button id="save-api-key">Guardar y Activar</button>
+            </div>
+        </div>
 
         <!-- Capa de Efectos de Fondo (Glitch) -->
         <div id="glitch-overlay" class="glitch-overlay"></div>
