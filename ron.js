@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 5.3 (Diagnóstico de Oído)
+ * Ron B*Bot AI - Versión 6.0 (VISTA TOTAL)
  */
 
 const ronFace = {
@@ -15,7 +15,6 @@ const ronFace = {
     debug: document.getElementById('debug-info'),
     bootScreen: document.getElementById('boot-screen'),
     powerBtn: document.getElementById('power-btn'),
-    unlockEarsBtn: document.getElementById('unlock-ears'),
 
     // Estado
     state: 'neutral',
@@ -36,19 +35,12 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Esperando arranque v5.3...");
+        this.log("Sistemas listos v6.0...");
         if (!this.powerBtn) return;
         this.powerBtn.onclick = async () => {
             this.powerBtn.style.display = 'none';
             await this.init();
         };
-        
-        if (this.unlockEarsBtn) {
-            this.unlockEarsBtn.onclick = () => {
-                this.log("Reactivación manual solicitada...");
-                this.startListening();
-            };
-        }
     },
 
     async init() {
@@ -58,9 +50,9 @@ const ronFace = {
         }
 
         try {
-            this.log("Cargando cerebro visual...");
+            this.log("Iniciando Visión 360...");
             await this.loadModels();
-            this.log("Abriendo sensores...");
+            this.log("Conectando óptica...");
             await this.startCamera();
             
             this.setupInteractions();
@@ -71,13 +63,13 @@ const ronFace = {
             
             this.setExpression('neutral');
             this.startBlinkCycle();
-            this.startVisionLoop();
+            this.startVisionLoop(); // Caras
+            this.startListening();  // Oídos
             
-            this.startListening();
-            this.speak("¡Bip! Sistemas listos. Hola, soy Ron.");
+            this.speak("¡Increíble! Ya puedo verte y escucharte. ¿Qué tienes ahí?");
             this.goFullscreen();
         } catch (err) {
-            this.log(`ERROR: ${err.message}`);
+            this.log(`FALLO: ${err.message}`);
         }
     },
 
@@ -109,7 +101,7 @@ const ronFace = {
                 localStorage.setItem('ron_groq_key', key);
                 this.apiKey = key;
                 this.apiModal.classList.add('hidden');
-                this.speak("Cerebro activado.");
+                this.speak("¡Cerebro visual activado!");
             }
         };
     },
@@ -118,63 +110,38 @@ const ronFace = {
         document.documentElement.style.setProperty('--ron-eye-color', color);
     },
 
-    // --- ESCUCHA (v5.3: Diagnóstico) ---
+    // --- ESCUCHA ---
     startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            this.log("Navegador incompatible con voz.");
-            return;
-        }
-
-        if (this.isSpeaking) return;
-
-        if (this.recognition) {
-            try { this.recognition.abort(); } catch(e) {}
-        }
+        if (!SpeechRecognition || this.recognition) return;
 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
         this.recognition.continuous = false; 
 
         this.recognition.onstart = () => {
-            this.setEyeColor('#00d4ff'); // AZUL
-            this.log("¡Oídos abiertos! (Ojos Azules)");
-            if (this.unlockEarsBtn) this.unlockEarsBtn.classList.add('hidden');
+            if (!this.isSpeaking) this.setEyeColor('#00d4ff');
         };
 
         this.recognition.onresult = (e) => {
             const text = e.results[0][0].transcript;
             const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
             if (this.isSpeaking || timeSinceLastSpeech < 1500) return;
+
             this.log(`He oído: "${text}"`);
             this.chat(text);
         };
 
         this.recognition.onend = () => {
             if (!this.isSpeaking && this.isInitialized) {
-                this.setEyeColor('#1a1a1a'); // Negro: No escucha
-                if (this.unlockEarsBtn) this.unlockEarsBtn.classList.remove('hidden');
-                // Intentar reinicio automático
-                setTimeout(() => {
-                    if (!this.isSpeaking) this.startListening();
-                }, 1000);
+                setTimeout(() => this.startListening(), 600);
             }
         };
 
-        this.recognition.onerror = (e) => {
-            this.log(`ERROR MICRO: ${e.error}`);
-            if (e.error === 'not-allowed') this.log("Micro bloqueado por navegador.");
-        };
-
-        try { 
-            this.recognition.start(); 
-            this.log("Intentando abrir micro...");
-        } catch(e) {
-            this.log(`Fallo al iniciar micro: ${e.message}`);
-        }
+        try { this.recognition.start(); } catch(e) {}
     },
 
-    // --- VISIÓN ---
+    // --- VISIÓN (CARAS) ---
     async startVisionLoop() {
         setInterval(async () => {
             if (this.isThinking || this.isSpeaking || !this.isInitialized) return;
@@ -194,40 +161,60 @@ const ronFace = {
             if (res.label !== 'unknown') match = res.label;
         }
 
-        if (match) {
-            if (this.currentUser !== match) {
-                this.currentUser = match;
-                this.speak(`¡Hola ${match}!`);
-            }
-        } else {
+        if (match && this.currentUser !== match) {
+            this.currentUser = match;
+            this.speak(`¡Hola ${match}!`);
+        } else if (!match) {
             this.currentUser = 'desconocido';
-            this.speak("¿Cómo te llamas?");
+            this.speak("¡Bip! ¿Quién eres?");
             const n = prompt("Ron no te conoce. ¿Tu nombre?");
             if (n) {
                 this.knownFaces.push({ label: n, descriptor: Array.from(descriptor) });
                 localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
                 this.currentUser = n;
-                this.speak(`¡Guardado! Hola ${n}.`);
+                this.speak(`Amigo ${n} guardado.`);
             }
         }
     },
 
-    // --- DIÁLOGO ---
+    // --- CAPTURA DE FOTO (VISTA) ---
+    captureFrame() {
+        const canvas = document.createElement('canvas');
+        canvas.width = this.video.videoWidth;
+        canvas.height = this.video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(this.video, 0, 0);
+        return canvas.toDataURL('image/jpeg', 0.6); // Base64 comprimida
+    },
+
+    // --- DIÁLOGO CON VISIÓN (GROQ) ---
     async chat(text) {
         if (!this.apiKey || this.isThinking) return;
         this.isThinking = true;
         this.setExpression('thinking');
         this.setEyeColor('#ffb703'); // AMARILLO
 
+        this.log("Ron está mirando y pensando...");
+        const imageData = this.captureFrame();
+
         try {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: "llama-3.1-8b-instant",
+                    model: "llama-3.2-11b-vision-preview",
                     messages: [
-                        { role: "system", content: "Eres Ron B-Bot. Optimista. Respuestas de máximo 5 palabras." }, 
-                        { role: "user", content: text }
+                        { 
+                            role: "system", 
+                            content: "Eres Ron B-Bot. Optimista, torpe y español. Usa '¡Bip!'. Mira la imagen adjunta para responder al usuario. Respuestas de máximo 8 palabras." 
+                        }, 
+                        { 
+                            role: "user", 
+                            content: [
+                                { type: "text", text: text },
+                                { type: "image_url", image_url: { url: imageData } }
+                            ]
+                        }
                     ]
                 })
             });
@@ -236,21 +223,18 @@ const ronFace = {
             this.setExpression('neutral');
             this.speak(data.choices[0].message.content);
         } catch (e) { 
+            this.log("Fallo en visión Groq.");
             this.isThinking = false; 
             this.setExpression('glitch');
-            this.setEyeColor('#1a1a1a');
         }
     },
 
     // --- VOZ ---
     speak(text) {
         if (!window.speechSynthesis || !this.isInitialized) return;
-        
         this.isSpeaking = true;
         this.setEyeColor('#e63946'); // ROJO
-        
-        try { if(this.recognition) this.recognition.abort(); } catch(e) {}
-
+        try { this.recognition.abort(); } catch(e) {}
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'es-ES'; u.pitch = 1.8; u.rate = 1.1;
@@ -260,9 +244,7 @@ const ronFace = {
             this.lastSpeechEndTime = Date.now();
             this.isSpeaking = false; 
             this.setEyeColor('#1a1a1a');
-            
-            this.log("Ron terminó. Esperando 1.5s...");
-            setTimeout(() => this.startListening(), 1500);
+            setTimeout(() => this.startListening(), 1200);
         };
         window.speechSynthesis.speak(u);
     },
