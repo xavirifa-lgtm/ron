@@ -58,7 +58,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v14.2 - Edición Voz Grave...");
+        this.log("Iniciando Ron v14.4 - Edición High Mouth...");
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
                 height: '1', width: '1', videoId: 'dQw4w9WgXcQ',

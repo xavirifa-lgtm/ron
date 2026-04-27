@@ -62,21 +62,23 @@ body, html {
 
 /* CARA DE RON */
 .face-container {
+    position: absolute;
+    top: 45%; /* Bajado del 50% al 45% para que los ojos respiren v14.3 */
+    left: 50%;
+    transform: translate(-50%, -50%);
     width: 100%;
-    height: 100%;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
-    gap: 4vh; /* Espacio equilibrado v14.1 */
-    position: relative;
+    z-index: 10;
 }
 
 .eyes-layer {
     display: flex;
     justify-content: space-between;
-    width: 280px; /* Más separados como en la peli */
-    max-width: 80%;
+    width: 280px; 
+    max-width: 85%;
+    margin-bottom: 5px; /* Boca casi a nivel de ojos v14.4 */
 }
 
 .eye {
@@ -102,19 +104,24 @@ body, html {
 @keyframes blink-anim { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.01); } }
 .eye.blink { animation: blink-anim 0.15s ease-in-out; }
 
-/* BOCA */
+/* BOCA (RESCATE v14.3) */
 .mouth-layer {
-    width: 100px;
-    height: 60px;
+    width: 100px; /* Un poco más pequeña v14.4 */
+    height: 50px;
     display: flex;
     justify-content: center;
     align-items: center;
+    margin-bottom: 30px; /* Espacio hacia el pecho */
 }
-.mouth-svg { width: 100%; height: 100%; }
+.mouth-svg { 
+    width: 100%; 
+    height: 100%; 
+    display: block !important; 
+}
 #mouth-path { 
-    fill: none; 
-    stroke: var(--ron-mouth-color);
-    stroke-width: 6;
+    fill: none !important; 
+    stroke: #1a1a1a !important; /* Negro directo para evitar fallos */
+    stroke-width: 8;
     stroke-linecap: round;
     transition: d 0.3s ease; 
 }
