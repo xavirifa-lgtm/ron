@@ -124,17 +124,39 @@ const ronFace = {
             return;
         }
 
+        if (this.recognition) return; // Evitar duplicados
+
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
-        this.recognition.onresult = (e) => this.chat(e.results[0][0].transcript);
-        this.recognition.onend = () => { if(!this.isSpeaking) try { this.recognition.start(); } catch(e){} };
-        try { this.recognition.start(); } catch(e){}
+        this.recognition.continuous = false; 
+        
+        this.recognition.onresult = (e) => {
+            const text = e.results[0][0].transcript;
+            this.log(`Ron ha oído: "${text}"`);
+            this.chat(text);
+        };
+
+        this.recognition.onend = () => {
+            if (!this.isSpeaking && this.isInitialized) {
+                setTimeout(() => {
+                    try { this.recognition.start(); } catch(e) {}
+                }, 400);
+            }
+        };
+
+        this.recognition.onerror = (e) => {
+            if (e.error !== 'no-speech') {
+                this.log(`Error micro: ${e.error}`);
+            }
+        };
+
+        try { this.recognition.start(); this.log("Micrófono activado."); } catch(e) {}
     },
 
     // --- VISIÓN ---
     async startVisionLoop() {
         setInterval(async () => {
-            if (this.isThinking || this.isSpeaking) return;
+            if (this.isThinking || this.isSpeaking || !this.isInitialized) return;
             const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
             if (det.length > 0) this.processDetections(det[0]);
         }, 3000);
@@ -169,7 +191,14 @@ const ronFace = {
 
     // --- DIÁLOGO ---
     async chat(text) {
-        if (!this.apiKey || this.isThinking) return;
+        if (!this.apiKey) {
+            this.log("ERROR: No hay API Key de Groq configurada.");
+            this.apiModal.classList.remove('hidden');
+            return;
+        }
+        if (this.isThinking) return;
+
+        this.log("Ron está pensando...");
         this.isThinking = true;
         this.setExpression('thinking');
         try {
@@ -178,14 +207,23 @@ const ronFace = {
                 headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: "llama-3.1-8b-instant",
-                    messages: [{ role: "system", content: "Eres Ron B-Bot. Optimista, torpe, español. Respuestas cortas." }, { role: "user", content: text }]
+                    messages: [
+                        { role: "system", content: "Eres Ron B-Bot. Muy optimista, gracioso, español. Respuestas cortas. Usa ¡Bip!." }, 
+                        { role: "user", content: text }
+                    ]
                 })
             });
             const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            
             this.isThinking = false;
             this.setExpression('neutral');
             this.speak(data.choices[0].message.content);
-        } catch (e) { this.isThinking = false; this.setExpression('glitch'); }
+        } catch (e) { 
+            this.log(`Error Cerebro: ${e.message}`);
+            this.isThinking = false; 
+            this.setExpression('glitch'); 
+        }
     },
 
     // --- VOZ ---
