@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v17';
+const CACHE_NAME = 'ron-bot-v18';
 const ASSETS = [
   './',
   'index.html',
@@ -29,7 +29,17 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request)
-      .then(response => response || fetch(event.request))
+    fetch(event.request)
+      .then(response => {
+        // Guarda en caché la nueva versión
+        if (response && response.status === 200) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
