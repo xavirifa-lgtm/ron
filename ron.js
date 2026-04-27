@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 5.1 (Ojos de Color y Oído Fino)
+ * Ron B*Bot AI - Versión 5.2 (Oído Persistente)
  */
 
 const ronFace = {
@@ -35,7 +35,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Esperando arranque v5.1...");
+        this.log("Esperando arranque v5.2...");
         if (!this.powerBtn) return;
         this.powerBtn.onclick = async () => {
             this.powerBtn.style.display = 'none';
@@ -45,7 +45,7 @@ const ronFace = {
 
     async init() {
         if (typeof faceapi === 'undefined') {
-            this.log("ERROR: face-api no encontrada.");
+            this.log("ERROR: face-api no cargó.");
             return;
         }
 
@@ -64,6 +64,8 @@ const ronFace = {
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
+            
+            // Iniciar escucha por primera vez
             this.startListening();
             
             this.speak("¡Bip! Sistemas listos. Hola, soy Ron.");
@@ -110,18 +112,27 @@ const ronFace = {
         document.documentElement.style.setProperty('--ron-eye-color', color);
     },
 
-    // --- ESCUCHA ---
+    // --- ESCUCHA (v5.2: Recreación total) ---
     startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition || this.recognition) return;
+        if (!SpeechRecognition) {
+            this.log("Tu navegador no soporta STT.");
+            return;
+        }
+
+        // Si ya hay uno activo, lo cerramos
+        if (this.recognition) {
+            try { this.recognition.abort(); } catch(e) {}
+        }
 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
         this.recognition.continuous = false; 
 
         this.recognition.onstart = () => {
-            if (!this.isSpeaking && !this.isThinking) {
-                this.setEyeColor('#0080ff'); // AZUL: Escuchando
+            if (!this.isSpeaking) {
+                this.setEyeColor('#00d4ff'); // AZUL brillante
+                this.log("¡Oídos abiertos! (Ojos Azules)");
             }
         };
 
@@ -129,23 +140,21 @@ const ronFace = {
             const text = e.results[0][0].transcript;
             const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
             
-            // Filtro de eco (ahora 1.5 segundos)
-            if (this.isSpeaking || timeSinceLastSpeech < 1500) {
-                this.log(`Eco filtrado: "${text}"`);
-                return;
-            }
+            if (this.isSpeaking || timeSinceLastSpeech < 1500) return;
 
             this.log(`He oído: "${text}"`);
             this.chat(text);
         };
 
         this.recognition.onend = () => {
-            const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
-            if (!this.isSpeaking && this.isInitialized && timeSinceLastSpeech > 1000) {
-                setTimeout(() => {
-                    try { this.recognition.start(); } catch(e) {}
-                }, 400);
+            // Auto-reinicio inteligente
+            if (!this.isSpeaking && this.isInitialized) {
+                setTimeout(() => this.startListening(), 500);
             }
+        };
+
+        this.recognition.onerror = (e) => {
+            if (e.error === 'network') this.log("Error de red en el micro.");
         };
 
         try { this.recognition.start(); } catch(e) {}
@@ -174,7 +183,7 @@ const ronFace = {
         if (match) {
             if (this.currentUser !== match) {
                 this.currentUser = match;
-                this.speak(`¡Hola de nuevo ${match}!`);
+                this.speak(`¡Hola ${match}!`);
             }
         } else {
             this.currentUser = 'desconocido';
@@ -184,7 +193,7 @@ const ronFace = {
                 this.knownFaces.push({ label: n, descriptor: Array.from(descriptor) });
                 localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
                 this.currentUser = n;
-                this.speak(`Amigo ${n} guardado.`);
+                this.speak(`¡Guardado! Hola ${n}.`);
             }
         }
     },
@@ -194,7 +203,7 @@ const ronFace = {
         if (!this.apiKey || this.isThinking) return;
         this.isThinking = true;
         this.setExpression('thinking');
-        this.setEyeColor('#ffb703'); // AMARILLO: Pensando
+        this.setEyeColor('#ffb703'); // AMARILLO
 
         try {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -203,7 +212,7 @@ const ronFace = {
                 body: JSON.stringify({
                     model: "llama-3.1-8b-instant",
                     messages: [
-                        { role: "system", content: "Eres Ron B-Bot. Optimista. Respuestas de máximo 6 palabras." }, 
+                        { role: "system", content: "Eres Ron B-Bot. Optimista. Respuestas de máximo 5 palabras." }, 
                         { role: "user", content: text }
                     ]
                 })
@@ -224,9 +233,9 @@ const ronFace = {
         if (!window.speechSynthesis || !this.isInitialized) return;
         
         this.isSpeaking = true;
-        this.setEyeColor('#e63946'); // ROJO: Hablando
+        this.setEyeColor('#e63946'); // ROJO
         
-        try { this.recognition.abort(); } catch(e) {}
+        try { if(this.recognition) this.recognition.abort(); } catch(e) {}
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -236,13 +245,10 @@ const ronFace = {
             this.setTalking(false); 
             this.lastSpeechEndTime = Date.now();
             this.isSpeaking = false; 
-            this.setEyeColor('#1a1a1a'); // Vuelve al oscuro
+            this.setEyeColor('#1a1a1a');
             
-            setTimeout(() => { 
-                if (!this.isSpeaking) {
-                    try { this.recognition.start(); } catch(e) {}
-                }
-            }, 1000); // 1 segundo de muro ahora
+            this.log("Ron terminó. Reiniciando micro...");
+            setTimeout(() => this.startListening(), 1000);
         };
         window.speechSynthesis.speak(u);
     },
