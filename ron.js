@@ -58,7 +58,8 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v14.4 - Edición High Mouth...");
+        this.log("Iniciando Ron v15.0 - Edición Masterclass...");
+        this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
                 height: '1', width: '1', videoId: 'dQw4w9WgXcQ',
@@ -486,34 +487,34 @@ const ronFace = {
     setExpression(exp) {
         this.expressionState = exp;
         [this.eyes.left, this.eyes.right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
-        this.chestIcon.innerHTML = ''; // Limpiar pecho por defecto
+        this.chestIcon.innerHTML = '';
         this.chestIcon.className = 'chest-icon-container';
 
         if (exp === 'happy') { 
-            this.updateMouth('M 20 30 Q 50 60 80 30'); 
+            this.updateMouth('M 20 20 Q 50 55 80 20'); // Sonrisa profunda v15.0
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
             this.setChestIcon('heart');
         }
         else if (exp === 'star') { 
-            this.updateMouth('M 30 40 Q 50 55 70 40');
+            this.updateMouth('M 30 25 Q 50 45 70 25');
             this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star');
             this.setChestIcon('wifi');
         }
         else if (exp === 'fear') {
-            this.updateMouth('M 35 45 Q 50 35 65 45'); 
+            this.updateMouth('M 30 40 Q 50 20 70 40'); // Mueca preocupada
             this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('fear');
             this.setChestIcon('warning');
         }
         else if (exp === 'thinking') { 
-            this.updateMouth('M 35 40 L 65 40'); 
+            this.updateMouth('M 30 30 L 70 30'); // Línea plana
             this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
         }
         else if (exp === 'surprise') {
-            this.updateMouth('M 35 30 L 65 30 L 65 50 L 35 50 Z'); // Boca rectangular v13.0
+            this.updateMouth('M 35 20 L 65 20 L 65 50 L 35 50 Z'); // Rectángulo v15.0
             this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise');
         }
         else { 
-            this.updateMouth('M 25 35 Q 50 50 75 35'); 
+            this.updateMouth('M 25 25 Q 50 45 75 25'); // Sonrisa neutral v15.0
             this.stopGlitchEffect(); 
         }
     },

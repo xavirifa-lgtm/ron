@@ -63,7 +63,7 @@ body, html {
 /* CARA DE RON */
 .face-container {
     position: absolute;
-    top: 45%; /* Bajado del 50% al 45% para que los ojos respiren v14.3 */
+    top: 55%; /* Bajado mucho más para que los ojos estén centrados verticalmente v15.0 */
     left: 50%;
     transform: translate(-50%, -50%);
     width: 100%;
@@ -78,7 +78,8 @@ body, html {
     justify-content: space-between;
     width: 280px; 
     max-width: 85%;
-    margin-bottom: 5px; /* Boca casi a nivel de ojos v14.4 */
+    margin-bottom: -15px; /* Boca ENCIMA de la base de los ojos v15.0 */
+    z-index: 2;
 }
 
 .eye {
@@ -104,14 +105,15 @@ body, html {
 @keyframes blink-anim { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.01); } }
 .eye.blink { animation: blink-anim 0.15s ease-in-out; }
 
-/* BOCA (RESCATE v14.3) */
+/* BOCA (MASTERCLASS v15.0) */
 .mouth-layer {
-    width: 100px; /* Un poco más pequeña v14.4 */
-    height: 50px;
+    width: 90px;
+    height: 45px;
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-bottom: 30px; /* Espacio hacia el pecho */
+    margin-bottom: 40px; /* Espacio para el pecho */
+    z-index: 1;
 }
 .mouth-svg { 
     width: 100%; 
@@ -146,15 +148,16 @@ body, html {
 .mic-toggle-btn.off { background: rgba(230, 57, 70, 0.5); }
 .ble-btn.active { background: #00d4ff; box-shadow: 0 0 15px #00d4ff; }
 
-/* PECHO (v13.0) */
+/* PECHO (v15.0) */
 .chest-icon-container {
-    width: 120px;
-    height: 120px;
-    margin-top: 40px;
+    width: 100px;
+    height: 100px;
+    margin-top: 10px;
     display: flex;
     justify-content: center;
     align-items: center;
-    opacity: 0.9;
+    opacity: 1;
+    z-index: 5;
 }
 .chest-icon-container svg { width: 100%; height: 100%; filter: drop-shadow(0 0 10px rgba(255,255,255,0.5)); }
 .heart-beat { animation: heart-beat 1s infinite; }
