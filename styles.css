@@ -9,7 +9,7 @@ body, html {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background-color: #000000;
+    background-color: #ffffff; /* Blanco base */
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -20,7 +20,7 @@ body, html {
     justify-content: center;
     align-items: center;
     position: relative;
-    background: radial-gradient(circle at center, #111 0%, #000000 100%);
+    background: radial-gradient(circle at center, #ffffff 0%, #e6f0f8 100%); /* Blanco azulado */
 }
 
 .face-container {
@@ -45,10 +45,10 @@ body, html {
 .eye {
     width: 80px;
     height: 120px;
-    background-color: white;
+    background-color: #1a1a1a; /* Gris muy oscuro/negro */
     border-radius: 50%;
-    /* Efecto de brillo sutil */
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+    /* Efecto de profundidad sutil en lugar de brillo exterior */
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
     transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
 }
@@ -65,7 +65,7 @@ body, html {
 .mouth-svg {
     width: 100%;
     height: 100%;
-    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1));
 }
 
 /* Estados de Ojos */

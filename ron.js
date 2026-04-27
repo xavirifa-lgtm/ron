@@ -15,6 +15,7 @@ const ronFace = {
 
     init() {
         console.log("Ron activado. ¡Bip-bup!");
+        this.setExpression('neutral');
         this.startBlinkCycle();
         this.setupInteractions();
     },
@@ -48,13 +49,13 @@ const ronFace = {
         if (expression === 'laugh') {
             this.eyes.left.classList.add('laugh');
             this.eyes.right.classList.add('laugh');
-            this.updateMouth('M 10 20 Q 50 40 90 20'); // Sonrisa
+            this.updateMouth('M 5 15 Q 50 45 95 15'); // Gran sonrisa
         } else if (expression === 'surprise') {
             this.eyes.left.classList.add('surprise');
             this.eyes.right.classList.add('surprise');
-            this.updateMouth('M 30 20 Q 50 35 70 20'); // Oh!
+            this.updateMouth('M 30 25 Q 50 35 70 25'); // Oh!
         } else {
-            this.updateMouth('M 10 15 Q 50 15 90 15'); // Neutral
+            this.updateMouth('M 10 20 Q 50 40 90 20'); // Sonrisa suave (Neutral)
         }
     },
 
