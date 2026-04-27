@@ -142,8 +142,8 @@ const ronFace = {
             case 'IDLE':
                 this.setEyeColor('#1a1a1a'); 
                 if (this.isMicEnabled) {
-                    // Aumentamos el retraso a 4 segundos para que no pite tan seguido si hay silencio
-                    setTimeout(() => this.startListening(), 4000);
+                    // Reducido a 1s para ser más sensible, aunque pite más seguido
+                    setTimeout(() => this.startListening(), 1000);
                 }
                 break;
             case 'LISTENING':
@@ -231,7 +231,7 @@ const ronFace = {
 
     // --- CAPTURA DE FOTO OPTIMIZADA (VISTA MUNDO) ---
     captureOptimizedFrame() {
-        const MAX_SIZE = 320; // Resolución pequeña para Groq Llama 3 Vision
+        const MAX_SIZE = 1024; // Resolución HD para reconocimiento de alta precisión
         const canvas = document.createElement('canvas');
         let width = this.video.videoWidth;
         let height = this.video.videoHeight;
