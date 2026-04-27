@@ -109,8 +109,8 @@ const ronFace = {
     },
 
     async startCamera() {
-        // HACK: Pedimos audio=true para mantener el canal OS abierto y evitar pitidos del dictado
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
+        // REVERTIDO: Pedir audio=true bloqueaba el dictado de voz en Android.
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
         this.video.srcObject = stream;
         return new Promise(res => this.video.onloadedmetadata = res);
     },
@@ -142,7 +142,8 @@ const ronFace = {
             case 'IDLE':
                 this.setEyeColor('#1a1a1a'); 
                 if (this.isMicEnabled) {
-                    setTimeout(() => this.startListening(), 2000);
+                    // Aumentamos el retraso a 4 segundos para que no pite tan seguido si hay silencio
+                    setTimeout(() => this.startListening(), 4000);
                 }
                 break;
             case 'LISTENING':
