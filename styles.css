@@ -1,0 +1,101 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: none; /* Ocultar cursor para inmersión */
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #000000;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.ron-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    background: radial-gradient(circle at center, #111 0%, #000000 100%);
+}
+
+.face-container {
+    width: 80%;
+    height: 60%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10vh;
+}
+
+/* Ojos dinámicos */
+.eyes-layer {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 600px;
+    padding: 0 50px;
+}
+
+.eye {
+    width: 80px;
+    height: 120px;
+    background-color: white;
+    border-radius: 50%;
+    /* Efecto de brillo sutil */
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+    transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+}
+
+/* Boca minimalista */
+.mouth-layer {
+    width: 200px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.mouth-svg {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+}
+
+/* Estados de Ojos */
+.eye.blink {
+    transform: scaleY(0.01);
+}
+
+.eye.laugh {
+    height: 40px;
+    border-radius: 0 0 100px 100px;
+    transform: translateY(20px);
+}
+
+.eye.surprise {
+    width: 120px;
+    height: 120px;
+}
+
+/* Animación de Habla (se activará por JS) */
+@keyframes vibrate {
+    0% { transform: translateY(0); }
+    25% { transform: translateY(-2px) scaleX(1.05); }
+    75% { transform: translateY(2px) scaleX(0.95); }
+    100% { transform: translateY(0); }
+}
+
+.mouth-vibrate {
+    animation: vibrate 0.1s infinite;
+}
+
+.hidden {
+    display: none;
+}

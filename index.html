@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Ron B*Bot</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+    <div id="ron-app" class="ron-container">
+        <!-- Capa de Visión (Opcional para debug) -->
+        <video id="webcam" autoplay playsinline style="display: none;"></video>
+        <canvas id="vision-canvas" style="display: none;"></canvas>
+
+        <!-- Cara de Ron -->
+        <div class="face-container">
+            <div class="eyes-layer">
+                <div id="eye-left" class="eye"></div>
+                <div id="eye-right" class="eye"></div>
+            </div>
+            <div class="mouth-layer">
+                <svg viewBox="0 0 100 40" class="mouth-svg">
+                    <path id="mouth-path" d="M 10 10 Q 50 10 90 10" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+            </div>
+        </div>
+
+        <!-- UI de Control (Invisible por defecto) -->
+        <div id="debug-info" class="hidden"></div>
+    </div>
+    <script src="ron.js"></script>
+</body>
+</html>
