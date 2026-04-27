@@ -149,6 +149,43 @@ body, html {
     animation: vibrate 0.1s infinite;
 }
 
+/* Pantalla de Inicio / Boot */
+.boot-screen {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: var(--ron-dark);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+#power-btn {
+    padding: 20px 40px;
+    font-size: 24px;
+    background: var(--glitch-cyan);
+    color: var(--ron-dark);
+    border: none;
+    border-radius: 50px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 0 20px var(--glitch-cyan);
+}
+
+.debug-overlay {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 1001;
+}
+
 /* Modal de Configuración API */
 .api-modal {
     position: absolute;
