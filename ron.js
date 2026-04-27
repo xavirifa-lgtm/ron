@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 9.6 (SÚPER ESTABLE)
+ * Ron B*Bot AI - Versión 9.9 (CORRECCIÓN DE MODELO LLAMA 4)
  */
 
 const ronFace = {
@@ -43,14 +43,9 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Encendiendo v9.6 estable...");
+        this.log("Iniciando v9.9 (Llama 4)...");
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
-        
-        this.powerBtn.onclick = async () => {
-            this.powerBtn.style.display = 'none';
-            await this.init();
-        };
-        
+        this.powerBtn.onclick = async () => { this.powerBtn.style.display = 'none'; await this.init(); };
         this.micToggleBtn.onclick = () => {
             this.isMicEnabled = !this.isMicEnabled;
             this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ MICRO ON" : "🔇 MICRO OFF";
@@ -69,7 +64,7 @@ const ronFace = {
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
-            this.speak("¡Bip! Estoy de vuelta. Mis sistemas están ahora al cien por cien de estabilidad.");
+            this.speak("¡Bip! Hola. He actualizado mi cerebro al modelo Llama 4. ¿Me oyes bien?");
             this.goFullscreen();
         } catch (err) {
             this.log(`Error: ${err.message}`);
@@ -156,17 +151,14 @@ const ronFace = {
                         if (this.currentUser !== found) {
                             this.currentUser = found;
                             this.setExpression(this.currentEmotion === 'feliz' ? 'happy' : 'neutral');
-                            this.speak(`¡Bip! Hola ${found}, qué alegría verte. Te veo ${this.currentEmotion}.`);
+                            this.speak(`¡Bip! Hola ${found}, te veo ${this.currentEmotion}.`);
                         } else if (this.currentEmotion !== this.lastEmotion) {
                             if (this.currentEmotion === 'triste' || this.currentEmotion === 'enfadado') {
                                 this.setExpression('fear');
-                                this.speak(`¡Oh, bip! ${this.currentUser}, ahora te veo un poco ${this.currentEmotion}. ¿Te ha pasado algo?`);
+                                this.speak(`¡Oh, bip! ${this.currentUser}, ahora te veo un poco ${this.currentEmotion}. ¿Estás bien?`);
                             } else if (this.currentEmotion === 'feliz') {
                                 this.setExpression('happy');
-                                this.speak(`¡Bip! ¡Qué bien! Ahora te veo muy feliz, ${this.currentUser}.`);
-                            } else if (this.currentEmotion === 'sorprendido') {
-                                this.setExpression('star');
-                                this.speak(`¡Bip! ¡Wala! ¿Qué ha pasado?`);
+                                this.speak(`¡Bip! ¡Qué bien! Ahora te veo muy feliz.`);
                             }
                         }
                     } else if (!this.isLearningFace) {
@@ -204,22 +196,25 @@ const ronFace = {
         this.currentUser = name;
         this.isLearningFace = false;
         this.tempDescriptor = null;
-        this.speak(`¡Bip! Encantado, ${name}. Ya te tengo en mi memoria.`);
+        this.speak(`¡Bip! Encantado, ${name}.`);
     },
 
     handleInput(text) {
         const t = text.toLowerCase();
         if (t.includes("quién soy") || t.includes("sabes mi nombre")) {
-            return this.speak(this.currentUser ? `Eres ${this.currentUser}.` : "Aún no te conozco.");
+            return this.speak(this.currentUser ? `Eres ${this.currentUser}.` : "Aún no lo sé.");
         }
         if (t.includes("qué puedes hacer") || t.includes("que puedes hacer")) {
-            return this.speak("Puedo jugar, contarte cuentos o ayudarte a leer libros. ¡Tú decides!");
+            return this.speak("¡Bip! Puedo jugar, contar cuentos o leer tus libros.");
         }
         this.chat(text);
     },
 
     async chat(userText) {
-        if (!this.apiKey) return;
+        if (!this.apiKey) {
+            this.apiModal.classList.remove('hidden');
+            return;
+        }
         this.changeState('THINKING');
         this.setExpression('thinking');
 
@@ -231,12 +226,14 @@ const ronFace = {
         if (!this.userHistories[userKey]) this.userHistories[userKey] = [];
         let history = this.userHistories[userKey];
 
-        let sys = `Eres Ron B-Bot. Alegre, torpe y empático. Hablas con ${userKey}. Usa '¡Bip!'. Ahora estás viendo que está ${this.currentEmotion}.`;
+        let sys = `Eres Ron B-Bot. Alegre, torpe y empático. Hablas con ${userKey}. 
+        Usa '¡Bip!'. Estás viendo que el niño está ${this.currentEmotion}.`;
 
         let body = { model, messages: [] };
         if (isV) {
+            this.log(`Usando Vision (${model})...`);
             const img = this.captureOptimizedFrame();
-            let p = `[SISTEMA] ${sys}\n[MENSAJE ACTUAL]: ${userText}`;
+            let p = `${sys}\n[MENSAJE]: ${userText}`;
             body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: img } } ] }];
         } else {
             body.messages = [{ role: "system", content: sys }];
@@ -251,9 +248,13 @@ const ronFace = {
                 body: JSON.stringify(body)
             });
             const data = await res.json();
-            if (!data.choices?.[0]) throw new Error();
-            const resp = data.choices[0].message.content;
             
+            if (!res.ok) {
+                this.log(`Error API (${res.status}): ${data.error?.message || 'Fallo Groq'}`);
+                throw new Error(data.error?.message || "Error en la nube");
+            }
+
+            const resp = data.choices[0].message.content;
             history.push({ role: "user", content: userText });
             history.push({ role: "assistant", content: resp });
             if (history.length > 15) history.shift();
@@ -261,7 +262,7 @@ const ronFace = {
             localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
             this.speak(resp);
         } catch (e) {
-            this.log("Error IA");
+            this.log(`Fallo: ${e.message}`);
             this.speak("¡Bip! He tenido un fallo mental. ¿Puedes repetir?");
             this.changeState('IDLE');
         }
@@ -270,7 +271,7 @@ const ronFace = {
     captureOptimizedFrame() {
         document.body.style.backgroundColor = "white";
         setTimeout(() => document.body.style.backgroundColor = "", 100);
-        const MAX = 1024;
+        const MAX = 800; // Un poco más pequeña para asegurar que pase
         const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
@@ -278,7 +279,7 @@ const ronFace = {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.8);
+        return canvas.toDataURL('image/jpeg', 0.6); // Más compresión
     },
 
     speak(text) {
@@ -304,11 +305,7 @@ const ronFace = {
 
     setExpression(exp) {
         this.expressionState = exp;
-        [this.eyes.left, this.eyes.right].forEach(el => {
-            el.className = 'eye';
-            el.style.transform = ''; 
-        });
-
+        [this.eyes.left, this.eyes.right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
         if (exp === 'happy') { 
             this.updateMouth('M 15 25 Q 50 55 85 25 Q 50 45 15 25 Z');
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); 
@@ -327,14 +324,7 @@ const ronFace = {
             this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); 
             this.startGlitchEffect(); 
         }
-        else if (exp === 'glitch') { 
-            this.startGlitchEffect(); 
-            this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('star'); 
-        }
-        else { 
-            this.updateMouth('M 30 25 Q 50 40 70 25 Q 50 35 30 25 Z'); 
-            this.stopGlitchEffect(); 
-        }
+        else { this.updateMouth('M 30 25 Q 50 40 70 25 Q 50 35 30 25 Z'); this.stopGlitchEffect(); }
     },
 
     shiftEyes() {
