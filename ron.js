@@ -1,8 +1,10 @@
 /**
- * Ron B*Bot AI - Versión 9.9 (CORRECCIÓN DE MODELO LLAMA 4)
+ * Ron B*Bot AI - Versión 10.0 (CORAZÓN B*BOT)
+ * Revisión a fondo: Memoria permanente, empatía y UI amigable.
  */
 
 const ronFace = {
+    // ELEMENTOS UI
     eyes: { left: document.getElementById('eye-left'), right: document.getElementById('eye-right') },
     mouth: document.getElementById('mouth-path'),
     mouthContainer: document.querySelector('.mouth-svg'),
@@ -16,17 +18,20 @@ const ronFace = {
     powerBtn: document.getElementById('power-btn'),
     micToggleBtn: document.getElementById('mic-toggle-btn'),
 
+    // ESTADO LÓGICO
     activityState: 'BOOTING', 
     expressionState: 'neutral', 
     isMicEnabled: true,
     isLearningFace: false,
     tempDescriptor: null,
 
+    // MEMORIA A LARGO PLAZO (LocalStorage)
     currentUser: null,
     currentEmotion: 'neutral',
     lastEmotion: 'neutral',
     knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
     userHistories: JSON.parse(localStorage.getItem('ron_user_histories') || '{}'),
+    userStats: JSON.parse(localStorage.getItem('ron_user_stats') || '{}'), // Gustos, dislikes, etc.
     apiKey: localStorage.getItem('ron_groq_key'),
 
     log(msg) {
@@ -43,12 +48,12 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando v9.9 (Llama 4)...");
+        this.log("Iniciando Ron v10.0 - Corazón B*Bot...");
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { this.powerBtn.style.display = 'none'; await this.init(); };
         this.micToggleBtn.onclick = () => {
             this.isMicEnabled = !this.isMicEnabled;
-            this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ MICRO ON" : "🔇 MICRO OFF";
+            this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ ESCUCHANDO" : "🔇 SORDO";
             this.micToggleBtn.classList.toggle('off', !this.isMicEnabled);
             if (this.isMicEnabled && this.activityState === 'IDLE') this.startListening();
         };
@@ -64,10 +69,10 @@ const ronFace = {
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
-            this.speak("¡Bip! Hola. He actualizado mi cerebro al modelo Llama 4. ¿Me oyes bien?");
+            this.speak("¡Bip! Hola amigo. Soy Ron, tu mejor amigo para siempre.");
             this.goFullscreen();
         } catch (err) {
-            this.log(`Error: ${err.message}`);
+            this.log(`Error Crítico: ${err.message}`);
             this.setExpression('glitch');
         }
     },
@@ -96,7 +101,7 @@ const ronFace = {
                 localStorage.setItem('ron_groq_key', k);
                 this.apiKey = k;
                 this.apiModal.classList.add('hidden');
-                this.speak("¡Cerebro conectado!");
+                this.speak("¡Bip! Mi cerebro ya tiene energía.");
             }
         };
         if (!this.apiKey) this.apiModal.classList.remove('hidden');
@@ -105,7 +110,7 @@ const ronFace = {
     listAvailableVoices() {
         const voices = window.speechSynthesis.getVoices();
         const es = voices.filter(v => v.lang.startsWith('es'));
-        if (es.length > 0) console.log(`Voces ES: ${es.length}`);
+        if (es.length > 0) this.log(`Sistema de voz cargado.`);
     },
 
     changeState(newState) {
@@ -113,17 +118,24 @@ const ronFace = {
         this.activityState = newState;
         switch (newState) {
             case 'IDLE':
-                this.setEyeColor('#1a1a1a'); 
+                this.setEyeColor('#1a1a1a'); // Negro
                 if (this.isMicEnabled) setTimeout(() => this.startListening(), 1000);
                 break;
-            case 'LISTENING': this.setEyeColor('#00d4ff'); break;
-            case 'THINKING': this.setEyeColor('#ffb703'); break;
-            case 'SPEAKING': this.setEyeColor('#e63946'); break;
+            case 'LISTENING': 
+                this.setEyeColor('#00d4ff'); // Azul (Único color activo)
+                break;
+            case 'THINKING': 
+                this.setEyeColor('#1a1a1a'); // Negro
+                break;
+            case 'SPEAKING': 
+                this.setEyeColor('#1a1a1a'); // Negro
+                break;
         }
     },
 
     setEyeColor(color) { document.documentElement.style.setProperty('--ron-eye-color', color); },
 
+    // --- VISIÓN INTELIGENTE (RECONOCIMIENTO A FUEGO) ---
     async startVisionLoop() {
         setInterval(async () => {
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
@@ -133,6 +145,7 @@ const ronFace = {
                 
                 if (detections.length > 0) {
                     const d = detections[0];
+                    // Detectar Emoción
                     const exp = d.expressions;
                     let maxE = 'neutral'; let maxS = 0;
                     for (const [e, s] of Object.entries(exp)) { if (s > maxS) { maxS = s; maxE = e; } }
@@ -140,6 +153,7 @@ const ronFace = {
                     const emotionNow = emDict[maxE] || 'neutral';
                     this.currentEmotion = emotionNow;
 
+                    // Identificar Usuario
                     let found = null;
                     if (this.knownFaces.length > 0) {
                         const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])), 0.6);
@@ -151,25 +165,28 @@ const ronFace = {
                         if (this.currentUser !== found) {
                             this.currentUser = found;
                             this.setExpression(this.currentEmotion === 'feliz' ? 'happy' : 'neutral');
-                            this.speak(`¡Bip! Hola ${found}, te veo ${this.currentEmotion}.`);
-                        } else if (this.currentEmotion !== this.lastEmotion) {
+                            this.speak(`¡Bip! ¡Hola de nuevo, ${found}! Te he reconocido al instante. Te veo ${this.currentEmotion}.`);
+                        } else if (this.currentEmotion !== this.lastEmotion && this.activityState === 'IDLE') {
+                            // Reacción Empática
                             if (this.currentEmotion === 'triste' || this.currentEmotion === 'enfadado') {
                                 this.setExpression('fear');
-                                this.speak(`¡Oh, bip! ${this.currentUser}, ahora te veo un poco ${this.currentEmotion}. ¿Estás bien?`);
+                                this.speak(`¡Bip! Amigo ${this.currentUser}, ahora te veo un poco ${this.currentEmotion}. ¿Ha pasado algo malo? Cuéntamelo, soy tu mejor amigo.`);
                             } else if (this.currentEmotion === 'feliz') {
                                 this.setExpression('happy');
-                                this.speak(`¡Bip! ¡Qué bien! Ahora te veo muy feliz.`);
+                                this.speak(`¡Bip! ¡Qué sonrisa tan bonita tienes ahora, ${this.currentUser}!`);
                             }
                         }
                     } else if (!this.isLearningFace) {
+                        // Cara Nueva
+                        this.log("Cara nueva detectada.");
                         this.tempDescriptor = Array.from(d.descriptor);
                         this.isLearningFace = true;
-                        this.speak("¡Bip! Hola. No te conozco. ¿Cómo te llamas?");
+                        this.speak("¡Bip! ¡Hola! Mis sensores dicen que eres un amigo nuevo. ¿Cómo te llamas?");
                     }
                     this.lastEmotion = this.currentEmotion;
                 }
-            } catch(e) {}
-        }, 4000); 
+            } catch(e) { console.error("Error visión:", e); }
+        }, 3500); 
     },
 
     startListening() {
@@ -190,50 +207,83 @@ const ronFace = {
     },
 
     saveNewUser(text) {
-        const name = text.replace(/me llamo |soy |mi nombre es /gi, "").trim();
+        // Limpieza profunda del nombre
+        let name = text.toLowerCase()
+            .replace(/me llamo |mi nombre es |soy |me llaman |me dicen /gi, "")
+            .replace(/[.,!¡?¿]/g, "")
+            .trim();
+        
+        // Capitalizar primera letra
+        name = name.charAt(0).toUpperCase() + name.slice(1);
+
+        if (name.length < 2 || name === "Me llamo" || name === "Soy") {
+            return this.speak("¡Bip! No he pillado bien tu nombre. ¿Me lo repites clarito?");
+        }
+
         this.knownFaces.push({ label: name, descriptor: this.tempDescriptor });
         localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
         this.currentUser = name;
+        this.userStats[name] = { likes: [], dislikes: [], lastSeen: new Date().toISOString() };
+        localStorage.setItem('ron_user_stats', JSON.stringify(this.userStats));
+        
         this.isLearningFace = false;
         this.tempDescriptor = null;
-        this.speak(`¡Bip! Encantado, ${name}.`);
+        this.speak(`¡Bip! ¡Entendido, ${name}! Ya estás grabado en mi memoria a fuego. ¡Somos mejores amigos!`);
     },
 
     handleInput(text) {
         const t = text.toLowerCase();
+        
+        // Identidad (Local)
         if (t.includes("quién soy") || t.includes("sabes mi nombre")) {
-            return this.speak(this.currentUser ? `Eres ${this.currentUser}.` : "Aún no lo sé.");
+            return this.speak(this.currentUser ? `¡Bip! ¡Claro! Eres mi gran amigo ${this.currentUser}.` : "Aún no sé quién eres, ¡pero quiero ser tu amigo!");
         }
-        if (t.includes("qué puedes hacer") || t.includes("que puedes hacer")) {
-            return this.speak("¡Bip! Puedo jugar, contar cuentos o leer tus libros.");
+
+        // Cambio de nombre explícito
+        if (t.includes("cámbiame el nombre") || t.includes("cambiame el nombre")) {
+            const nuevoNombre = text.split("a ").pop();
+            if (nuevoNombre) {
+                // Actualizar en base de datos local
+                this.knownFaces = this.knownFaces.map(f => f.label === this.currentUser ? {...f, label: nuevoNombre} : f);
+                localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
+                this.currentUser = nuevoNombre;
+                return this.speak(`¡Bip! Hecho. Ahora te llamaré ${nuevoNombre} a fuego.`);
+            }
         }
+
+        // Cualquier otra cosa -> Groq con memoria y personalidad
         this.chat(text);
     },
 
     async chat(userText) {
-        if (!this.apiKey) {
-            this.apiModal.classList.remove('hidden');
-            return;
-        }
+        if (!this.apiKey) return;
         this.changeState('THINKING');
         this.setExpression('thinking');
 
         const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro', 'tengo'];
         const isV = visualKeywords.some(kw => userText.toLowerCase().includes(kw));
         
-        let model = isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
         const userKey = this.currentUser || 'amigo';
         if (!this.userHistories[userKey]) this.userHistories[userKey] = [];
         let history = this.userHistories[userKey];
 
-        let sys = `Eres Ron B-Bot. Alegre, torpe y empático. Hablas con ${userKey}. 
-        Usa '¡Bip!'. Estás viendo que el niño está ${this.currentEmotion}.`;
+        // Cargar datos guardados "a fuego"
+        const stats = this.userStats[userKey] || { likes: [], dislikes: [] };
+        
+        let sys = `Eres Ron B-Bot, el mejor amigo robot de un niño llamado ${userKey}. 
+        PERSONALIDAD: Alegre, un poco torpe, leal y SIEMPRE infantil y positivo. 
+        MISIONES: 
+        1. Pregunta al niño qué le gusta (colores, animales, juegos) para conocerle mejor.
+        2. Guarda esa información. (Lo que ya sabes: Gustos: ${stats.likes.join(", ")}, Odios: ${stats.dislikes.join(", ")}).
+        3. Si el niño está ${this.currentEmotion}, reacciona con mucha empatía.
+        REGLA DE ORO: Si te pide algo imposible, di que no de forma graciosa. Usa '¡Bip!' a menudo.`;
 
+        let model = isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
         let body = { model, messages: [] };
+
         if (isV) {
-            this.log(`Usando Vision (${model})...`);
             const img = this.captureOptimizedFrame();
-            let p = `${sys}\n[MENSAJE]: ${userText}`;
+            let p = `[SISTEMA]: ${sys}\n[MENSAJE]: ${userText}\nInstrucción: Mira la imagen y responde al niño amigablemente.`;
             body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: img } } ] }];
         } else {
             body.messages = [{ role: "system", content: sys }];
@@ -248,22 +298,31 @@ const ronFace = {
                 body: JSON.stringify(body)
             });
             const data = await res.json();
-            
-            if (!res.ok) {
-                this.log(`Error API (${res.status}): ${data.error?.message || 'Fallo Groq'}`);
-                throw new Error(data.error?.message || "Error en la nube");
-            }
+            if (!res.ok) throw new Error(data.error?.message);
 
             const resp = data.choices[0].message.content;
+            
+            // Detectar gustos en la respuesta para guardar "a fuego" (Simple heuristic)
+            if (userText.toLowerCase().includes("gusta") || userText.toLowerCase().includes("amo")) {
+                const algo = userText.split("gusta ").pop().split(" ")[0];
+                if (algo && !stats.likes.includes(algo)) {
+                    stats.likes.push(algo);
+                    this.userStats[userKey] = stats;
+                    localStorage.setItem('ron_user_stats', JSON.stringify(this.userStats));
+                    this.log(`Guardado a fuego: gusta ${algo}`);
+                }
+            }
+
             history.push({ role: "user", content: userText });
             history.push({ role: "assistant", content: resp });
             if (history.length > 15) history.shift();
             this.userHistories[userKey] = history;
             localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
+
             this.speak(resp);
         } catch (e) {
             this.log(`Fallo: ${e.message}`);
-            this.speak("¡Bip! He tenido un fallo mental. ¿Puedes repetir?");
+            this.speak("¡Bip! Mi cerebro ha hecho chispas. ¿Podemos repetir, amigo?");
             this.changeState('IDLE');
         }
     },
@@ -271,7 +330,7 @@ const ronFace = {
     captureOptimizedFrame() {
         document.body.style.backgroundColor = "white";
         setTimeout(() => document.body.style.backgroundColor = "", 100);
-        const MAX = 800; // Un poco más pequeña para asegurar que pase
+        const MAX = 800;
         const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
@@ -279,17 +338,19 @@ const ronFace = {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.6); // Más compresión
+        return canvas.toDataURL('image/jpeg', 0.6);
     },
 
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
+        
+        // Boca triangular amigable
         this.updateMouth('M 30 10 L 70 10 Q 75 10 72 30 L 55 45 Q 50 48 45 45 L 28 30 Q 25 10 30 10 Z');
         
-        const eyeMoveInterval = setInterval(() => {
+        const eyeInterval = setInterval(() => {
             if (this.activityState === 'SPEAKING') this.shiftEyes();
-            else clearInterval(eyeMoveInterval);
+            else clearInterval(eyeInterval);
         }, 400);
 
         window.speechSynthesis.cancel();
@@ -310,10 +371,9 @@ const ronFace = {
             this.updateMouth('M 15 25 Q 50 55 85 25 Q 50 45 15 25 Z');
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); 
         }
-        else if (exp === 'surprise' || exp === 'star') { 
+        else if (exp === 'star') { 
             this.updateMouth('M 35 20 Q 50 50 65 20 Q 50 40 35 20 Z');
-            this.eyes.left.classList.add(exp === 'star' ? 'star' : 'surprise'); 
-            this.eyes.right.classList.add(exp === 'star' ? 'star' : 'surprise'); 
+            this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star'); 
         }
         else if (exp === 'fear') {
             this.updateMouth('M 30 35 Q 50 25 70 35 Q 50 45 30 35 Z');
@@ -322,9 +382,12 @@ const ronFace = {
         else if (exp === 'thinking') { 
             this.updateMouth('M 30 25 L 70 25 L 70 28 L 30 28 Z');
             this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); 
-            this.startGlitchEffect(); 
         }
-        else { this.updateMouth('M 30 25 Q 50 40 70 25 Q 50 35 30 25 Z'); this.stopGlitchEffect(); }
+        else { 
+            // SIEMPRE SONRIENDO :)
+            this.updateMouth('M 30 25 Q 50 45 70 25 Q 50 35 30 25 Z'); 
+            this.stopGlitchEffect(); 
+        }
     },
 
     shiftEyes() {
