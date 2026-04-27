@@ -58,7 +58,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v13.0 - Edición Expresión Total...");
+        this.log("Iniciando Ron v14.0 - Edición B*Bot Link...");
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
                 height: '1', width: '1', videoId: 'dQw4w9WgXcQ',
@@ -200,6 +200,9 @@ const ronFace = {
             this.sendMove(`T${Math.round(this.ble.lastTilt)}\n`);
         }
     },
+    // --- VISIÓN INTELIGENTE (v14.0 B*BOT LINK) ---
+    async startVisionLoop() {
+        setInterval(async () => {
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
             try {
                 const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
