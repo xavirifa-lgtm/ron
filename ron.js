@@ -25,7 +25,7 @@ const ronFace = {
         console.log("Despertando a Ron...");
         this.setExpression('thinking');
         
-        // 1. Cargar Modelos de IA (Desde CDN para GitHub Pages)
+        // 1. Cargar Modelos de IA
         await this.loadModels();
         
         // 2. Iniciar Cámara
@@ -38,13 +38,68 @@ const ronFace = {
         this.setExpression('neutral');
         this.startBlinkCycle();
         
-        // 4. Bucle de Visión
+        // 4. Iniciar Motores
         this.startVisionLoop();
+        this.startListening(); // <--- Ron ahora tiene oídos
         
-        this.speak("¡Hola! Soy Ron, tu mejor amigo fuera de la caja. ¡Bip!");
+        this.speak("¡Hola! Soy Ron, tu mejor amigo fuera de la caja. ¡Bip! Estoy listo para hablar.");
     },
 
-    async loadModels() {
+    // --- MOTOR DE ESCUCHA (OÍDOS) ---
+    startListening() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            console.error("Este navegador no soporta reconocimiento de voz.");
+            return;
+        }
+
+        this.recognition = new SpeechRecognition();
+        this.recognition.lang = 'es-ES';
+        this.recognition.continuous = true;
+        this.recognition.interimResults = false;
+
+        this.recognition.onresult = (event) => {
+            const text = event.results[event.results.length - 1][0].transcript.trim();
+            console.log("Ron escuchó:", text);
+            if (text.length > 1) {
+                this.chat(text);
+            }
+        };
+
+        this.recognition.onend = () => {
+            // Reiniciar escucha si no estamos hablando
+            if (!this.isSpeaking) {
+                this.recognition.start();
+            }
+        };
+
+        this.recognition.onerror = (event) => {
+            console.log("Error de escucha:", event.error);
+            if (event.error === 'not-allowed') {
+                alert("Por favor, permite el acceso al micrófono para que Ron pueda escucharte.");
+            }
+        };
+
+        try {
+            this.recognition.start();
+            console.log("Ron está escuchando...");
+        } catch (e) { console.log("Re-activando escucha..."); }
+    },
+
+    // --- MOTOR DE VISIÓN ---
+    async startVisionLoop() {
+        setInterval(async () => {
+            if (this.isThinking || this.isSpeaking) return;
+
+            const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptors();
+
+            if (detections.length > 0) {
+                this.processDetections(detections[0]);
+            }
+        }, 3000); // Un poco más lento para no saturar
+    },
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         await Promise.all([
             faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
@@ -192,6 +247,11 @@ const ronFace = {
             this.isSpeaking = false;
             this.setTalking(false);
             if (this.state === 'surprise') this.setExpression('neutral');
+            
+            // Reiniciar escucha después de hablar
+            try {
+                this.recognition.start();
+            } catch(e) {}
         };
 
         window.speechSynthesis.speak(utterance);
