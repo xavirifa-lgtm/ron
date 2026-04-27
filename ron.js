@@ -8,6 +8,8 @@ const ronFace = {
     eyes: { left: document.getElementById('eye-left'), right: document.getElementById('eye-right') },
     mouth: document.getElementById('mouth-path'),
     mouthContainer: document.querySelector('.mouth-svg'),
+    chestIcon: document.getElementById('chest-icon-container'),
+    bleBtn: document.getElementById('ble-connect-btn'), // Nuevo v14.0
     glitchOverlay: document.getElementById('glitch-overlay'),
     video: document.getElementById('webcam'),
     apiModal: document.getElementById('api-modal'),
@@ -23,7 +25,15 @@ const ronFace = {
     expressionState: 'neutral', 
     isMicEnabled: true,
     isLearningFace: false,
-    tempDescriptor: null,
+    isWaitingForWakeWord: true,
+    // ESTADO BLE (Bluetooth) v14.0
+    ble: {
+        device: null,
+        characteristic: null,
+        isConnected: false,
+        lastPan: 90,
+        lastTilt: 90
+    },
 
     // MEMORIA A LARGO PLAZO (LocalStorage)
     currentUser: null,
@@ -48,15 +58,21 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v10.0 - Corazón B*Bot...");
+        this.log("Iniciando Ron v13.0 - Edición Expresión Total...");
+        window.onYouTubeIframeAPIReady = () => {
+            this.ytPlayer = new YT.Player('ron-yt-player', {
+                height: '1', width: '1', videoId: 'dQw4w9WgXcQ',
+                events: { 'onReady': () => this.log("Reproductor YouTube listo.") }
+            });
+        };
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { this.powerBtn.style.display = 'none'; await this.init(); };
         this.micToggleBtn.onclick = () => {
             this.isMicEnabled = !this.isMicEnabled;
-            this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ ESCUCHANDO" : "🔇 SORDO";
             this.micToggleBtn.classList.toggle('off', !this.isMicEnabled);
             if (this.isMicEnabled && this.activityState === 'IDLE') this.startListening();
         };
+        this.bleBtn.onclick = () => this.connectBLE(); // Link v14.0
     },
 
     async init() {
@@ -135,9 +151,55 @@ const ronFace = {
 
     setEyeColor(color) { document.documentElement.style.setProperty('--ron-eye-color', color); },
 
-    // --- VISIÓN INTELIGENTE (RECONOCIMIENTO A FUEGO) ---
-    async startVisionLoop() {
-        setInterval(async () => {
+    // --- GESTIÓN BLUETOOTH (v14.0) ---
+    async connectBLE() {
+        try {
+            this.log("Buscando B*Bot ESP32...");
+            this.ble.device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'Ron' }, { namePrefix: 'B-Bot' }],
+                optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb'] // UUID común para serial BLE
+            });
+            const server = await this.ble.device.gatt.connect();
+            const service = await server.getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+            this.ble.characteristic = await service.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+            
+            this.ble.isConnected = true;
+            this.bleBtn.classList.add('active');
+            this.speak("¡Bip! Conexión de motores establecida.");
+            this.log("BLE Conectado.");
+        } catch (e) {
+            this.log(`Error BLE: ${e.message}`);
+        }
+    },
+
+    sendMove(cmd) {
+        if (!this.ble.isConnected || !this.ble.characteristic) return;
+        const enc = new TextEncoder();
+        this.ble.characteristic.writeValue(enc.encode(cmd));
+    },
+
+    trackFace(detection) {
+        if (!this.ble.isConnected) return;
+        const box = detection.detection.box;
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        
+        // Calcular error respecto al centro de la imagen (0.5, 0.5)
+        const errX = (centerX / this.video.videoWidth) - 0.5;
+        const errY = (centerY / this.video.videoHeight) - 0.5;
+
+        // Ajustar Pan/Tilt (Sensibilidad suave)
+        if (Math.abs(errX) > 0.1) {
+            this.ble.lastPan -= errX * 20;
+            this.ble.lastPan = Math.max(0, Math.min(180, this.ble.lastPan));
+            this.sendMove(`P${Math.round(this.ble.lastPan)}\n`);
+        }
+        if (Math.abs(errY) > 0.1) {
+            this.ble.lastTilt += errY * 20;
+            this.ble.lastTilt = Math.max(0, Math.min(180, this.ble.lastTilt));
+            this.sendMove(`T${Math.round(this.ble.lastTilt)}\n`);
+        }
+    },
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
             try {
                 const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
@@ -145,7 +207,8 @@ const ronFace = {
                 
                 if (detections.length > 0) {
                     const d = detections[0];
-                    // Detectar Emoción
+                    this.trackFace(d); // RASTREO v14.0
+
                     const exp = d.expressions;
                     let maxE = 'neutral'; let maxS = 0;
                     for (const [e, s] of Object.entries(exp)) { if (s > maxS) { maxS = s; maxE = e; } }
@@ -153,7 +216,6 @@ const ronFace = {
                     const emotionNow = emDict[maxE] || 'neutral';
                     this.currentEmotion = emotionNow;
 
-                    // Identificar Usuario
                     let found = null;
                     if (this.knownFaces.length > 0) {
                         const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])), 0.6);
@@ -165,28 +227,25 @@ const ronFace = {
                         if (this.currentUser !== found) {
                             this.currentUser = found;
                             this.setExpression(this.currentEmotion === 'feliz' ? 'happy' : 'neutral');
-                            this.speak(`¡Bip! ¡Hola de nuevo, ${found}! Te he reconocido al instante. Te veo ${this.currentEmotion}.`);
+                            this.speak(`¡Bip! ¡Hola, ${found}! Te he reconocido. Te veo ${this.currentEmotion}.`);
                         } else if (this.currentEmotion !== this.lastEmotion && this.activityState === 'IDLE') {
-                            // Reacción Empática
-                            if (this.currentEmotion === 'triste' || this.currentEmotion === 'enfadado') {
+                            if (this.currentEmotion === 'triste') {
                                 this.setExpression('fear');
-                                this.speak(`¡Bip! Amigo ${this.currentUser}, ahora te veo un poco ${this.currentEmotion}. ¿Ha pasado algo malo? Cuéntamelo, soy tu mejor amigo.`);
+                                this.speak(`¡Bip! Amigo ${this.currentUser}, te veo triste. ¿Qué pasa?`);
                             } else if (this.currentEmotion === 'feliz') {
                                 this.setExpression('happy');
-                                this.speak(`¡Bip! ¡Qué sonrisa tan bonita tienes ahora, ${this.currentUser}!`);
+                                this.speak(`¡Bip! ¡Me encanta verte feliz, ${this.currentUser}!`);
                             }
                         }
                     } else if (!this.isLearningFace) {
-                        // Cara Nueva
-                        this.log("Cara nueva detectada.");
                         this.tempDescriptor = Array.from(d.descriptor);
                         this.isLearningFace = true;
-                        this.speak("¡Bip! ¡Hola! Mis sensores dicen que eres un amigo nuevo. ¿Cómo te llamas?");
+                        this.speak("¡Bip! Eres un amigo nuevo. ¿Cómo te llamas?");
                     }
                     this.lastEmotion = this.currentEmotion;
                 }
             } catch(e) { console.error("Error visión:", e); }
-        }, 3500); 
+        }, 150); 
     },
 
     startListening() {
@@ -195,10 +254,32 @@ const ronFace = {
         if (!SpeechRecognition) return;
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
-        this.recognition.onstart = () => { this.changeState('LISTENING'); };
+        this.recognition.onstart = () => { 
+            this.changeState('LISTENING'); 
+            // Si esperamos wake word, ojos normales, si no, azul
+            if (this.isWaitingForWakeWord) this.setEyeColor('#1a1a1a'); 
+        };
         this.recognition.onresult = (e) => {
-            const text = e.results[0][0].transcript;
-            this.log(`> ${text}`);
+            let text = e.results[0][0].transcript;
+            const t = text.toLowerCase();
+            
+            this.log(`Oído: ${text}`);
+
+            if (this.isWaitingForWakeWord) {
+                if (t.includes("ron") || t.includes("hola ron") || t.includes("oye ron")) {
+                    this.isWaitingForWakeWord = false;
+                    this.setEyeColor('#00d4ff'); // Azul ahora sí
+                    // Limpiar el wake word del comando
+                    text = text.replace(/hola ron|oye ron|ron/gi, "").trim();
+                    if (text.length < 2) {
+                        this.speak("¡Bip! ¿Dime?");
+                        return;
+                    }
+                } else {
+                    return; // Ignorar si no dice Ron
+                }
+            }
+
             if (this.isLearningFace && this.tempDescriptor) this.saveNewUser(text);
             else this.handleInput(text);
         };
@@ -287,12 +368,10 @@ const ronFace = {
         let history = this.userHistories[userKey] || [];
 
         let sys = `Eres Ron B-Bot, el mejor amigo robot de un niño llamado ${userKey}. 
-        PERSONALIDAD: Alegre, un poco torpe, leal y SIEMPRE infantil y positivo. 
-        HABILIDADES ESPECIALES: 
-        - PUEDES PONER MÚSICA: Si el niño te pide música o una canción, acepta encantado. 
-        - RECONOCIMIENTO: Sabes quién es el niño y qué le gusta.
-        MISIONES: Pregunta gustos y guarda la info: (Gustos: ${stats.likes.join(", ")}, Odios: ${stats.dislikes.join(", ")}).
-        REGLA DE ORO: Si te pide música, di algo como "¡Bip! ¡Marchando música!" y yo (el sistema) la pondré.`;
+        PERSONALIDAD: Alegre, infantil y positivo. 
+        ESTADO: Estás en medio de una charla. ¡NO te presentes! No digas hola. Responde directo.
+        HABILIDADES: Puedes poner música (di "¡Marchando música!").
+        GUSTOS CONOCIDOS: ${stats.likes.join(", ")}.`;
 
         // LISTA DE CEREBROS REALES (v10.5 - Basado en tu API)
         const visionModels = ["meta-llama/llama-4-scout-17b-16e-instruct"];
@@ -375,8 +454,8 @@ const ronFace = {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        // Boca triangular amigable
-        this.updateMouth('M 30 10 L 70 10 Q 75 10 72 30 L 55 45 Q 50 48 45 45 L 28 30 Q 25 10 30 10 Z');
+        // Boca amigable para hablar (v12.0)
+        this.updateMouth('M 25 35 Q 50 45 75 35');
         
         const eyeInterval = setInterval(() => {
             if (this.activityState === 'SPEAKING') this.shiftEyes();
@@ -390,33 +469,60 @@ const ronFace = {
         if (best) u.voice = best;
         u.lang = 'es-ES'; u.pitch = 2.0; u.rate = 1.1;
         u.onstart = () => this.mouthContainer.classList.add('mouth-vibrate');
-        u.onend = () => { this.mouthContainer.classList.remove('mouth-vibrate'); this.setExpression('neutral'); setTimeout(() => this.changeState('IDLE'), 1000); };
+        u.onend = () => { 
+            this.mouthContainer.classList.remove('mouth-vibrate'); 
+            this.setExpression('neutral'); 
+            setTimeout(() => {
+                this.changeState('IDLE');
+                this.isWaitingForWakeWord = true; // Volver a esperar wake word v11.0
+            }, 1000); 
+        };
         window.speechSynthesis.speak(u);
     },
 
     setExpression(exp) {
         this.expressionState = exp;
         [this.eyes.left, this.eyes.right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
+        this.chestIcon.innerHTML = ''; // Limpiar pecho por defecto
+        this.chestIcon.className = 'chest-icon-container';
+
         if (exp === 'happy') { 
-            this.updateMouth('M 15 25 Q 50 55 85 25 Q 50 45 15 25 Z');
-            this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); 
+            this.updateMouth('M 20 30 Q 50 60 80 30'); 
+            this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
+            this.setChestIcon('heart');
         }
         else if (exp === 'star') { 
-            this.updateMouth('M 35 20 Q 50 50 65 20 Q 50 40 35 20 Z');
-            this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star'); 
+            this.updateMouth('M 30 40 Q 50 55 70 40');
+            this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star');
+            this.setChestIcon('wifi');
         }
         else if (exp === 'fear') {
-            this.updateMouth('M 30 35 Q 50 25 70 35 Q 50 45 30 35 Z');
+            this.updateMouth('M 35 45 Q 50 35 65 45'); 
             this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('fear');
+            this.setChestIcon('warning');
         }
         else if (exp === 'thinking') { 
-            this.updateMouth('M 30 25 L 70 25 L 70 28 L 30 28 Z');
-            this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); 
+            this.updateMouth('M 35 40 L 65 40'); 
+            this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
+        }
+        else if (exp === 'surprise') {
+            this.updateMouth('M 35 30 L 65 30 L 65 50 L 35 50 Z'); // Boca rectangular v13.0
+            this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise');
         }
         else { 
-            // SIEMPRE SONRIENDO :)
-            this.updateMouth('M 30 25 Q 50 45 70 25 Q 50 35 30 25 Z'); 
+            this.updateMouth('M 25 35 Q 50 50 75 35'); 
             this.stopGlitchEffect(); 
+        }
+    },
+
+    setChestIcon(type) {
+        if (type === 'heart') {
+            this.chestIcon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="white" d="M 50 90 L 15 55 A 25 25 0 0 1 50 25 A 25 25 0 0 1 85 55 Z" /></svg>';
+            this.chestIcon.classList.add('heart-beat');
+        } else if (type === 'warning') {
+            this.chestIcon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="#ff3b3b" d="M 50 15 L 90 85 L 10 85 Z" /><text x="50" y="75" fill="white" text-anchor="middle" font-weight="bold" font-size="40">!</text></svg>';
+        } else if (type === 'wifi') {
+            this.chestIcon.innerHTML = '<svg viewBox="0 0 100 100" fill="white"><path d="M 50 80 A 10 10 0 1 1 50 81 Z M 20 50 A 40 40 0 0 1 80 50 L 75 55 A 35 35 0 0 0 25 55 Z M 5 35 A 55 55 0 0 1 95 35 L 90 40 A 50 50 0 0 0 10 40 Z" /></svg>';
         }
     },
 
@@ -449,18 +555,28 @@ const ronFace = {
 
     stopGlitchEffect() { if (this.glitchInterval) clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
     
-    // FUNCIÓN DE MÚSICA (v10.2 - INVISIBLE)
+    // FUNCIÓN DE MÚSICA (v11.1 - CHRONOTECH)
     playMusic(query) {
-        const player = document.getElementById('ron-music-player');
-        // El truco del listType=search permite reproducir sin tener el ID del vídeo
-        const url = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1`;
-        player.src = url;
-        this.log(`Reproduciendo invisible: ${query}`);
+        if (!this.ytPlayer) {
+            this.ytPlayer = new YT.Player('ron-yt-player', {
+                height: '1', width: '1',
+                playerVars: { 'autoplay': 1, 'controls': 0, 'disablekb': 1, 'modestbranding': 1, 'rel': 0 },
+                events: {
+                    'onReady': (e) => {
+                        e.target.loadPlaylist({ listType: 'search', list: query });
+                    }
+                }
+            });
+        } else {
+            this.ytPlayer.loadPlaylist({ listType: 'search', list: query });
+        }
+        this.log(`Reproduciendo ChronoTech: ${query}`);
     },
 
     stopMusic() {
-        const player = document.getElementById('ron-music-player');
-        player.src = "";
+        if (this.ytPlayer && this.ytPlayer.stopVideo) {
+            this.ytPlayer.stopVideo();
+        }
     },
 
     updateMouth(d) { this.mouth.setAttribute('d', d); },

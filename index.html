@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Ron B*Bot</title>
-    <link rel="stylesheet" href="styles.css?v=9.7">
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <link rel="stylesheet" href="styles.css?v=11.1">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,14 +18,12 @@
         <!-- Pantalla de Inicio -->
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">ENCENDER A RON (v10.6 - CEREBRO DJ)</button>
+            <button id="power-btn">ENCENDER A RON (v14.0 - B*BOT LINK)</button>
         </div>
 
-        <!-- Botón del Micro -->
-        <button id="mic-toggle-btn" class="mic-toggle-btn">🎙️ MICRO ON</button>
-        
-        <!-- Caja de Log Fija -->
-        <div id="fixed-log" class="fixed-log"></div>
+        <!-- Botones de Control -->
+        <button id="mic-toggle-btn" class="mic-toggle-btn">🎙️</button>
+        <button id="ble-connect-btn" class="ble-btn">📡</button>
 
 
 
@@ -45,9 +44,9 @@
         <!-- Capa de Efectos de Fondo (Glitch) -->
         <div id="glitch-overlay" class="glitch-overlay"></div>
 
-        <!-- Reproductor Invisible (v10.2) -->
-        <div id="music-container" style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;">
-            <iframe id="ron-music-player" width="100" height="100" src="" frameborder="0" allow="autoplay"></iframe>
+        <!-- Reproductor Invisible (v11.1 - Estilo Chronobeats) -->
+        <div id="music-container" style="position: absolute; left: -10000px; top: -10000px; width: 1px; height: 1px; overflow: hidden;">
+            <div id="ron-yt-player"></div>
         </div>
 
         <!-- Cara de Ron -->
@@ -57,15 +56,17 @@
                 <div id="eye-right" class="eye"></div>
             </div>
             <div class="mouth-layer">
-                <svg viewBox="0 0 100 40" class="mouth-svg">
-                    <path id="mouth-path" d="M 10 20 Q 50 40 90 20" fill="none" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round"/>
+                <svg class="mouth-svg" viewBox="0 0 100 60">
+                    <path id="mouth-path" d="M 25 35 Q 50 50 75 35" />
                 </svg>
             </div>
+            <!-- Iconos del Pecho (v13.0) -->
+            <div id="chest-icon-container" class="chest-icon-container"></div>
         </div>
 
         <!-- UI de Control (Invisible por defecto) -->
         <div id="debug-info" class="hidden"></div>
     </div>
-    <script src="ron.js?v=10.6"></script>
+    <script src="ron.js?v=14.0"></script>
 </body>
 </html>
