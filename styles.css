@@ -187,6 +187,19 @@ body, html {
     z-index: 1001;
 }
 
+.unlock-ears {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 2px solid var(--ron-dark);
+    border-radius: 20px;
+    font-weight: bold;
+    z-index: 2000;
+}
+.unlock-ears.hidden { display: none; }
+
 /* Modal de Configuración API */
 .api-modal {
     position: absolute;

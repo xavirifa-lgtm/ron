@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 5.2 (Oído Persistente)
+ * Ron B*Bot AI - Versión 5.3 (Diagnóstico de Oído)
  */
 
 const ronFace = {
@@ -15,6 +15,7 @@ const ronFace = {
     debug: document.getElementById('debug-info'),
     bootScreen: document.getElementById('boot-screen'),
     powerBtn: document.getElementById('power-btn'),
+    unlockEarsBtn: document.getElementById('unlock-ears'),
 
     // Estado
     state: 'neutral',
@@ -35,12 +36,19 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Esperando arranque v5.2...");
+        this.log("Esperando arranque v5.3...");
         if (!this.powerBtn) return;
         this.powerBtn.onclick = async () => {
             this.powerBtn.style.display = 'none';
             await this.init();
         };
+        
+        if (this.unlockEarsBtn) {
+            this.unlockEarsBtn.onclick = () => {
+                this.log("Reactivación manual solicitada...");
+                this.startListening();
+            };
+        }
     },
 
     async init() {
@@ -65,9 +73,7 @@ const ronFace = {
             this.startBlinkCycle();
             this.startVisionLoop();
             
-            // Iniciar escucha por primera vez
             this.startListening();
-            
             this.speak("¡Bip! Sistemas listos. Hola, soy Ron.");
             this.goFullscreen();
         } catch (err) {
@@ -112,15 +118,16 @@ const ronFace = {
         document.documentElement.style.setProperty('--ron-eye-color', color);
     },
 
-    // --- ESCUCHA (v5.2: Recreación total) ---
+    // --- ESCUCHA (v5.3: Diagnóstico) ---
     startListening() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            this.log("Tu navegador no soporta STT.");
+            this.log("Navegador incompatible con voz.");
             return;
         }
 
-        // Si ya hay uno activo, lo cerramos
+        if (this.isSpeaking) return;
+
         if (this.recognition) {
             try { this.recognition.abort(); } catch(e) {}
         }
@@ -130,34 +137,41 @@ const ronFace = {
         this.recognition.continuous = false; 
 
         this.recognition.onstart = () => {
-            if (!this.isSpeaking) {
-                this.setEyeColor('#00d4ff'); // AZUL brillante
-                this.log("¡Oídos abiertos! (Ojos Azules)");
-            }
+            this.setEyeColor('#00d4ff'); // AZUL
+            this.log("¡Oídos abiertos! (Ojos Azules)");
+            if (this.unlockEarsBtn) this.unlockEarsBtn.classList.add('hidden');
         };
 
         this.recognition.onresult = (e) => {
             const text = e.results[0][0].transcript;
             const timeSinceLastSpeech = Date.now() - this.lastSpeechEndTime;
-            
             if (this.isSpeaking || timeSinceLastSpeech < 1500) return;
-
             this.log(`He oído: "${text}"`);
             this.chat(text);
         };
 
         this.recognition.onend = () => {
-            // Auto-reinicio inteligente
             if (!this.isSpeaking && this.isInitialized) {
-                setTimeout(() => this.startListening(), 500);
+                this.setEyeColor('#1a1a1a'); // Negro: No escucha
+                if (this.unlockEarsBtn) this.unlockEarsBtn.classList.remove('hidden');
+                // Intentar reinicio automático
+                setTimeout(() => {
+                    if (!this.isSpeaking) this.startListening();
+                }, 1000);
             }
         };
 
         this.recognition.onerror = (e) => {
-            if (e.error === 'network') this.log("Error de red en el micro.");
+            this.log(`ERROR MICRO: ${e.error}`);
+            if (e.error === 'not-allowed') this.log("Micro bloqueado por navegador.");
         };
 
-        try { this.recognition.start(); } catch(e) {}
+        try { 
+            this.recognition.start(); 
+            this.log("Intentando abrir micro...");
+        } catch(e) {
+            this.log(`Fallo al iniciar micro: ${e.message}`);
+        }
     },
 
     // --- VISIÓN ---
@@ -247,8 +261,8 @@ const ronFace = {
             this.isSpeaking = false; 
             this.setEyeColor('#1a1a1a');
             
-            this.log("Ron terminó. Reiniciando micro...");
-            setTimeout(() => this.startListening(), 1000);
+            this.log("Ron terminó. Esperando 1.5s...");
+            setTimeout(() => this.startListening(), 1500);
         };
         window.speechSynthesis.speak(u);
     },
