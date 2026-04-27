@@ -175,30 +175,42 @@ body, html {
     box-shadow: 0 0 20px var(--glitch-cyan);
 }
 
-.debug-overlay {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    right: 20px;
-    color: #0f0;
-    font-family: monospace;
-    font-size: 12px;
-    pointer-events: none;
-    z-index: 1001;
-}
-
-.unlock-ears {
+.mic-toggle-btn {
     position: absolute;
     top: 20px;
     right: 20px;
-    padding: 10px 20px;
-    background: rgba(255, 255, 255, 0.8);
-    border: 2px solid var(--ron-dark);
+    padding: 10px 15px;
+    background: var(--glitch-cyan);
+    color: var(--ron-dark);
+    border: none;
     border-radius: 20px;
     font-weight: bold;
     z-index: 2000;
 }
-.unlock-ears.hidden { display: none; }
+.mic-toggle-btn.off {
+    background: var(--hat-red);
+    color: var(--ron-white);
+}
+
+.fixed-log {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 120px;
+    background: rgba(0,0,0,0.85);
+    color: #0f0;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 10px;
+    overflow-y: hidden;
+    z-index: 1500;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    pointer-events: none;
+}
+
 
 /* Modal de Configuración API */
 .api-modal {

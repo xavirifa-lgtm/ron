@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 7.0 (COMPAÑERO TOTAL: Memoria, Visión Optimizada, Emociones)
+ * Ron B*Bot AI - Versión 7.1 (PRO: Solución Anti-Bucle y Visión Total)
  */
 
 const ronFace = {
@@ -12,13 +12,15 @@ const ronFace = {
     apiModal: document.getElementById('api-modal'),
     apiKeyInput: document.getElementById('groq-key-input'),
     saveBtn: document.getElementById('save-api-key'),
-    debug: document.getElementById('debug-info'),
+    fixedLog: document.getElementById('fixed-log'),
     bootScreen: document.getElementById('boot-screen'),
     powerBtn: document.getElementById('power-btn'),
+    micToggleBtn: document.getElementById('mic-toggle-btn'),
 
-    // MÁQUINA DE ESTADOS ESTRUCTURAL
+    // MÁQUINA DE ESTADOS
     activityState: 'BOOTING', // BOOTING, IDLE, LISTENING, THINKING, SPEAKING
-    expressionState: 'neutral', // neutral, happy, surprise, thinking, glitch
+    expressionState: 'neutral', 
+    isMicEnabled: true,
 
     // MEMORIA Y CONTEXTO
     currentUser: null,
@@ -29,14 +31,36 @@ const ronFace = {
 
     log(msg) {
         console.log(msg);
-        if (this.debug) {
-            this.debug.innerHTML += `<br>> ${msg}`;
-            this.debug.scrollTop = this.debug.scrollHeight;
+        if (this.fixedLog) {
+            const time = new Date().toLocaleTimeString('es-ES', { hour12: false });
+            this.fixedLog.innerHTML += `<div>[${time}] ${msg}</div>`;
+            
+            // Mantener solo las últimas 6 líneas para que no se sature
+            const lines = this.fixedLog.querySelectorAll('div');
+            if (lines.length > 6) lines[0].remove();
+            
+            this.fixedLog.scrollTop = this.fixedLog.scrollHeight;
         }
     },
 
     async preInit() {
-        this.log("Esperando arranque v7.0...");
+        this.log("Preparando arranque v7.1...");
+        if (this.micToggleBtn) {
+            this.micToggleBtn.onclick = () => {
+                this.isMicEnabled = !this.isMicEnabled;
+                if (this.isMicEnabled) {
+                    this.micToggleBtn.innerText = "🎙️ MICRO ON";
+                    this.micToggleBtn.classList.remove('off');
+                    if (this.activityState === 'IDLE') this.startListening();
+                } else {
+                    this.micToggleBtn.innerText = "🔇 MICRO OFF";
+                    this.micToggleBtn.classList.add('off');
+                    if (this.recognition) { try { this.recognition.abort(); } catch(e){} }
+                    this.changeState('IDLE');
+                }
+            };
+        }
+
         if (!this.powerBtn) return;
         this.powerBtn.onclick = async () => {
             this.powerBtn.style.display = 'none';
@@ -53,7 +77,7 @@ const ronFace = {
         try {
             this.log("Cargando Modelos Neuronales (Caras y Emociones)...");
             await this.loadModels();
-            this.log("Conectando óptica y audio...");
+            this.log("Conectando óptica y audio (Hack anti-pitidos)...");
             await this.startCamera();
             
             this.setupInteractions();
@@ -80,12 +104,13 @@ const ronFace = {
             faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
             faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
             faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL) // NUEVO: Emociones
+            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
         ]);
     },
 
     async startCamera() {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        // HACK: Pedimos audio=true para mantener el canal OS abierto y evitar pitidos del dictado
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
         this.video.srcObject = stream;
         return new Promise(res => this.video.onloadedmetadata = res);
     },
@@ -115,23 +140,24 @@ const ronFace = {
         
         switch (newState) {
             case 'IDLE':
-                this.setEyeColor('#1a1a1a'); // Negro
-                // En IDLE, intentamos escuchar tras un descanso prudencial para evitar pitidos
-                setTimeout(() => this.startListening(), 2500);
+                this.setEyeColor('#1a1a1a'); 
+                if (this.isMicEnabled) {
+                    setTimeout(() => this.startListening(), 2000);
+                }
                 break;
             case 'LISTENING':
-                this.setEyeColor('#00d4ff'); // Azul brillante
+                this.setEyeColor('#00d4ff'); 
                 break;
             case 'THINKING':
-                this.setEyeColor('#ffb703'); // Amarillo
+                this.setEyeColor('#ffb703'); 
                 if (this.recognition) {
-                    try { this.recognition.abort(); } catch(e){} // Apagar micro
+                    try { this.recognition.abort(); } catch(e){} 
                 }
                 break;
             case 'SPEAKING':
-                this.setEyeColor('#e63946'); // Rojo
+                this.setEyeColor('#e63946'); 
                 if (this.recognition) {
-                    try { this.recognition.abort(); } catch(e){} // Apagar micro
+                    try { this.recognition.abort(); } catch(e){} 
                 }
                 break;
         }
@@ -144,11 +170,9 @@ const ronFace = {
     // --- VISIÓN (CARAS + EMOCIONES) ---
     async startVisionLoop() {
         setInterval(async () => {
-            // Solo miramos si no estamos hablando ni pensando
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING') return;
             
             try {
-                // Ahora detectamos también expresiones (withFaceExpressions)
                 const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
                     .withFaceLandmarks()
                     .withFaceExpressions()
@@ -156,25 +180,22 @@ const ronFace = {
                 
                 if (det.length > 0) this.processDetections(det[0]);
             } catch(e) {}
-        }, 3000); // Evalúa cada 3 segundos
+        }, 3000); 
     },
 
     async processDetections(detection) {
         const descriptor = detection.descriptor;
         const expressions = detection.expressions;
         
-        // Obtener la emoción dominante
         let maxEmotion = 'neutral';
         let maxScore = 0;
         for (const [emotion, score] of Object.entries(expressions)) {
             if (score > maxScore) { maxScore = score; maxEmotion = emotion; }
         }
         
-        // Traducción de emociones
         const emDict = { happy: 'feliz', sad: 'triste', angry: 'enfadado', surprised: 'sorprendido', disgusted: 'disgustado', fearful: 'asustado', neutral: 'neutral' };
         this.currentEmotion = emDict[maxEmotion] || 'neutral';
 
-        // Identidad
         let match = null;
         if (this.knownFaces.length > 0) {
             const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])));
@@ -209,7 +230,7 @@ const ronFace = {
 
     // --- CAPTURA DE FOTO OPTIMIZADA (VISTA MUNDO) ---
     captureOptimizedFrame() {
-        const MAX_SIZE = 320; // Reducido para garantizar que Groq no de timeout
+        const MAX_SIZE = 320; // Resolución pequeña para Groq Llama 3 Vision
         const canvas = document.createElement('canvas');
         let width = this.video.videoWidth;
         let height = this.video.videoHeight;
@@ -225,20 +246,22 @@ const ronFace = {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, width, height);
         
-        // JPEG al 60% de calidad = Rápido y ligero
         return canvas.toDataURL('image/jpeg', 0.6); 
     },
 
     // --- ESCUCHA ---
     startListening() {
-        if (this.activityState !== 'IDLE') return;
+        if (this.activityState !== 'IDLE' || !this.isMicEnabled) return;
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
+        if (!SpeechRecognition) {
+            this.log("Navegador no soporta STT.");
+            return;
+        }
 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
-        this.recognition.continuous = true; // EVITAR PITIDOS CONTINUOS EN ANDROID 
+        this.recognition.continuous = true; 
 
         this.recognition.onstart = () => {
             this.changeState('LISTENING');
@@ -246,54 +269,51 @@ const ronFace = {
         };
 
         this.recognition.onresult = (e) => {
-            if (this.activityState !== 'LISTENING') return; // Seguridad
+            if (this.activityState !== 'LISTENING') return;
             const text = e.results[0][0].transcript;
-            this.log(`Tú: "${text}"`);
+            this.log(`[USER]: "${text}"`);
             this.chat(text);
         };
 
         this.recognition.onend = () => {
             if (this.activityState === 'LISTENING') {
-                this.log("Silencio detectado. Pausa antes de reiniciar...");
+                this.log("Silencio/Fin. Pausa breve...");
                 this.changeState('IDLE'); 
             }
+        };
+
+        this.recognition.onerror = (e) => {
+            this.log(`Error STT: ${e.error}`);
+            this.changeState('IDLE');
         };
 
         try { this.recognition.start(); } catch(e) { this.changeState('IDLE'); }
     },
 
-    // --- DIÁLOGO (MEMORIA Y VISIÓN) ---
+    // --- DIÁLOGO (MEMORIA Y VISIÓN APLANADAS) ---
     async chat(userText) {
         if (!this.apiKey) return;
         
         this.changeState('THINKING');
         this.setExpression('thinking');
+        this.log("Capturando imagen y pensando...");
 
-        // Capturar foto optimizada
         const imageData = this.captureOptimizedFrame();
 
-        // Preparar Historial
-        const maxHistory = 10; // Recordar últimos 10 turnos (5 preguntas, 5 respuestas)
-        let messagesToSend = [
-            { 
-                role: "system", 
-                content: `Eres Ron B-Bot, un compañero robot de la película 'Ron da error'. Eres optimista, literal, leal y un poco torpe. Tu usuario actual es ${this.currentUser || 'Desconocido'}. La cámara detecta que el usuario está ${this.currentEmotion}. Tienes memoria de conversaciones pasadas. Se te adjunta una imagen de lo que ves AHORA MISMO a través de la cámara. Responde basándote en la imagen si el usuario pregunta algo visual, o en la memoria si pregunta sobre el pasado. Se muy conciso y directo, respuestas cortas y divertidas. Usa '¡Bip!'.` 
-            }
-        ];
+        // CONSTRUCCIÓN DEL MEGA-PROMPT PARA VISION
+        // Groq LLaMA 3.2 11b Vision falla con historiales multi-turno si hay imagen.
+        // Lo empaquetamos todo en un único string de texto.
+        
+        let promptConstruido = `[SISTEMA] Eres Ron B-Bot (Ron da error). Optimista, leal y torpe. Usa '¡Bip!'. Respuestas MUY cortas y directas (máx 15 palabras).
+[CONTEXTO] Usuario: ${this.currentUser || 'Desconocido'}. Emoción que detecto: ${this.currentEmotion}.
+[HISTORIAL RECIENTE]\n`;
 
-        // Añadir memoria antigua
-        this.conversationHistory.slice(-maxHistory).forEach(msg => {
-            messagesToSend.push({ role: msg.role, content: msg.content });
+        this.conversationHistory.slice(-6).forEach(msg => {
+            promptConstruido += `- ${msg.role === 'user' ? 'Usuario' : 'Ron'}: ${msg.content}\n`;
         });
 
-        // Añadir mensaje actual con la FOTO
-        messagesToSend.push({
-            role: "user",
-            content: [
-                { type: "text", text: userText },
-                { type: "image_url", image_url: { url: imageData } }
-            ]
-        });
+        promptConstruido += `\n[MENSAJE ACTUAL DEL USUARIO]: "${userText}"
+(Adjunto imagen actual de lo que veo a través de la cámara)`;
 
         try {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -301,7 +321,15 @@ const ronFace = {
                 headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: "llama-3.2-11b-vision-preview",
-                    messages: messagesToSend
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                { type: "text", text: promptConstruido },
+                                { type: "image_url", image_url: { url: imageData } }
+                            ]
+                        }
+                    ]
                 })
             });
             const data = await res.json();
@@ -309,17 +337,17 @@ const ronFace = {
             if (data.error) throw new Error(data.error.message);
 
             const botResponse = data.choices[0].message.content;
+            this.log(`[RON]: "${botResponse}"`);
             
             // Guardar en memoria
             this.conversationHistory.push({ role: "user", content: userText });
             this.conversationHistory.push({ role: "assistant", content: botResponse });
-            // Limpiar memoria vieja
             if (this.conversationHistory.length > 20) this.conversationHistory = this.conversationHistory.slice(-20);
             localStorage.setItem('ron_history', JSON.stringify(this.conversationHistory));
 
             this.speak(botResponse);
         } catch (e) { 
-            this.log(`Cerebro ocupado/fallo: ${e.message}`);
+            this.log(`Error IA: ${e.message}`);
             this.setExpression('glitch');
             this.speak("¡Bip! He tenido un fallo al procesar la imagen. ¿Puedes repetirlo?");
         }
@@ -342,13 +370,11 @@ const ronFace = {
         u.onstart = () => this.setTalking(true);
         u.onend = () => { 
             this.setTalking(false); 
-            // Dar tiempo al sonido a morir antes de escuchar de nuevo
             setTimeout(() => {
                 this.changeState('IDLE');
             }, 1000); 
         };
         
-        // Fallback por si la voz se cuelga (bug de navegadores)
         setTimeout(() => {
             if (this.activityState === 'SPEAKING' && !window.speechSynthesis.speaking) {
                 this.setTalking(false);
