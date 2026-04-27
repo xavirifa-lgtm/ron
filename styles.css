@@ -68,8 +68,8 @@ body, html {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 5vh; /* Menos espacio para subirlo v13.0 */
-    transform: translateY(-5vh); /* Subir todo un poco */
+    gap: 4vh; /* Espacio equilibrado v14.1 */
+    position: relative;
 }
 
 .eyes-layer {
@@ -103,7 +103,14 @@ body, html {
 .eye.blink { animation: blink-anim 0.15s ease-in-out; }
 
 /* BOCA */
-.mouth-svg { width: 100px; height: 60px; }
+.mouth-layer {
+    width: 100px;
+    height: 60px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.mouth-svg { width: 100%; height: 100%; }
 #mouth-path { 
     fill: none; 
     stroke: var(--ron-mouth-color);

@@ -58,7 +58,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v14.0 - Edición B*Bot Link...");
+        this.log("Iniciando Ron v14.1 - Edición B*Bot Link...");
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
                 height: '1', width: '1', videoId: 'dQw4w9WgXcQ',
