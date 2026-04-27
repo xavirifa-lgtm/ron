@@ -1,8 +1,18 @@
+:root {
+    --ron-white: #ffffff;
+    --ron-blue-light: #e6f0f8;
+    --ron-dark: #1a1a1a;
+    --glitch-cyan: #00d4ff;
+    --glitch-blue: #0080ff;
+    --hat-red: #e63946;
+    --hat-yellow: #ffb703;
+}
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    cursor: none; /* Ocultar cursor para inmersión */
+    cursor: none;
 }
 
 body, html {
@@ -20,7 +30,8 @@ body, html {
     justify-content: center;
     align-items: center;
     position: relative;
-    background: radial-gradient(circle at center, #ffffff 0%, #e6f0f8 100%); /* Blanco azulado */
+    background: radial-gradient(circle at center, var(--ron-white) 0%, var(--ron-blue-light) 100%);
+    overflow: hidden;
 }
 
 .face-container {
@@ -42,17 +53,6 @@ body, html {
     padding: 0 50px;
 }
 
-.eye {
-    width: 80px;
-    height: 120px;
-    background-color: #1a1a1a; /* Gris muy oscuro/negro */
-    border-radius: 50%;
-    /* Efecto de profundidad sutil en lugar de brillo exterior */
-    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
-    transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    position: relative;
-}
-
 /* Boca minimalista */
 .mouth-layer {
     width: 200px;
@@ -68,15 +68,106 @@ body, html {
     filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1));
 }
 
-/* Estados de Ojos */
-.eye.blink {
-    transform: scaleY(0.01);
+/* Gorro de Ron */
+.beanie-hat {
+    position: absolute;
+    top: 5vh;
+    width: 320px;
+    height: 150px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2));
 }
 
-.eye.laugh {
+.hat-base {
+    width: 100%;
     height: 40px;
-    border-radius: 0 0 100px 100px;
-    transform: translateY(20px);
+    background: var(--hat-yellow);
+    border-radius: 10px;
+    border-bottom: 8px solid rgba(0,0,0,0.1);
+}
+
+.hat-top {
+    width: 90%;
+    height: 100px;
+    background: var(--hat-red);
+    border-radius: 50% 50% 0 0;
+    margin-top: -5px;
+}
+
+.hat-pompon {
+    width: 50px;
+    height: 50px;
+    background: var(--ron-white);
+    border-radius: 50%;
+    margin-top: -125px;
+    box-shadow: inset -5px -5px 10px rgba(0,0,0,0.1);
+}
+
+/* Capa de Glitch */
+.glitch-overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.glitch-block {
+    position: absolute;
+    background: var(--glitch-cyan);
+    opacity: 0.6;
+    animation: glitch-anim 0.2s infinite;
+}
+
+@keyframes glitch-anim {
+    0% { transform: translate(0); opacity: 0.6; }
+    50% { transform: translate(-5px, 2px); opacity: 0.3; }
+    100% { transform: translate(5px, -2px); opacity: 0.6; }
+}
+
+/* Nuevos Estados de Ojos */
+.eye {
+    width: 80px;
+    height: 120px;
+    background-color: var(--ron-dark);
+    border-radius: 50%;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+}
+
+.eye.happy {
+    height: 60px;
+    border-radius: 100px 100px 10px 10px;
+}
+
+.eye.flat {
+    height: 40px;
+    border-radius: 10px;
+}
+
+.eye.glitch-left {
+    width: 40px;
+    height: 90px;
+    border-radius: 4px;
+}
+
+.eye.glitch-right {
+    width: 110px;
+    height: 110px;
+    border-radius: 20px;
+}
+
+.eye.energized {
+    box-shadow: 0 0 30px var(--glitch-cyan), inset 0 0 10px rgba(0,0,0,0.5);
+    background-color: #000;
+}
+
+.eye.blink {
+    transform: scaleY(0.01);
 }
 
 .eye.surprise {
@@ -84,7 +175,7 @@ body, html {
     height: 120px;
 }
 
-/* Animación de Habla (se activará por JS) */
+/* Animación de Habla */
 @keyframes vibrate {
     0% { transform: translateY(0); }
     25% { transform: translateY(-2px) scaleX(1.05); }
@@ -96,6 +187,7 @@ body, html {
     animation: vibrate 0.1s infinite;
 }
 
+/* Ocultar elementos */
 .hidden {
-    display: none;
+    display: none !important;
 }

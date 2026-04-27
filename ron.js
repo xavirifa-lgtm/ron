@@ -9,6 +9,8 @@ const ronFace = {
     },
     mouth: document.getElementById('mouth-path'),
     mouthContainer: document.querySelector('.mouth-svg'),
+    glitchOverlay: document.getElementById('glitch-overlay'),
+    hat: document.getElementById('beanie-hat'),
 
     // Estado actual
     state: 'neutral',
@@ -40,23 +42,87 @@ const ronFace = {
     // Cambiar expresión emocional
     setExpression(expression) {
         this.state = expression;
+        console.log(`Expresión cambiada a: ${expression}`);
         
         // Limpiar clases previas
         [this.eyes.left, this.eyes.right].forEach(el => {
-            el.classList.remove('laugh', 'surprise');
+            el.className = 'eye'; // Reset a base
         });
+        this.stopGlitchEffect();
 
-        if (expression === 'laugh') {
-            this.eyes.left.classList.add('laugh');
-            this.eyes.right.classList.add('laugh');
-            this.updateMouth('M 5 15 Q 50 45 95 15'); // Gran sonrisa
-        } else if (expression === 'surprise') {
-            this.eyes.left.classList.add('surprise');
-            this.eyes.right.classList.add('surprise');
-            this.updateMouth('M 30 25 Q 50 35 70 25'); // Oh!
-        } else {
-            this.updateMouth('M 10 20 Q 50 40 90 20'); // Sonrisa suave (Neutral)
+        switch(expression) {
+            case 'happy':
+            case 'laugh':
+                this.eyes.left.classList.add('happy');
+                this.eyes.right.classList.add('happy');
+                this.updateMouth('M 5 15 Q 50 45 95 15');
+                break;
+            
+            case 'surprise':
+                this.eyes.left.classList.add('surprise');
+                this.eyes.right.classList.add('surprise');
+                this.updateMouth('M 30 25 Q 50 35 70 25');
+                break;
+
+            case 'glitch':
+                this.eyes.left.classList.add('glitch-left');
+                this.eyes.right.classList.add('glitch-right');
+                this.updateMouth('M 20 20 L 40 25 L 60 15 L 80 20'); // Boca en zigzag
+                this.startGlitchEffect();
+                break;
+
+            case 'singing':
+                this.eyes.left.classList.add('happy');
+                this.eyes.right.classList.add('happy');
+                this.updateMouth('M 30 20 Q 50 10 70 20 Q 50 30 30 20'); // Boca circular/O
+                this.setTalking(true);
+                break;
+
+            case 'energized':
+                this.eyes.left.classList.add('energized');
+                this.eyes.right.classList.add('energized');
+                this.updateMouth('M 10 20 Q 50 45 90 20');
+                break;
+
+            case 'thinking':
+                this.eyes.left.classList.add('flat');
+                this.eyes.right.classList.add('flat');
+                this.updateMouth('M 20 20 Q 50 20 80 20'); // Boca plana
+                this.startGlitchEffect();
+                break;
+
+            default: // neutral
+                this.updateMouth('M 10 20 Q 50 40 90 20');
         }
+    },
+
+    // Sistema de Glitch Visual
+    startGlitchEffect() {
+        this.stopGlitchEffect(); // Evitar duplicados
+        this.glitchInterval = setInterval(() => {
+            const block = document.createElement('div');
+            block.className = 'glitch-block';
+            
+            // Posición y tamaño aleatorio
+            const size = Math.random() * 100 + 20;
+            block.style.width = `${size}px`;
+            block.style.height = `${size / 2}px`;
+            block.style.left = `${Math.random() * 100}vw`;
+            block.style.top = `${Math.random() * 100}vh`;
+            
+            this.glitchOverlay.appendChild(block);
+            
+            setTimeout(() => block.remove(), 200);
+        }, 100);
+    },
+
+    stopGlitchEffect() {
+        clearInterval(this.glitchInterval);
+        this.glitchOverlay.innerHTML = '';
+    },
+
+    toggleHat() {
+        this.hat.classList.toggle('hidden');
     },
 
     // Actualizar curva de la boca (Mouth Path)
@@ -74,17 +140,30 @@ const ronFace = {
     },
 
     setupInteractions() {
-        // Al hacer click/toque, Ron se sorprende
-        document.body.addEventListener('mousedown', () => {
-            this.setExpression('surprise');
-            this.setTalking(true);
+        // Ciclo de expresiones al hacer click
+        const expressions = ['neutral', 'happy', 'surprise', 'glitch', 'singing', 'energized', 'thinking'];
+        let currentIndex = 0;
+
+        document.body.addEventListener('click', (e) => {
+            // Si hacemos click arriba a la derecha, toggle hat
+            if (e.clientX > window.innerWidth * 0.8 && e.clientY < window.innerHeight * 0.2) {
+                this.toggleHat();
+                return;
+            }
+
+            currentIndex = (currentIndex + 1) % expressions.length;
+            this.setExpression(expressions[currentIndex]);
+            
+            if (expressions[currentIndex] === 'singing') {
+                setTimeout(() => this.setTalking(false), 2000);
+            }
         });
-        
-        document.body.addEventListener('mouseup', () => {
-            setTimeout(() => {
-                this.setExpression('neutral');
-                this.setTalking(false);
-            }, 500);
+
+        // Soporte para teclas
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'h') this.toggleHat();
+            if (e.key === 'g') this.setExpression('glitch');
+            if (e.key === 'n') this.setExpression('neutral');
         });
     }
 };
