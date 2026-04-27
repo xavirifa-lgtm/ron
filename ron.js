@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Versión 7.1 (PRO: Solución Anti-Bucle y Visión Total)
+ * Ron B*Bot AI - Versión 8.0 (COMPAÑERO DE JUEGOS Y LECTURA)
  */
 
 const ronFace = {
@@ -18,7 +18,7 @@ const ronFace = {
     micToggleBtn: document.getElementById('mic-toggle-btn'),
 
     // MÁQUINA DE ESTADOS
-    activityState: 'BOOTING', // BOOTING, IDLE, LISTENING, THINKING, SPEAKING
+    activityState: 'BOOTING', 
     expressionState: 'neutral', 
     isMicEnabled: true,
 
@@ -33,93 +33,68 @@ const ronFace = {
         console.log(msg);
         if (this.fixedLog) {
             const time = new Date().toLocaleTimeString('es-ES', { hour12: false });
-            this.fixedLog.innerHTML += `<div>[${time}] ${msg}</div>`;
-            
-            // Mantener solo las últimas 6 líneas para que no se sature
+            const div = document.createElement('div');
+            div.innerText = `[${time}] ${msg}`;
+            this.fixedLog.appendChild(div);
             const lines = this.fixedLog.querySelectorAll('div');
-            if (lines.length > 6) lines[0].remove();
-            
+            if (lines.length > 5) lines[0].remove();
             this.fixedLog.scrollTop = this.fixedLog.scrollHeight;
         }
     },
 
     async preInit() {
-        this.log("Preparando arranque v7.1...");
+        this.log("Iniciando Ron v8.0...");
         if (this.micToggleBtn) {
             this.micToggleBtn.onclick = () => {
                 this.isMicEnabled = !this.isMicEnabled;
-                if (this.isMicEnabled) {
-                    this.micToggleBtn.innerText = "🎙️ MICRO ON";
-                    this.micToggleBtn.classList.remove('off');
-                    if (this.activityState === 'IDLE') this.startListening();
-                } else {
-                    this.micToggleBtn.innerText = "🔇 MICRO OFF";
-                    this.micToggleBtn.classList.add('off');
-                    if (this.recognition) { try { this.recognition.abort(); } catch(e){} }
-                    this.changeState('IDLE');
-                }
+                this.micToggleBtn.innerText = this.isMicEnabled ? "🎙️ MICRO ON" : "🔇 MICRO OFF";
+                this.micToggleBtn.classList.toggle('off', !this.isMicEnabled);
+                if (this.isMicEnabled && this.activityState === 'IDLE') this.startListening();
             };
         }
-
-        if (!this.powerBtn) return;
-        this.powerBtn.onclick = async () => {
-            this.powerBtn.style.display = 'none';
-            await this.init();
-        };
+        if (this.powerBtn) {
+            this.powerBtn.onclick = async () => {
+                this.powerBtn.style.display = 'none';
+                await this.init();
+            };
+        }
     },
 
     async init() {
-        if (typeof faceapi === 'undefined') {
-            this.log("ERROR CRÍTICO: face-api no cargó.");
-            return;
-        }
-
         try {
-            this.log("Cargando Modelos Neuronales (Caras y Emociones)...");
             await this.loadModels();
-            this.log("Conectando óptica y audio (Hack anti-pitidos)...");
             await this.startCamera();
-            
             this.setupInteractions();
-            this.checkApiKey();
-            
+            this.log("Cerebro activado.");
+            this.listAvailableVoices();
             this.bootScreen.classList.add('hidden');
             this.changeState('IDLE');
-            
             this.setExpression('neutral');
             this.startBlinkCycle();
             this.startVisionLoop();
-            
-            this.speak("¡Bip! Sistemas al máximo. Memoria y visión conectadas.");
+            this.speak("¡Bip! Hola, soy Ron, tu mejor amigo fuera de la caja. ¿Quieres que juguemos a algo, que te cuente un cuento o que practiquemos lectura?");
             this.goFullscreen();
         } catch (err) {
-            this.log(`FALLO FATAL: ${err.message}`);
+            this.log(`Error: ${err.message}`);
             this.setExpression('glitch');
         }
     },
 
     async loadModels() {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-        await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
-        ]);
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
     },
 
     async startCamera() {
-        // REVERTIDO: Pedir audio=true bloqueaba el dictado de voz en Android.
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
         this.video.srcObject = stream;
         return new Promise(res => this.video.onloadedmetadata = res);
     },
 
-    checkApiKey() {
-        if (!this.apiKey) {
-            this.apiModal.classList.remove('hidden');
-        }
-    },
+    checkApiKey() { if (!this.apiKey) this.apiModal.classList.remove('hidden'); },
 
     setupInteractions() {
         this.saveBtn.onclick = () => {
@@ -128,291 +103,198 @@ const ronFace = {
                 localStorage.setItem('ron_groq_key', key);
                 this.apiKey = key;
                 this.apiModal.classList.add('hidden');
-                this.speak("¡Cerebro en línea!");
+                this.speak("¡Cerebro activado!");
             }
         };
     },
 
-    // --- GESTIÓN DE ESTADOS (MÁQUINA FSM) ---
     changeState(newState) {
         if (this.activityState === newState) return;
         this.activityState = newState;
-        
         switch (newState) {
             case 'IDLE':
                 this.setEyeColor('#1a1a1a'); 
-                if (this.isMicEnabled) {
-                    // Reducido a 1s para ser más sensible, aunque pite más seguido
-                    setTimeout(() => this.startListening(), 1000);
-                }
+                if (this.isMicEnabled) setTimeout(() => this.startListening(), 1200);
                 break;
-            case 'LISTENING':
-                this.setEyeColor('#00d4ff'); 
-                break;
-            case 'THINKING':
-                this.setEyeColor('#ffb703'); 
-                if (this.recognition) {
-                    try { this.recognition.abort(); } catch(e){} 
-                }
-                break;
-            case 'SPEAKING':
-                this.setEyeColor('#e63946'); 
-                if (this.recognition) {
-                    try { this.recognition.abort(); } catch(e){} 
-                }
-                break;
+            case 'LISTENING': this.setEyeColor('#00d4ff'); break;
+            case 'THINKING': this.setEyeColor('#ffb703'); break;
+            case 'SPEAKING': this.setEyeColor('#e63946'); break;
         }
     },
 
-    setEyeColor(color) {
-        document.documentElement.style.setProperty('--ron-eye-color', color);
-    },
+    setEyeColor(color) { document.documentElement.style.setProperty('--ron-eye-color', color); },
 
-    // --- VISIÓN (CARAS + EMOCIONES) ---
     async startVisionLoop() {
         setInterval(async () => {
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING') return;
-            
             try {
-                const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
-                    .withFaceLandmarks()
-                    .withFaceExpressions()
-                    .withFaceDescriptors();
-                
+                const det = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions().withFaceDescriptors();
                 if (det.length > 0) this.processDetections(det[0]);
             } catch(e) {}
-        }, 3000); 
+        }, 5000); 
     },
 
     async processDetections(detection) {
-        const descriptor = detection.descriptor;
         const expressions = detection.expressions;
-        
-        let maxEmotion = 'neutral';
-        let maxScore = 0;
+        let maxEmotion = 'neutral'; let maxScore = 0;
         for (const [emotion, score] of Object.entries(expressions)) {
             if (score > maxScore) { maxScore = score; maxEmotion = emotion; }
         }
-        
-        const emDict = { happy: 'feliz', sad: 'triste', angry: 'enfadado', surprised: 'sorprendido', disgusted: 'disgustado', fearful: 'asustado', neutral: 'neutral' };
+        const emDict = { happy: 'feliz', sad: 'triste', angry: 'enfadado', surprised: 'sorprendido', neutral: 'neutral' };
         this.currentEmotion = emDict[maxEmotion] || 'neutral';
 
-        let match = null;
         if (this.knownFaces.length > 0) {
             const matcher = new faceapi.FaceMatcher(this.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])));
-            const res = matcher.findBestMatch(descriptor);
-            if (res.label !== 'unknown') match = res.label;
-        }
-
-        if (match) {
-            if (this.currentUser !== match) {
-                this.currentUser = match;
-                this.log(`Reconocido: ${match} (${this.currentEmotion})`);
-                if (this.activityState === 'IDLE' || this.activityState === 'LISTENING') {
-                    this.speak(`¡Hola ${match}! Te veo ${this.currentEmotion}.`);
-                }
-            }
-        } else {
-            this.currentUser = 'desconocido';
-            if (this.activityState === 'IDLE' || this.activityState === 'LISTENING') {
-                this.changeState('THINKING');
-                const n = prompt("Ron no te conoce. ¿Cómo te llamas?");
-                if (n) {
-                    this.knownFaces.push({ label: n, descriptor: Array.from(descriptor) });
-                    localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
-                    this.currentUser = n;
-                    this.speak(`Amigo ${n} guardado en memoria.`);
-                } else {
-                    this.changeState('IDLE');
-                }
-            }
+            const res = matcher.findBestMatch(detection.descriptor);
+            if (res.label !== 'unknown') this.currentUser = res.label;
         }
     },
 
-    // --- CAPTURA DE FOTO OPTIMIZADA (VISTA MUNDO) ---
     captureOptimizedFrame() {
-        const MAX_SIZE = 1024; 
+        const MAX_SIZE = 1024;
         const canvas = document.createElement('canvas');
-        let width = this.video.videoWidth;
-        let height = this.video.videoHeight;
-        
-        if (width > height) {
-            if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
-        } else {
-            if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
+        let w = this.video.videoWidth; let h = this.video.videoHeight;
+        if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
+        else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+        canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
-
-        // Voltear horizontalmente si la cámara está espejada (común en selfies)
-        // para que la IA lea el texto correctamente
-        ctx.translate(width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(this.video, 0, 0, width, height);
-        
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-
-        // MOSTRAR PREVIEW EN EL LOG PARA EL USUARIO
-        if (this.fixedLog) {
-            const preview = document.createElement('img');
-            preview.src = dataUrl;
-            preview.style.width = '60px';
-            preview.style.height = 'auto';
-            preview.style.border = '1px solid #0f0';
-            preview.style.marginTop = '5px';
-            this.fixedLog.appendChild(preview);
-        }
-
-        return dataUrl; 
+        ctx.translate(w, 0); ctx.scale(-1, 1);
+        ctx.drawImage(this.video, 0, 0, w, h);
+        return canvas.toDataURL('image/jpeg', 0.8);
     },
 
-    // --- ESCUCHA ---
     startListening() {
         if (this.activityState !== 'IDLE' || !this.isMicEnabled) return;
-
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            this.log("Navegador no soporta STT.");
-            return;
-        }
-
+        if (!SpeechRecognition) return;
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
-        this.recognition.continuous = true; 
-
-        this.recognition.onstart = () => {
-            this.changeState('LISTENING');
-            this.log("Oídos abiertos.");
-        };
-
+        this.recognition.onstart = () => { this.changeState('LISTENING'); this.log("Escuchando..."); };
         this.recognition.onresult = (e) => {
-            if (this.activityState !== 'LISTENING') return;
             const text = e.results[0][0].transcript;
-            this.log(`[USER]: "${text}"`);
+            this.log(`> ${text}`);
             this.chat(text);
         };
-
-        this.recognition.onend = () => {
-            if (this.activityState === 'LISTENING') {
-                this.log("Silencio/Fin. Pausa breve...");
-                this.changeState('IDLE'); 
-            }
-        };
-
-        this.recognition.onerror = (e) => {
-            this.log(`Error STT: ${e.error}`);
-            this.changeState('IDLE');
-        };
-
+        this.recognition.onend = () => { if (this.activityState === 'LISTENING') this.changeState('IDLE'); };
         try { this.recognition.start(); } catch(e) { this.changeState('IDLE'); }
     },
 
-    // --- DIÁLOGO (MEMORIA Y VISIÓN APLANADAS) ---
     async chat(userText) {
         if (!this.apiKey) return;
-        
         this.changeState('THINKING');
         this.setExpression('thinking');
-        this.log("Capturando imagen y pensando...");
 
-        const imageData = this.captureOptimizedFrame();
-
-        // CONSTRUCCIÓN DEL MEGA-PROMPT PARA VISION
-        // Groq LLaMA 3.2 11b Vision falla con historiales multi-turno si hay imagen.
-        // Lo empaquetamos todo en un único string de texto.
+        const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'lectura', 'libro'];
+        const isVisualRequest = visualKeywords.some(kw => userText.toLowerCase().includes(kw));
         
-        let promptConstruido = `[SISTEMA] Eres Ron B-Bot (Ron da error). Optimista, leal y torpe. Usa '¡Bip!'. Respuestas MUY cortas y directas (máx 15 palabras).
-[CONTEXTO] Usuario: ${this.currentUser || 'Desconocido'}. Emoción que detecto: ${this.currentEmotion}.
-[HISTORIAL RECIENTE]\n`;
+        let model = isVisualRequest ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
+        
+        let sysPrompt = `Eres Ron B-Bot, el compañero de juegos. Personalidad: alegre, torpe, leal, optimista. Usa '¡Bip!'.
+        CAPACIDADES: 
+        1. JUEGOS: 'Búsqueda del Tesoro' (pides un objeto y lo validas por cámara), 'Simón Dice' (pides una emoción y la validas), 'Veo Veo'.
+        2. CUENTACUENTOS: Cuentas historias cortas y divertidas.
+        3. LECTURA: Si te enseñan un libro/texto, léelo en voz alta y ayuda al usuario a practicar.
+        
+        Si el usuario pregunta 'a qué jugamos' o 'qué podemos hacer', ofrece estas opciones de forma divertida.
+        Usuario actual: ${this.currentUser || 'amigo'}. Emoción detectada: ${this.currentEmotion}.`;
 
-        this.conversationHistory.slice(-6).forEach(msg => {
-            promptConstruido += `- ${msg.role === 'user' ? 'Usuario' : 'Ron'}: ${msg.content}\n`;
-        });
-
-        promptConstruido += `\n[MENSAJE ACTUAL DEL USUARIO]: "${userText}"
-(Adjunto imagen actual de lo que veo a través de la cámara)`;
+        let contentPayload = [];
+        if (isVisualRequest) {
+            const imageData = this.captureOptimizedFrame();
+            let promptVisual = `[SISTEMA] ${sysPrompt}\n[HISTORIAL]\n`;
+            this.conversationHistory.slice(-5).forEach(m => promptVisual += `- ${m.role === 'user' ? 'Tú' : 'Ron'}: ${m.content}\n`);
+            promptVisual += `\n[MENSAJE]: ${userText}`;
+            contentPayload = [ { type: "text", text: promptVisual }, { type: "image_url", image_url: { url: imageData } } ];
+        } else {
+            let messages = [{ role: "system", content: sysPrompt }];
+            this.conversationHistory.slice(-10).forEach(m => messages.push(m));
+            messages.push({ role: "user", content: userText });
+            contentPayload = messages;
+        }
 
         try {
+            const body = isVisualRequest ? { model, messages: [{ role: "user", content: contentPayload }] } : { model, messages: contentPayload };
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: "meta-llama/llama-4-scout-17b-16e-instruct",
-                    messages: [
-                        {
-                            role: "user",
-                            content: [
-                                { type: "text", text: promptConstruido },
-                                { type: "image_url", image_url: { url: imageData } }
-                            ]
-                        }
-                    ]
-                })
+                body: JSON.stringify(body)
             });
             const data = await res.json();
-            
-            if (data.error) throw new Error(data.error.message);
-
             const botResponse = data.choices[0].message.content;
-            this.log(`[RON]: "${botResponse}"`);
             
-            // Guardar en memoria
             this.conversationHistory.push({ role: "user", content: userText });
             this.conversationHistory.push({ role: "assistant", content: botResponse });
-            if (this.conversationHistory.length > 20) this.conversationHistory = this.conversationHistory.slice(-20);
+            if (this.conversationHistory.length > 15) this.conversationHistory.shift();
             localStorage.setItem('ron_history', JSON.stringify(this.conversationHistory));
 
             this.speak(botResponse);
-        } catch (e) { 
+        } catch (e) {
             this.log(`Error IA: ${e.message}`);
+            this.changeState('IDLE');
             this.setExpression('glitch');
-            this.speak("¡Bip! He tenido un fallo al procesar la imagen. ¿Puedes repetirlo?");
         }
     },
 
-    // --- VOZ ---
+    listAvailableVoices() {
+        const voices = window.speechSynthesis.getVoices();
+        const esVoices = voices.filter(v => v.lang.startsWith('es'));
+        this.log(`Voces ES: ${esVoices.length} encontradas.`);
+        esVoices.forEach(v => this.log(`- ${v.name}`));
+    },
+
     speak(text) {
-        if (!window.speechSynthesis) {
-            this.changeState('IDLE');
-            return;
-        }
-        
+        if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
-        this.setExpression('neutral');
+        
+        // Boca cuadrada redondeada para hablar (como en la foto 2)
+        this.updateMouth('M 35 10 L 65 10 Q 75 10 75 20 L 75 30 Q 75 40 65 40 L 35 40 Q 25 40 25 30 L 25 20 Q 25 10 35 10');
         
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'es-ES'; u.pitch = 1.8; u.rate = 1.1;
         
-        u.onstart = () => this.setTalking(true);
-        u.onend = () => { 
-            this.setTalking(false); 
-            setTimeout(() => {
-                this.changeState('IDLE');
-            }, 1000); 
-        };
-        
-        setTimeout(() => {
-            if (this.activityState === 'SPEAKING' && !window.speechSynthesis.speaking) {
-                this.setTalking(false);
-                this.changeState('IDLE');
-            }
-        }, Math.max(text.length * 100, 3000));
+        // Buscar una voz mejor si existe (Google o Microsoft Helena)
+        const voices = window.speechSynthesis.getVoices();
+        const bestVoice = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Helena') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('es'));
+        if (bestVoice) u.voice = bestVoice;
 
+        u.lang = 'es-ES';
+        u.pitch = 1.6; // Ron tiene voz un poco aguda
+        u.rate = 1.1;
+        
+        u.onstart = () => this.mouthContainer.classList.add('mouth-vibrate');
+        u.onend = () => { 
+            this.mouthContainer.classList.remove('mouth-vibrate'); 
+            this.setExpression('neutral'); // Volver a sonrisa neutral
+            setTimeout(() => this.changeState('IDLE'), 1000); 
+        };
         window.speechSynthesis.speak(u);
     },
 
     setExpression(exp) {
         this.expressionState = exp;
         [this.eyes.left, this.eyes.right].forEach(el => el.className = 'eye');
-        this.stopGlitchEffect();
-        if (exp === 'happy') { this.updateMouth('M 5 15 Q 50 45 95 15'); this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); }
-        else if (exp === 'surprise') { this.updateMouth('M 30 25 Q 50 35 70 25'); this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise'); }
-        else if (exp === 'thinking') { this.updateMouth('M 20 20 Q 50 20 80 20'); this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); this.startGlitchEffect(); }
-        else if (exp === 'glitch') { this.startGlitchEffect(); this.eyes.left.classList.add('glitch-left'); this.eyes.right.classList.add('glitch-right'); }
-        else { this.updateMouth('M 10 20 Q 50 40 90 20'); }
+        
+        if (exp === 'happy') { 
+            this.updateMouth('M 15 15 Q 50 50 85 15'); // Gran sonrisa
+            this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy'); 
+        }
+        else if (exp === 'surprise') { 
+            this.updateMouth('M 35 15 Q 50 45 65 15'); // Oh!
+            this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise'); 
+        }
+        else if (exp === 'thinking') { 
+            this.updateMouth('M 30 25 Q 50 25 70 25'); // Línea plana
+            this.eyes.left.classList.add('flat'); this.eyes.right.classList.add('flat'); 
+            this.startGlitchEffect(); 
+        }
+        else if (exp === 'glitch') { 
+            this.startGlitchEffect(); 
+            this.eyes.left.classList.add('glitch-left'); this.eyes.right.classList.add('glitch-right'); 
+        }
+        else { 
+            this.updateMouth('M 25 25 Q 50 40 75 25'); // Sonrisa suave neutral (Foto 1)
+            this.stopGlitchEffect(); 
+        }
     },
 
     startBlinkCycle() {
@@ -437,9 +319,8 @@ const ronFace = {
         }, 150);
     },
 
-    stopGlitchEffect() { clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
+    stopGlitchEffect() { if (this.glitchInterval) clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
     updateMouth(d) { this.mouth.setAttribute('d', d); },
-    setTalking(t) { t ? this.mouthContainer.classList.add('mouth-vibrate') : this.mouthContainer.classList.remove('mouth-vibrate'); },
     goFullscreen() { const d = document.documentElement; if (!document.fullscreenElement) (d.requestFullscreen || d.webkitRequestFullScreen).call(d).catch(()=>{}); }
 };
 
