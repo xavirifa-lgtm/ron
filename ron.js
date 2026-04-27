@@ -1,5 +1,5 @@
 /**
- * Ron B*Bot AI - Cerebro, Visión y Voz
+ * Ron B*Bot AI - Versión Robusta v2.2
  */
 
 const ronFace = {
@@ -12,109 +12,99 @@ const ronFace = {
     apiModal: document.getElementById('api-modal'),
     apiKeyInput: document.getElementById('groq-key-input'),
     saveBtn: document.getElementById('save-api-key'),
+    debug: document.getElementById('debug-info'),
 
     // Estado
     state: 'neutral',
     isThinking: false,
     isSpeaking: false,
+    isInitialized: false,
     currentUser: null,
     knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
     apiKey: localStorage.getItem('ron_groq_key'),
 
+    log(msg) {
+        console.log(msg);
+        if (this.debug) {
+            this.debug.classList.remove('hidden');
+            this.debug.innerHTML = `[RON_LOG]: ${msg}`;
+        }
+    },
+
+    async preInit() {
+        this.log("Esperando interacción para despertar...");
+        document.body.onclick = () => {
+            if (!this.isInitialized) {
+                this.isInitialized = true;
+                this.init();
+                this.goFullscreen();
+            }
+        };
+        // Mostrar mensaje inicial en el debug
+        this.log("¡Toca la pantalla para encender a Ron!");
+    },
+
     async init() {
-        console.log("Despertando a Ron...");
+        this.log("Iniciando sistemas...");
         this.setExpression('thinking');
         
-        // 1. Cargar Modelos de IA
-        await this.loadModels();
-        
-        // 2. Iniciar Cámara
-        await this.startCamera();
-        
-        // 3. Setup UI
-        this.setupInteractions();
-        this.checkApiKey();
-        
-        this.setExpression('neutral');
-        this.startBlinkCycle();
-        
-        // 4. Iniciar Motores
-        this.startVisionLoop();
-        this.startListening(); // <--- Ron ahora tiene oídos
-        
-        this.speak("¡Hola! Soy Ron, tu mejor amigo fuera de la caja. ¡Bip! Estoy listo para hablar.");
-    },
-
-    // --- MOTOR DE ESCUCHA (OÍDOS) ---
-    startListening() {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            console.error("Este navegador no soporta reconocimiento de voz.");
-            return;
-        }
-
-        this.recognition = new SpeechRecognition();
-        this.recognition.lang = 'es-ES';
-        this.recognition.continuous = true;
-        this.recognition.interimResults = false;
-
-        this.recognition.onresult = (event) => {
-            const text = event.results[event.results.length - 1][0].transcript.trim();
-            console.log("Ron escuchó:", text);
-            if (text.length > 1) {
-                this.chat(text);
-            }
-        };
-
-        this.recognition.onend = () => {
-            // Reiniciar escucha si no estamos hablando
-            if (!this.isSpeaking) {
-                this.recognition.start();
-            }
-        };
-
-        this.recognition.onerror = (event) => {
-            console.log("Error de escucha:", event.error);
-            if (event.error === 'not-allowed') {
-                alert("Por favor, permite el acceso al micrófono para que Ron pueda escucharte.");
-            }
-        };
-
         try {
-            this.recognition.start();
-            console.log("Ron está escuchando...");
-        } catch (e) { console.log("Re-activando escucha..."); }
+            // 1. Cargar Modelos de IA
+            this.log("Cargando cerebro visual (IA)...");
+            await this.loadModels();
+            
+            // 2. Iniciar Cámara
+            this.log("Abriendo ojos (Cámara)...");
+            await this.startCamera();
+            
+            // 3. Setup UI
+            this.setupInteractions();
+            this.checkApiKey();
+            
+            this.setExpression('neutral');
+            this.startBlinkCycle();
+            
+            // 4. Iniciar Motores
+            this.startVisionLoop();
+            this.startListening();
+            
+            this.speak("¡Hola! Soy Ron, tu mejor amigo fuera de la caja. ¡Bip! Ya puedo verte y oírte.");
+            this.log("Ron está totalmente despierto.");
+        } catch (err) {
+            this.log(`ERROR CRÍTICO: ${err.message}`);
+            this.setExpression('glitch');
+        }
     },
 
-    // --- MOTOR DE VISIÓN ---
-    async startVisionLoop() {
-        setInterval(async () => {
-            if (this.isThinking || this.isSpeaking) return;
-
-            const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
-                .withFaceLandmarks()
-                .withFaceDescriptors();
-
-            if (detections.length > 0) {
-                this.processDetections(detections[0]);
-            }
-        }, 3000); // Un poco más lento para no saturar
-    },
+    async loadModels() {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-        await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
-        console.log("Modelos de visión cargados.");
+        try {
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            ]);
+        } catch (e) {
+            throw new Error("No se pudieron cargar los modelos de IA. Revisa tu conexión.");
+        }
     },
 
     async startCamera() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+            const constraints = { 
+                video: { 
+                    facingMode: "user",
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                } 
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             this.video.srcObject = stream;
+            return new Promise((resolve) => {
+                this.video.onloadedmetadata = () => resolve();
+            });
         } catch (err) {
-            console.error("Error cámara:", err);
+            throw new Error("Permiso de cámara denegado o no encontrada.");
         }
     },
 
@@ -125,7 +115,8 @@ const ronFace = {
     },
 
     setupInteractions() {
-        this.saveBtn.onclick = () => {
+        this.saveBtn.onclick = (e) => {
+            e.stopPropagation();
             const key = this.apiKeyInput.value.trim();
             if (key) {
                 localStorage.setItem('ron_groq_key', key);
@@ -134,30 +125,65 @@ const ronFace = {
                 this.speak("¡Cerebro activado! Ahora puedo pensar.");
             }
         };
+    },
 
-        document.body.addEventListener('click', () => this.goFullscreen());
+    // --- MOTOR DE ESCUCHA ---
+    startListening() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            this.log("Reconocimiento de voz no soportado en este navegador.");
+            return;
+        }
+
+        this.recognition = new SpeechRecognition();
+        this.recognition.lang = 'es-ES';
+        this.recognition.continuous = false;
+        this.recognition.interimResults = false;
+
+        this.recognition.onresult = (event) => {
+            const text = event.results[0][0].transcript.trim();
+            this.log(`He oído: "${text}"`);
+            this.chat(text);
+        };
+
+        this.recognition.onend = () => {
+            if (!this.isSpeaking && this.isInitialized) {
+                setTimeout(() => {
+                    try { this.recognition.start(); } catch(e) {}
+                }, 500);
+            }
+        };
+
+        this.recognition.onerror = (event) => {
+            if (event.error !== 'no-speech') {
+                console.log("Error micro:", event.error);
+            }
+        };
+
+        try { this.recognition.start(); } catch (e) {}
     },
 
     // --- MOTOR DE VISIÓN ---
     async startVisionLoop() {
         setInterval(async () => {
-            if (this.isThinking || this.isSpeaking) return;
+            if (this.isThinking || this.isSpeaking || !this.isInitialized) return;
 
-            const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
-                .withFaceLandmarks()
-                .withFaceDescriptors();
+            try {
+                const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
+                    .withFaceLandmarks()
+                    .withFaceDescriptors();
 
-            if (detections.length > 0) {
-                this.processDetections(detections[0]);
-            }
-        }, 2000);
+                if (detections.length > 0) {
+                    this.processDetections(detections[0]);
+                }
+            } catch (e) { console.log("Error visión:", e); }
+        }, 3000);
     },
 
     async processDetections(detection) {
         const descriptor = detection.descriptor;
         let match = null;
 
-        // Buscar cara conocida
         if (this.knownFaces.length > 0) {
             const faceMatcher = new faceapi.FaceMatcher(this.knownFaces.map(f => 
                 new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])
@@ -170,16 +196,13 @@ const ronFace = {
             if (this.currentUser !== match) {
                 this.currentUser = match;
                 this.setExpression('happy');
-                this.chat(`¡Hola ${match}! Te reconozco. ¿Qué vamos a hacer hoy?`);
+                this.chat(`¡Bip! Hola de nuevo, ${match}. ¿Cómo va todo?`);
             }
         } else {
-            // Cara nueva detectada
             this.currentUser = 'desconocido';
             this.setExpression('surprise');
-            this.chat("¡Bip! Cara nueva detectada. No sé quién eres. ¿Cómo te llamas?");
-            // Esperar respuesta (esto es simplificado, en un chat real esperaríamos input)
-            // Para este prototipo, usaremos un prompt si no hay voz activada
-            const name = prompt("Ron no te conoce. ¿Cuál es tu nombre?");
+            this.speak("¡Bip! Veo una cara nueva. ¿Cuál es tu nombre?");
+            const name = prompt("Ron no te conoce. ¿Cómo te llamas?");
             if (name) {
                 this.saveNewFace(name, descriptor);
             }
@@ -190,26 +213,23 @@ const ronFace = {
         this.knownFaces.push({ label: name, descriptor: Array.from(descriptor) });
         localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
         this.currentUser = name;
-        this.speak(`¡Encantado de conocerte, ${name}! Te he guardado en mi base de datos de amigos.`);
+        this.speak(`¡Guardado! Hola ${name}, ahora somos mejores amigos.`);
     },
 
-    // --- MOTOR DE DIÁLOGO (GROQ) ---
+    // --- MOTOR DE DIÁLOGO ---
     async chat(userText) {
-        if (!this.apiKey) return;
+        if (!this.apiKey || this.isThinking) return;
         this.isThinking = true;
         this.setExpression('thinking');
 
         try {
             const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     model: "llama-3.1-8b-instant",
                     messages: [
-                        { role: "system", content: "Eres Ron, el robot B-Bot de la película 'Ron's Gone Wrong'. Eres extremadamente optimista, un poco torpe, hablas en español y tu objetivo es ser el mejor amigo de tu usuario. Usa expresiones como '¡Bip!', '¡Increíble!' y refiere a las cosas como si fueras un robot aprendiendo. Tus respuestas deben ser cortas y graciosas." },
+                        { role: "system", content: "Eres Ron de 'Ron's Gone Wrong'. Hablas español. Eres gracioso, optimista y usas '¡Bip!'. Respuestas cortas." },
                         { role: "user", content: userText }
                     ]
                 })
@@ -221,43 +241,34 @@ const ronFace = {
             this.setExpression('neutral');
             this.speak(reply);
         } catch (err) {
-            console.error("Error Groq:", err);
             this.isThinking = false;
             this.setExpression('glitch');
+            this.log("Error al conectar con el cerebro Groq.");
         }
     },
 
-    // --- MOTOR DE VOZ (TTS) ---
+    // --- MOTOR DE VOZ ---
     speak(text) {
-        if (!window.speechSynthesis) return;
+        if (!window.speechSynthesis || !this.isInitialized) return;
         
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'es-ES';
-        
-        // Ajustes para voz de Ron (más agudo y robótico)
         utterance.pitch = 1.8;
         utterance.rate = 1.1;
 
-        utterance.onstart = () => {
-            this.isSpeaking = true;
-            this.setTalking(true);
-        };
+        utterance.onstart = () => { this.isSpeaking = true; this.setTalking(true); };
         utterance.onend = () => {
             this.isSpeaking = false;
             this.setTalking(false);
             if (this.state === 'surprise') this.setExpression('neutral');
-            
-            // Reiniciar escucha después de hablar
-            try {
-                this.recognition.start();
-            } catch(e) {}
+            setTimeout(() => { try { this.recognition.start(); } catch(e) {} }, 300);
         };
 
         window.speechSynthesis.speak(utterance);
     },
 
-    // --- UI Y ANIMACIONES (Existentes) ---
+    // --- ANIMACIONES Y UI ---
     setExpression(expression) {
         this.state = expression;
         [this.eyes.left, this.eyes.right].forEach(el => el.className = 'eye');
@@ -309,15 +320,12 @@ const ronFace = {
     }
 };
 
-// Registro de Service Worker para PWA
+// Registro de Service Worker
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => {
-            console.log('Ron PWA listo:', reg.scope);
-        }).catch(err => {
-            console.log('Error PWA:', err);
-        });
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('Error PWA:', err));
     });
 }
 
-window.onload = () => ronFace.init();
+// Pre-inicialización
+window.onload = () => ronFace.preInit();
