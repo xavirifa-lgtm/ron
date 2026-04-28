@@ -59,7 +59,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v16.3 - Edición Estable...");
+        this.log("Iniciando Ron v16.8 - Edición Estable HD...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
@@ -437,7 +437,7 @@ const ronFace = {
     },
 
     captureOptimizedFrame() {
-        const MAX = 400; // Resolución optimizada v16.5
+        const MAX = 800; // Calidad HD v16.8
         const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
@@ -445,18 +445,20 @@ const ronFace = {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.5);
+        return canvas.toDataURL('image/jpeg', 0.8); // 80% calidad
     },
 
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        // Boca sólida y ojos ovalados moviéndose v16.7
+        this.mouth.style.fill = '#1a1a1a'; // Rellenar boca al hablar v16.8
+        this.mouth.style.stroke = 'none';
+
         const mouthShapes = [
-            'M 30 20 Q 50 55 70 20 Q 50 40 30 20 Z', // Óvalo
-            'M 30 15 L 70 15 L 65 45 L 35 45 Z',      // Trapezoide sólido
-            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       // Rectángulo sólido
+            'M 30 20 Q 50 55 70 20 Q 50 40 30 20 Z', 
+            'M 30 15 L 70 15 L 65 45 L 35 45 Z',      
+            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       
         ];
         let shapeIdx = 0;
         const mouthInterval = setInterval(() => {
@@ -466,6 +468,8 @@ const ronFace = {
                 shapeIdx++;
             } else {
                 clearInterval(mouthInterval);
+                this.mouth.style.fill = 'none'; // Volver a línea fina al callar v16.8
+                this.mouth.style.stroke = '#1a1a1a';
                 this.setExpression('neutral'); 
             }
         }, 140);
