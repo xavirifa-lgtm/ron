@@ -75,12 +75,15 @@ const ronFace = {
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { 
             this.powerBtn.style.display = 'none'; 
-            // Permiso de Audio v17.1 (Estilo Chronobeats)
+            // CEBADO DE AUDIO v17.3 (Desbloqueo Real)
             if (this.ytPlayer && this.ytPlayer.playVideo) {
-                this.ytPlayer.playVideo();
-                this.ytPlayer.stopVideo();
                 this.ytPlayer.unMute();
                 this.ytPlayer.setVolume(100);
+                this.ytPlayer.playVideo(); // Reproduce el Rickroll de prueba
+                setTimeout(() => {
+                    this.ytPlayer.stopVideo(); // Lo para tras 500ms
+                    this.log("Motor Audio Desbloqueado.");
+                }, 500);
             }
             await this.init(); 
         };
