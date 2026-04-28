@@ -121,9 +121,11 @@ body, html {
     display: block !important; 
 }
 #mouth-path { 
-    fill: #1a1a1a !important; /* Relleno sólido v16.2 */
-    stroke: none;
-    transition: d 0.2s ease; 
+    fill: none !important; 
+    stroke: #1a1a1a !important; 
+    stroke-width: 6; /* Línea fina como antes v16.4 */
+    stroke-linecap: round;
+    transition: d 0.3s ease; 
 }
 .mouth-vibrate { animation: mouth-talk 0.1s infinite alternate; }
 @keyframes mouth-talk { from { transform: scale(0.9); } to { transform: scale(1.1); } }

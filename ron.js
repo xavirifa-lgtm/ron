@@ -139,7 +139,7 @@ const ronFace = {
                 if (this.isMicEnabled) setTimeout(() => this.startListening(), 1000);
                 break;
             case 'LISTENING': 
-                this.setEyeColor('#00d4ff'); // Azul (Único color activo)
+                this.setEyeColor('#00d4ff'); // Azul siempre al escuchar v16.4
                 break;
             case 'THINKING': 
                 this.setEyeColor('#1a1a1a'); // Negro
@@ -260,8 +260,7 @@ const ronFace = {
         this.recognition.lang = 'es-ES';
         this.recognition.onstart = () => { 
             this.changeState('LISTENING'); 
-            // Si esperamos wake word, ojos normales, si no, azul
-            if (this.isWaitingForWakeWord) this.setEyeColor('#1a1a1a'); 
+            this.setEyeColor('#00d4ff'); // Ojos azules al arrancar escucha
         };
         this.recognition.onresult = (e) => {
             let text = e.results[0][0].transcript;
@@ -486,7 +485,8 @@ const ronFace = {
             this.setExpression('neutral'); 
             setTimeout(() => {
                 this.changeState('IDLE');
-                this.isWaitingForWakeWord = true; // Volver a esperar wake word v11.0
+                // Si acabamos de reconocer a alguien, le damos 5 seg de margen sin wake word
+                this.isWaitingForWakeWord = true; 
             }, 1000); 
         };
         window.speechSynthesis.speak(u);
@@ -499,26 +499,26 @@ const ronFace = {
         this.chestIcon.className = 'chest-icon-container';
 
         if (exp === 'happy') { 
-            this.updateMouth('M 25 30 Q 50 55 75 30 Q 50 45 25 30 Z'); // Curva feliz sólida v16.3
+            this.updateMouth('M 25 35 Q 50 55 75 35'); // Curva fina feliz
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
             this.setChestIcon('heart');
         }
         else if (exp === 'star') { 
-            this.updateMouth('M 30 35 Q 50 50 70 35 Q 50 40 30 35 Z');
+            this.updateMouth('M 30 35 Q 50 45 70 35');
             this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star');
             this.setChestIcon('wifi');
         }
         else if (exp === 'fear') {
-            this.updateMouth('M 35 45 Q 50 30 65 45 Q 50 35 35 45 Z'); 
+            this.updateMouth('M 35 45 Q 50 35 65 45'); 
             this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('fear');
             this.setChestIcon('warning');
         }
         else if (exp === 'thinking') { 
-            this.updateMouth('M 35 35 L 65 35 L 65 40 L 35 40 Z'); 
+            this.updateMouth('M 35 40 L 65 40'); 
             this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
         }
         else { 
-            this.updateMouth('M 25 35 Q 50 50 75 35 Q 50 42 25 35 Z'); // Curva neutral v16.3
+            this.updateMouth('M 25 35 Q 50 48 75 35'); // Curva fina neutral
             this.stopGlitchEffect(); 
         }
     },
