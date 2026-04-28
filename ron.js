@@ -63,34 +63,9 @@ const ronFace = {
     async preInit() {
         this.log("Iniciando Ron v17.6 - RED EDITION...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
-        const initYT = () => {
-            this.ytPlayer = new YT.Player('ron-yt-player', {
-                height: '200', width: '200', videoId: '3H6u8-7m6Xw',
-                playerVars: { 
-                    'autoplay': 0, 'controls': 0, 'disablekb': 1, 'modestbranding': 1, 
-                    'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin 
-                },
-                events: { 
-                    'onReady': () => this.log("Sistema de Audio: LISTO"),
-                    'onError': (e) => this.handleYTError(e.data)
-                }
-            });
-        };
-        if (window.YT && window.YT.Player) initYT();
-        else window.onYouTubeIframeAPIReady = initYT;
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { 
             this.powerBtn.style.display = 'none'; 
-            // CEBADO DE AUDIO v17.3 (Desbloqueo Real)
-            if (this.ytPlayer && this.ytPlayer.playVideo) {
-                this.ytPlayer.unMute();
-                this.ytPlayer.setVolume(100);
-                this.ytPlayer.playVideo(); // Reproduce el Rickroll de prueba
-                setTimeout(() => {
-                    this.ytPlayer.stopVideo(); // Lo para tras 1 segundo v17.4
-                    this.log("Motor Audio Desbloqueado.");
-                }, 1000);
-            }
             await this.init(); 
         };
         this.micToggleBtn.onclick = () => {
@@ -610,51 +585,11 @@ const ronFace = {
 
     stopGlitchEffect() { if (this.glitchInterval) clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
 
-    handleYTError(code) {
-        this.log(`Error Audio YouTube: ${code}`);
-        if (code === 150 || code === 101) {
-            this.log("⚠️ Bloqueo de Copyright detectado. Buscando versión alternativa...");
-            // Si falla el ID directo, forzamos búsqueda general
-            this.ytPlayer.loadPlaylist({
-                listType: 'search',
-                list: "mecano letra",
-                index: 0,
-                startSeconds: 0,
-                suggestedQuality: 'small'
-            });
-        }
-    },
-    
-    // FUNCIÓN DE MÚSICA (v11.1 - CHRONOTECH)
+    // FUNCIÓN DE MÚSICA (v18.0 - APP LAUNCHER)
     playMusic(query) {
-        if (!this.ytPlayer) return this.log("Error: Player no listo.");
-        
-        // Mapeo de IDs directas v17.9 (Versiones Unblockable)
-        const directIDs = {
-            'mecano': 'S9X499O-lZk', // Versión No-Oficial (Evita Error 150)
-            'fiesta': 'S_62_z3B_yY',
-            'relax': '5qap5aO4i9A'
-        };
-
-        const targetID = directIDs[query.toLowerCase()] || null;
-        this.ytPlayer.unMute();
-        this.ytPlayer.setVolume(100);
-
-        if (targetID) {
-            this.log(`ID Directa detectada para ${query}: ${targetID}`);
-            this.ytPlayer.loadVideoById(targetID);
-        } else {
-            this.log(`Buscando vía ChronoSearch: ${query}`);
-            this.ytPlayer.loadPlaylist({
-                listType: 'search',
-                list: query,
-                index: 0,
-                startSeconds: 0,
-                suggestedQuality: 'small'
-            });
-        }
-
-        setTimeout(() => this.ytPlayer.playVideo(), 1500);
+        this.log(`¡Bip! Abriendo YouTube Music: ${query}`);
+        const url = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+        window.open(url, '_blank');
     },
 
     stopMusic() {
