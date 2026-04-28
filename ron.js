@@ -611,22 +611,30 @@ const ronFace = {
     playMusic(query) {
         if (!this.ytPlayer || !this.ytPlayer.loadPlaylist) return this.log("Error: Audio no inicializado.");
         
-        this.log(`Buscando ritmo: ${query}`);
+        this.log(`🔍 Buscando: "${query}"...`);
         try {
             this.ytPlayer.unMute();
             this.ytPlayer.setVolume(100);
+            
+            // Forzar carga de búsqueda v17.5
             this.ytPlayer.loadPlaylist({
                 listType: 'search',
                 list: query,
                 index: 0,
                 startSeconds: 0,
-                suggestedQuality: 'small'
+                suggestedQuality: 'medium'
             });
-            // Forzar play tras pequeño delay para móviles
+
+            // Re-intentar play si se queda parado
             setTimeout(() => {
-                if (this.ytPlayer.getPlayerState() !== 1) this.ytPlayer.playVideo();
-            }, 1000);
-        } catch(e) { this.log(`Error Play: ${e.message}`); }
+                const state = this.ytPlayer.getPlayerState();
+                this.log(`Estado actual: ${state}`);
+                if (state !== 1 && state !== 3) {
+                    this.log("Forzando inicio de música...");
+                    this.ytPlayer.playVideo();
+                }
+            }, 2000);
+        } catch(e) { this.log(`Error Crítico Música: ${e.message}`); }
     },
 
     stopMusic() {

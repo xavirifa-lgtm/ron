@@ -169,21 +169,20 @@ body, html {
 
 #debug-info {
     position: fixed;
-    bottom: 10px;
-    left: 10px;
-    width: 280px;
-    max-height: 120px;
-    background: #000 !important; /* Negro total v17.4 */
-    color: #00ff00 !important; /* Verde Matrix */
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 30%; /* Mucho más grande v17.5 */
+    background: rgba(0,0,0,0.95) !important; 
+    color: #00ff00 !important; 
     font-family: monospace;
-    font-size: 11px;
-    padding: 10px;
-    border-radius: 5px;
-    pointer-events: auto; /* Para poder scrollear */
+    font-size: 13px;
+    padding: 15px;
+    border-top: 2px solid #00ff00;
+    pointer-events: auto;
     overflow-y: auto;
     z-index: 10000;
     display: block !important; 
-    border: 1px solid #333;
 }
 
 .api-modal {
