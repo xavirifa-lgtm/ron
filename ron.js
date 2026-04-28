@@ -58,7 +58,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v15.0 - Edición Masterclass...");
+        this.log("Iniciando Ron v16.3 - Edición Estable...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
@@ -270,15 +270,12 @@ const ronFace = {
             this.log(`Oído: ${text}`);
 
             if (this.isWaitingForWakeWord) {
-                // Oído mucho más sensible v16.2
-                const t = text.toLowerCase();
-                if (t.includes("ron") || t.includes("hola") || t.includes("oye") || t.includes("amigo") || t.length > 5) {
+                if (t.includes("ron") || t.includes("hola ron") || t.includes("oye ron") || t.includes("hola")) {
                     this.isWaitingForWakeWord = false;
                     this.setEyeColor('#00d4ff'); 
-                    this.setChestIcon('wifi');
-                    text = text.replace(/hola ron|oye ron|hola|ron/gi, "").trim();
-                    if (text.length < 2) {
-                        this.speak("¡Bip! Hola amigo. ¿Qué necesitas?");
+                    // No limpiamos el texto tan agresivamente para no romper comandos
+                    if (t.split(" ").length < 2) {
+                        this.speak("¡Bip! ¿Dime?");
                         return;
                     }
                 } else {
@@ -460,11 +457,11 @@ const ronFace = {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        // Animación de boca dinámica v16.2 (Formas sólidas de película)
+        // Animación de boca dinámica (v16.3) - Solo al hablar
         const mouthShapes = [
-            'M 30 20 Q 50 50 70 20 Q 50 30 30 20 Z', // Óvalo
-            'M 35 15 L 65 15 L 60 45 L 40 45 Z',      // Trapezoide (triángulo-ovalado)
-            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       // Rectángulo suave
+            'M 25 35 Q 50 55 75 35 Q 50 45 25 35 Z', // Óvalo fino
+            'M 30 30 Q 50 60 70 30 Q 50 40 30 30 Z', // Óvalo profundo
+            'M 35 25 L 65 25 L 60 45 L 40 45 Z'       // Trapezoide
         ];
         let shapeIdx = 0;
         const mouthInterval = setInterval(() => {
@@ -473,8 +470,9 @@ const ronFace = {
                 shapeIdx++;
             } else {
                 clearInterval(mouthInterval);
+                this.setExpression('neutral'); // Volver a curva feliz al callar
             }
-        }, 120);
+        }, 150);
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -501,30 +499,26 @@ const ronFace = {
         this.chestIcon.className = 'chest-icon-container';
 
         if (exp === 'happy') { 
-            this.updateMouth('M 20 20 Q 50 60 80 20 Q 50 40 20 20 Z'); // Óvalo alegre sólido
+            this.updateMouth('M 25 30 Q 50 55 75 30 Q 50 45 25 30 Z'); // Curva feliz sólida v16.3
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
             this.setChestIcon('heart');
         }
         else if (exp === 'star') { 
-            this.updateMouth('M 30 25 Q 50 50 70 25 Q 50 35 30 25 Z');
+            this.updateMouth('M 30 35 Q 50 50 70 35 Q 50 40 30 35 Z');
             this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star');
             this.setChestIcon('wifi');
         }
         else if (exp === 'fear') {
-            this.updateMouth('M 30 40 Q 50 20 70 40 Q 50 30 30 40 Z'); 
+            this.updateMouth('M 35 45 Q 50 30 65 45 Q 50 35 35 45 Z'); 
             this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('fear');
             this.setChestIcon('warning');
         }
         else if (exp === 'thinking') { 
-            this.updateMouth('M 30 30 L 70 30 L 70 35 L 30 35 Z'); 
+            this.updateMouth('M 35 35 L 65 35 L 65 40 L 35 40 Z'); 
             this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
         }
-        else if (exp === 'surprise') {
-            this.updateMouth('M 35 15 L 65 15 L 65 50 L 35 50 Z'); // Boca cuadrada/rectángulo relleno v16.2
-            this.eyes.left.classList.add('surprise'); this.eyes.right.classList.add('surprise');
-        }
         else { 
-            this.updateMouth('M 25 25 Q 50 50 75 25 Q 50 35 25 25 Z'); // Óvalo neutral sólido
+            this.updateMouth('M 25 35 Q 50 50 75 35 Q 50 42 25 35 Z'); // Curva neutral v16.3
             this.stopGlitchEffect(); 
         }
     },
