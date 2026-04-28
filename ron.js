@@ -64,8 +64,12 @@ const ronFace = {
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.onYouTubeIframeAPIReady = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
-                height: '1', width: '1', videoId: 'dQw4w9WgXcQ',
-                events: { 'onReady': () => this.log("Reproductor YouTube listo.") }
+                height: '200', width: '200', videoId: 'dQw4w9WgXcQ',
+                playerVars: { 'autoplay': 0, 'controls': 0, 'disablekb': 1, 'modestbranding': 1, 'rel': 0 },
+                events: { 
+                    'onReady': () => this.log("Sistema de Audio: LISTO"),
+                    'onError': (e) => this.log(`Error Audio: ${e.data}`)
+                }
             });
         };
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
@@ -600,18 +604,24 @@ const ronFace = {
     
     // FUNCIÓN DE MÚSICA (v11.1 - CHRONOTECH)
     playMusic(query) {
-        if (!this.ytPlayer) return this.log("Error: Player no listo.");
+        if (!this.ytPlayer || !this.ytPlayer.loadPlaylist) return this.log("Error: Audio no inicializado.");
         
-        this.log(`Reproduciendo ChronoTech: ${query}`);
-        this.ytPlayer.unMute();
-        this.ytPlayer.setVolume(100);
-        this.ytPlayer.loadPlaylist({
-            listType: 'search',
-            list: query,
-            index: 0,
-            startSeconds: 0,
-            suggestedQuality: 'small'
-        });
+        this.log(`Buscando ritmo: ${query}`);
+        try {
+            this.ytPlayer.unMute();
+            this.ytPlayer.setVolume(100);
+            this.ytPlayer.loadPlaylist({
+                listType: 'search',
+                list: query,
+                index: 0,
+                startSeconds: 0,
+                suggestedQuality: 'small'
+            });
+            // Forzar play tras pequeño delay para móviles
+            setTimeout(() => {
+                if (this.ytPlayer.getPlayerState() !== 1) this.ytPlayer.playVideo();
+            }, 1000);
+        } catch(e) { this.log(`Error Play: ${e.message}`); }
     },
 
     stopMusic() {
