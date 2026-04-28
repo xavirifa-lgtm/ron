@@ -146,7 +146,7 @@ const ronFace = {
                 this.setEyeColor('#1a1a1a'); // Negro
                 break;
             case 'SPEAKING': 
-                this.setEyeColor('#1a1a1a'); // Negro
+                this.setEyeColor('#1a1a1a'); 
                 break;
         }
     },
@@ -271,16 +271,19 @@ const ronFace = {
             this.log(`Oído: ${text}`);
 
             if (this.isWaitingForWakeWord) {
-                if (t.includes("ron") || t.includes("hola ron") || t.includes("oye ron") || t.includes("hola")) {
+                if (t.includes("ron") || t.includes("hola") || t.includes("oye") || t.includes("amigo") || t.length > 5) {
                     this.isWaitingForWakeWord = false;
                     this.setEyeColor('#00d4ff'); 
                     if (t.split(" ").length < 2) {
-                        this.speak("¡Bip! ¿Dime?");
+                        this.speak("¡Bip! ¿Qué pasa, amigo?");
                         return;
                     }
                 } else {
                     return; 
                 }
+            } else {
+                // Si estamos en ventana de charla, cualquier cosa activa la respuesta
+                if (this.convTimeout) clearTimeout(this.convTimeout);
             }
 
             if (this.isLearningFace && this.tempDescriptor) this.saveNewUser(text);
@@ -449,13 +452,22 @@ const ronFace = {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        // Boca curva de película (Línea pura v16.5)
-        this.updateMouth('M 25 35 Q 50 50 75 35');
-        
-        const eyeInterval = setInterval(() => {
-            if (this.activityState === 'SPEAKING') this.shiftEyes();
-            else clearInterval(eyeInterval);
-        }, 400);
+        // Animación de boca dinámica recuperada v16.6 (Formas sólidas de película)
+        const mouthShapes = [
+            'M 30 20 Q 50 50 70 20 Q 50 30 30 20 Z', // Óvalo
+            'M 35 15 L 65 15 L 60 45 L 40 45 Z',      // Trapezoide
+            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       // Rectángulo
+        ];
+        let shapeIdx = 0;
+        const mouthInterval = setInterval(() => {
+            if (this.activityState === 'SPEAKING') {
+                this.updateMouth(mouthShapes[shapeIdx % mouthShapes.length]);
+                shapeIdx++;
+            } else {
+                clearInterval(mouthInterval);
+                this.setExpression('neutral'); // Volver a línea fina al callar
+            }
+        }, 130);
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -463,15 +475,21 @@ const ronFace = {
         const best = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('es'));
         if (best) u.voice = best;
         u.lang = 'es-ES'; u.pitch = 1.4; u.rate = 1.1;
+        
         u.onstart = () => this.mouthContainer.classList.add('mouth-vibrate');
         u.onend = () => { 
             this.mouthContainer.classList.remove('mouth-vibrate'); 
-            this.setExpression('neutral'); 
-            setTimeout(() => {
-                this.changeState('IDLE');
-                // Si acabamos de reconocer a alguien, le damos 5 seg de margen sin wake word
-                this.isWaitingForWakeWord = true; 
-            }, 1000); 
+            // VENTANA DE CONVERSACIÓN v16.6
+            // Tras hablar, le damos 7 segundos para que el usuario responda sin decir "Ron"
+            this.isWaitingForWakeWord = false; 
+            this.changeState('IDLE');
+            
+            // Si pasan 7 segundos sin respuesta, volvemos a pedir wake word
+            if (this.convTimeout) clearTimeout(this.convTimeout);
+            this.convTimeout = setTimeout(() => {
+                this.isWaitingForWakeWord = true;
+                this.log("Fin de ventana de charla.");
+            }, 7000);
         };
         window.speechSynthesis.speak(u);
     },
