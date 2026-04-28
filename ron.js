@@ -34,6 +34,7 @@ const ronFace = {
         lastPan: 90,
         lastTilt: 90
     },
+    isRecognitionActive: false, // Flag de seguridad v16.5
 
     // MEMORIA A LARGO PLAZO (LocalStorage)
     currentUser: null,
@@ -206,7 +207,7 @@ const ronFace = {
         setInterval(async () => {
             if (this.activityState === 'THINKING' || this.activityState === 'SPEAKING' || this.isLearningFace) return;
             try {
-                const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions())
+                const detections = await faceapi.detectAllFaces(this.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }))
                     .withFaceLandmarks().withFaceExpressions().withFaceDescriptors();
                 
                 if (detections.length > 0) {
@@ -249,18 +250,19 @@ const ronFace = {
                     this.lastEmotion = this.currentEmotion;
                 }
             } catch(e) { console.error("Error visión:", e); }
-        }, 150); 
+        }, 800); // Optimizada v16.5
     },
 
     startListening() {
         if (this.activityState !== 'IDLE' || !this.isMicEnabled) return;
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
+        if (this.isRecognitionActive) return; 
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'es-ES';
         this.recognition.onstart = () => { 
+            this.isRecognitionActive = true;
             this.changeState('LISTENING'); 
-            this.setEyeColor('#00d4ff'); // Ojos azules al arrancar escucha
+            this.setEyeColor('#00d4ff');
         };
         this.recognition.onresult = (e) => {
             let text = e.results[0][0].transcript;
@@ -272,7 +274,6 @@ const ronFace = {
                 if (t.includes("ron") || t.includes("hola ron") || t.includes("oye ron") || t.includes("hola")) {
                     this.isWaitingForWakeWord = false;
                     this.setEyeColor('#00d4ff'); 
-                    // No limpiamos el texto tan agresivamente para no romper comandos
                     if (t.split(" ").length < 2) {
                         this.speak("¡Bip! ¿Dime?");
                         return;
@@ -285,18 +286,19 @@ const ronFace = {
             if (this.isLearningFace && this.tempDescriptor) this.saveNewUser(text);
             else this.handleInput(text);
         };
-        this.recognition.onend = () => { if (this.activityState === 'LISTENING') this.changeState('IDLE'); };
+        this.recognition.onend = () => { 
+            this.isRecognitionActive = false;
+            if (this.activityState === 'LISTENING') this.changeState('IDLE'); 
+        };
         try { this.recognition.start(); } catch(e) { this.changeState('IDLE'); }
     },
 
     saveNewUser(text) {
-        // Limpieza profunda del nombre
         let name = text.toLowerCase()
             .replace(/me llamo |mi nombre es |soy |me llaman |me dicen /gi, "")
             .replace(/[.,!¡?¿]/g, "")
             .trim();
         
-        // Capitalizar primera letra
         name = name.charAt(0).toUpperCase() + name.slice(1);
 
         if (name.length < 2 || name === "Me llamo" || name === "Soy") {
@@ -317,7 +319,6 @@ const ronFace = {
     handleInput(text) {
         const t = text.toLowerCase();
         
-        // --- MÚSICA Y LISTAS (v10.6) ---
         const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
         if (musicKeywords.some(kw => t.includes(kw)) && (t.includes("pon") || t.includes("reproduce") || t.includes("busca"))) {
             let isPlaylist = t.includes("lista");
@@ -336,16 +337,13 @@ const ronFace = {
             return this.speak("¡Bip! Música fuera. ¡Silencio absoluto!");
         }
 
-        // Identidad (Local)
         if (t.includes("quién soy") || t.includes("sabes mi nombre")) {
             return this.speak(this.currentUser ? `¡Bip! ¡Claro! Eres mi gran amigo ${this.currentUser}.` : "Aún no sé quién eres, ¡pero quiero ser tu amigo!");
         }
 
-        // Cambio de nombre explícito
         if (t.includes("cámbiame el nombre") || t.includes("cambiame el nombre")) {
             const nuevoNombre = text.split("a ").pop();
             if (nuevoNombre) {
-                // Actualizar en base de datos local
                 this.knownFaces = this.knownFaces.map(f => f.label === this.currentUser ? {...f, label: nuevoNombre} : f);
                 localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
                 this.currentUser = nuevoNombre;
@@ -353,7 +351,6 @@ const ronFace = {
             }
         }
 
-        // Cualquier otra cosa -> Groq con memoria y personalidad
         this.chat(text);
     },
 
@@ -375,7 +372,6 @@ const ronFace = {
         HABILIDADES: Puedes poner música (di "¡Marchando música!").
         GUSTOS CONOCIDOS: ${stats.likes.join(", ")}.`;
 
-        // LISTA DE CEREBROS REALES (v10.5 - Basado en tu API)
         const visionModels = ["meta-llama/llama-4-scout-17b-16e-instruct"];
         const chatModels = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "groq/compound", "openai/gpt-oss-120b"];
         const modelsToTry = isV ? visionModels : chatModels;
@@ -411,7 +407,6 @@ const ronFace = {
 
                 const resp = data.choices[0].message.content;
                 
-                // Guardar gustos
                 if (userText.toLowerCase().includes("gusta") || userText.toLowerCase().includes("amo")) {
                     const algo = userText.split("gusta ").pop().split(" ")[0];
                     if (algo && !stats.likes.includes(algo)) {
@@ -439,9 +434,7 @@ const ronFace = {
     },
 
     captureOptimizedFrame() {
-        document.body.style.backgroundColor = "white";
-        setTimeout(() => document.body.style.backgroundColor = "", 100);
-        const MAX = 800;
+        const MAX = 400; // Resolución optimizada v16.5
         const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
@@ -449,29 +442,20 @@ const ronFace = {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.6);
+        return canvas.toDataURL('image/jpeg', 0.5);
     },
 
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        // Animación de boca dinámica (v16.3) - Solo al hablar
-        const mouthShapes = [
-            'M 25 35 Q 50 55 75 35 Q 50 45 25 35 Z', // Óvalo fino
-            'M 30 30 Q 50 60 70 30 Q 50 40 30 30 Z', // Óvalo profundo
-            'M 35 25 L 65 25 L 60 45 L 40 45 Z'       // Trapezoide
-        ];
-        let shapeIdx = 0;
-        const mouthInterval = setInterval(() => {
-            if (this.activityState === 'SPEAKING') {
-                this.updateMouth(mouthShapes[shapeIdx % mouthShapes.length]);
-                shapeIdx++;
-            } else {
-                clearInterval(mouthInterval);
-                this.setExpression('neutral'); // Volver a curva feliz al callar
-            }
-        }, 150);
+        // Boca curva de película (Línea pura v16.5)
+        this.updateMouth('M 25 35 Q 50 50 75 35');
+        
+        const eyeInterval = setInterval(() => {
+            if (this.activityState === 'SPEAKING') this.shiftEyes();
+            else clearInterval(eyeInterval);
+        }, 400);
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -499,7 +483,7 @@ const ronFace = {
         this.chestIcon.className = 'chest-icon-container';
 
         if (exp === 'happy') { 
-            this.updateMouth('M 25 35 Q 50 55 75 35'); // Curva fina feliz
+            this.updateMouth('M 25 35 Q 50 55 75 35'); // Línea fina feliz
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
             this.setChestIcon('heart');
         }
@@ -518,7 +502,7 @@ const ronFace = {
             this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
         }
         else { 
-            this.updateMouth('M 25 35 Q 50 48 75 35'); // Curva fina neutral
+            this.updateMouth('M 25 35 Q 50 48 75 35'); // Línea fina neutral
             this.stopGlitchEffect(); 
         }
     },
