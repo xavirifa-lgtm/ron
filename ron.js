@@ -65,7 +65,7 @@ const ronFace = {
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         const initYT = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
-                height: '200', width: '200', videoId: 'dQw4w9WgXcQ',
+                height: '200', width: '200', videoId: '3H6u8-7m6Xw', // Silencio absoluto v17.8
                 playerVars: { 'autoplay': 0, 'controls': 0, 'disablekb': 1, 'modestbranding': 1, 'rel': 0 },
                 events: { 
                     'onReady': () => this.log("Sistema de Audio: LISTO"),
@@ -609,35 +609,34 @@ const ronFace = {
     
     // FUNCIÓN DE MÚSICA (v11.1 - CHRONOTECH)
     playMusic(query) {
-        if (!this.ytPlayer || !this.ytPlayer.cuePlaylist) return this.log("Error: Player no disponible.");
+        if (!this.ytPlayer) return this.log("Error: Player no listo.");
         
-        this.log(`Attempting search for: ${query}`);
-        try {
-            this.ytPlayer.unMute();
-            this.ytPlayer.setVolume(100);
-            
-            // Método Alternativo v17.7
-            this.ytPlayer.cuePlaylist({
+        // Mapeo de IDs directas v17.8 (Para saltar bloqueos de búsqueda)
+        const directIDs = {
+            'mecano': '92S_pY8mK8U', // 'Hijo de la Luna' oficial
+            'fiesta': 'S_62_z3B_yY',
+            'relax': '5qap5aO4i9A'
+        };
+
+        const targetID = directIDs[query.toLowerCase()] || null;
+        this.ytPlayer.unMute();
+        this.ytPlayer.setVolume(100);
+
+        if (targetID) {
+            this.log(`ID Directa detectada para ${query}: ${targetID}`);
+            this.ytPlayer.loadVideoById(targetID);
+        } else {
+            this.log(`Buscando vía ChronoSearch: ${query}`);
+            this.ytPlayer.loadPlaylist({
                 listType: 'search',
                 list: query,
                 index: 0,
                 startSeconds: 0,
                 suggestedQuality: 'small'
             });
+        }
 
-            // Forzar reproducción tras el cue
-            setTimeout(() => {
-                this.log("Carga completa. Iniciando...");
-                this.ytPlayer.playVideo();
-                // Si sigue sin sonar, intentamos carga directa
-                setTimeout(() => {
-                    if (this.ytPlayer.getPlayerState() !== 1) {
-                        this.log("Re-intentando carga directa...");
-                        this.ytPlayer.playVideo();
-                    }
-                }, 2000);
-            }, 1500);
-        } catch(e) { this.log(`Error: ${e.message}`); }
+        setTimeout(() => this.ytPlayer.playVideo(), 1500);
     },
 
     stopMusic() {
