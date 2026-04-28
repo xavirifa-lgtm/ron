@@ -437,7 +437,7 @@ const ronFace = {
     },
 
     captureOptimizedFrame() {
-        const MAX = 800; // Calidad HD v16.8
+        const MAX = 1024; // Resolución Eagle Eye v16.9
         const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
@@ -445,15 +445,14 @@ const ronFace = {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.8); // 80% calidad
+        return canvas.toDataURL('image/jpeg', 0.9); // 90% calidad para ver muñecos
     },
 
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        this.mouth.style.fill = '#1a1a1a'; // Rellenar boca al hablar v16.8
-        this.mouth.style.stroke = 'none';
+        this.mouth.classList.add('is-speaking'); // Forzar relleno sólido v16.9
 
         const mouthShapes = [
             'M 30 20 Q 50 55 70 20 Q 50 40 30 20 Z', 
@@ -468,8 +467,7 @@ const ronFace = {
                 shapeIdx++;
             } else {
                 clearInterval(mouthInterval);
-                this.mouth.style.fill = 'none'; // Volver a línea fina al callar v16.8
-                this.mouth.style.stroke = '#1a1a1a';
+                this.mouth.classList.remove('is-speaking'); // Volver a línea v16.9
                 this.setExpression('neutral'); 
             }
         }, 140);

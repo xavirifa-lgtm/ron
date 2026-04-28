@@ -121,11 +121,15 @@ body, html {
     display: block !important; 
 }
 #mouth-path { 
-    fill: none !important; 
+    fill: none; 
     stroke: #1a1a1a !important; 
-    stroke-width: 6; /* Línea fina como antes v16.4 */
+    stroke-width: 6; 
     stroke-linecap: round;
     transition: d 0.3s ease; 
+}
+#mouth-path.is-speaking {
+    fill: #1a1a1a !important; /* Negro sólido total al hablar v16.9 */
+    stroke: none !important;
 }
 .mouth-vibrate { animation: mouth-talk 0.1s infinite alternate; }
 @keyframes mouth-talk { from { transform: scale(0.9); } to { transform: scale(1.1); } }
