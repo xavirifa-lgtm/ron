@@ -69,7 +69,17 @@ const ronFace = {
             });
         };
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
-        this.powerBtn.onclick = async () => { this.powerBtn.style.display = 'none'; await this.init(); };
+        this.powerBtn.onclick = async () => { 
+            this.powerBtn.style.display = 'none'; 
+            // Permiso de Audio v17.1 (Estilo Chronobeats)
+            if (this.ytPlayer && this.ytPlayer.playVideo) {
+                this.ytPlayer.playVideo();
+                this.ytPlayer.stopVideo();
+                this.ytPlayer.unMute();
+                this.ytPlayer.setVolume(100);
+            }
+            await this.init(); 
+        };
         this.micToggleBtn.onclick = () => {
             this.isMicEnabled = !this.isMicEnabled;
             this.micToggleBtn.classList.toggle('off', !this.isMicEnabled);
@@ -590,20 +600,18 @@ const ronFace = {
     
     // FUNCIÓN DE MÚSICA (v11.1 - CHRONOTECH)
     playMusic(query) {
-        if (!this.ytPlayer) {
-            this.ytPlayer = new YT.Player('ron-yt-player', {
-                height: '1', width: '1',
-                playerVars: { 'autoplay': 1, 'controls': 0, 'disablekb': 1, 'modestbranding': 1, 'rel': 0 },
-                events: {
-                    'onReady': (e) => {
-                        e.target.loadPlaylist({ listType: 'search', list: query });
-                    }
-                }
-            });
-        } else {
-            this.ytPlayer.loadPlaylist({ listType: 'search', list: query });
-        }
+        if (!this.ytPlayer) return this.log("Error: Player no listo.");
+        
         this.log(`Reproduciendo ChronoTech: ${query}`);
+        this.ytPlayer.unMute();
+        this.ytPlayer.setVolume(100);
+        this.ytPlayer.loadPlaylist({
+            listType: 'search',
+            list: query,
+            index: 0,
+            startSeconds: 0,
+            suggestedQuality: 'small'
+        });
     },
 
     stopMusic() {
