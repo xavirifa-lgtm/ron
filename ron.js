@@ -12,6 +12,8 @@ const ronFace = {
     bleBtn: document.getElementById('ble-connect-btn'), // Nuevo v14.0
     glitchOverlay: document.getElementById('glitch-overlay'),
     video: document.getElementById('webcam'),
+    gamePanel: document.getElementById('game-panel'),
+    gameText: document.getElementById('game-text'),
     apiModal: document.getElementById('api-modal'),
     apiKeyInput: document.getElementById('groq-key-input'),
     saveBtn: document.getElementById('save-api-key'),
@@ -61,7 +63,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v17.6 - RED EDITION...");
+        this.log("Iniciando Ron v19.0 - RON ACADEMY...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { 
@@ -162,6 +164,9 @@ const ronFace = {
                 break;
             case 'SPEAKING': 
                 this.setEyeColor('#1a1a1a'); 
+                break;
+            case 'GLITCH':
+                this.setEyeColor('#ff3b3b');
                 break;
         }
     },
@@ -334,132 +339,169 @@ const ronFace = {
         this.speak(`¡Bip! ¡Entendido, ${name}! Ya estás grabado en mi memoria a fuego. ¡Somos mejores amigos!`);
     },
 
-    handleInput(text) {
-        const t = text.toLowerCase();
+    async handleInput(userText) {
+        if (this.activityState === 'MATH_GAME') return this.handleMathAnswer(userText);
+        if (this.activityState === 'READING_GAME') return this.handleReadingAnswer(userText);
+        if (this.activityState !== 'IDLE' && this.activityState !== 'LISTENING') return;
         
+        const t = userText.toLowerCase();
+        
+        // ACTIVADORES DE JUEGOS v19.0
+        if (t.includes("jugar") && (t.includes("suma") || t.includes("matemáticas") || t.includes("números"))) {
+            return this.startMathGame();
+        }
+        if (t.includes("vamos a leer") || t.includes("quiero leer") || t.includes("juego de lectura")) {
+            return this.startReadingGame();
+        }
+        if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron")) {
+            this.gamePanel.classList.add('hidden');
+            this.changeState('IDLE');
+            return this.speak("¡Bip! Dejamos los libros para luego.");
+        }
+
+        // 1. COMANDOS DE MÚSICA (v18.1 Launcher)
         const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
         if (musicKeywords.some(kw => t.includes(kw)) && (t.includes("pon") || t.includes("reproduce") || t.includes("busca"))) {
-            let isPlaylist = t.includes("lista");
             let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon |busca |quiero escuchar /gi, "").trim();
             if (search && search.length > 2) {
                 this.setExpression('star');
-                let phrase = isPlaylist ? `¡Bip! Buscando la lista de ${search}.` : `¡Bip! Marchando música de ${search}.`;
-                this.speak(phrase);
-                this.playMusic(isPlaylist ? `${search} playlist` : search);
+                this.speak(`¡Bip! Abriendo ritmo de ${search}.`);
+                this.playMusic(search);
                 return;
             }
         }
 
-        if (t.includes("para la música") || t.includes("para la musica") || t.includes("quita la música") || t.includes("para ron")) {
-            this.stopMusic();
-            return this.speak("¡Bip! Música fuera. ¡Silencio absoluto!");
+        if (t.includes("para la música") || t.includes("para la musica") || t.includes("para ron")) {
+            this.log("Música parada.");
+            return this.speak("¡Bip! Música fuera.");
         }
 
-        if (t.includes("quién soy") || t.includes("sabes mi nombre")) {
-            return this.speak(this.currentUser ? `¡Bip! ¡Claro! Eres mi gran amigo ${this.currentUser}.` : "Aún no sé quién eres, ¡pero quiero ser tu amigo!");
-        }
-
-        if (t.includes("cámbiame el nombre") || t.includes("cambiame el nombre")) {
-            const nuevoNombre = text.split("a ").pop();
-            if (nuevoNombre) {
-                this.knownFaces = this.knownFaces.map(f => f.label === this.currentUser ? {...f, label: nuevoNombre} : f);
-                localStorage.setItem('ron_known_faces', JSON.stringify(this.knownFaces));
-                this.currentUser = nuevoNombre;
-                return this.speak(`¡Bip! Hecho. Ahora te llamaré ${nuevoNombre} a fuego.`);
-            }
-        }
-
-        this.chat(text);
-    },
-
-    async chat(userText) {
-        if (!this.apiKey) return;
+        // 2. CHAT IA CON WATCHDOG v18.5
+        this.log(`Procesando: ${userText}`);
         this.changeState('THINKING');
         this.setExpression('thinking');
 
-        const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro', 'tengo'];
-        const isV = visualKeywords.some(kw => userText.toLowerCase().includes(kw));
-        
-        const userKey = this.currentUser || 'amigo';
-        const stats = this.userStats[userKey] || { likes: [], dislikes: [] };
-        let history = this.userHistories[userKey] || [];
-
-        let sys = `Eres Ron B-Bot, el mejor amigo robot de un niño llamado ${userKey}. 
-        PERSONALIDAD: Alegre, infantil y positivo. 
-        ESTADO: Estás en medio de una charla. ¡NO te presentes! No digas hola. Responde directo.
-        HABILIDADES: Puedes poner música (di "¡Marchando música!").
-        GUSTOS CONOCIDOS: ${stats.likes.join(", ")}.`;
-
-        const visionModels = ["meta-llama/llama-4-scout-17b-16e-instruct"];
-        const chatModels = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "groq/compound", "openai/gpt-oss-120b"];
-        const modelsToTry = isV ? visionModels : chatModels;
-
-        let imgData = isV ? this.captureOptimizedFrame() : null;
-
-        for (let model of modelsToTry) {
-            try {
-                this.log(`Probando cerebro: ${model}...`);
-                let body = { model, messages: [] };
-
-                if (isV) {
-                    let p = `${sys}\n[MENSAJE]: ${userText}`;
-                    body.messages = [{ role: "user", content: [ { type: "text", text: p }, { type: "image_url", image_url: { url: imgData } } ] }];
-                } else {
-                    body.messages = [{ role: "system", content: sys }];
-                    history.slice(-10).forEach(m => body.messages.push(m));
-                    body.messages.push({ role: "user", content: userText });
-                }
-
-                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                
-                const data = await res.json();
-                if (res.status === 429) {
-                    this.log(`Límite en ${model}, cambiando cerebro...`);
-                    continue; 
-                }
-                if (!res.ok) throw new Error(data.error?.message || "Fallo API");
-
-                const resp = data.choices[0].message.content;
-                
-                if (userText.toLowerCase().includes("gusta") || userText.toLowerCase().includes("amo")) {
-                    const algo = userText.split("gusta ").pop().split(" ")[0];
-                    if (algo && !stats.likes.includes(algo)) {
-                        stats.likes.push(algo);
-                        this.userStats[userKey] = stats;
-                        localStorage.setItem('ron_user_stats', JSON.stringify(this.userStats));
-                        this.log(`Guardado a fuego: ${algo}`);
-                    }
-                }
-
-                history.push({ role: "user", content: userText });
-                history.push({ role: "assistant", content: resp });
-                if (history.length > 15) history.shift();
-                this.userHistories[userKey] = history;
-                localStorage.setItem('ron_user_histories', JSON.stringify(this.userHistories));
-
-                this.speak(resp);
-                return; 
-
-            } catch (e) {
-                this.log(`Error con ${model}: ${e.message}`);
-                if (model === modelsToTry[modelsToTry.length - 1]) throw e;
+        const watchdog = setTimeout(() => {
+            if (this.activityState === 'THINKING') {
+                this.triggerSafetyGlitch("Cerebro sobrecalentado (Timeout)");
             }
+        }, 12000);
+
+        try {
+            const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro', 'tengo'];
+            const isV = visualKeywords.some(kw => t.includes(kw));
+            const userKey = this.currentUser || 'amigo';
+            
+            let sys = `Eres Ron B-Bot, entusiasta, literal y glitchy. 
+            ESTADO: Charla fluida. No digas hola.
+            REGLA MÚSICA: Si piden música, di [MUSIC: nombre].`;
+
+            let body = { 
+                model: isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "meta-llama/llama-3.1-70b-versatile", 
+                messages: [] 
+            };
+
+            if (isV) {
+                const img = this.captureOptimizedFrame();
+                body.messages = [{ role: "user", content: [ { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` }, { type: "image_url", image_url: { url: img } } ] }];
+            } else {
+                body.messages = [{ role: "system", content: sys }, { role: "user", content: userText }];
+            }
+
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            
+            clearTimeout(watchdog);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error?.message || "Error API");
+
+            const resp = data.choices[0].message.content;
+            
+            // Comandos internos de la respuesta
+            if (resp.includes("[MUSIC:")) {
+                const m = resp.match(/\[MUSIC: (.*?)\]/);
+                if (m) this.playMusic(m[1]);
+            }
+
+            await this.speak(resp.replace(/\[MUSIC:.*?\]/g, ''));
+        } catch (e) {
+            clearTimeout(watchdog);
+            this.log(`Error Cerebro: ${e.message}`);
+            this.triggerSafetyGlitch(e.message);
         }
     },
 
+    // JUEGOS ACADEMY v19.0
+    startMathGame() {
+        const n1 = Math.floor(Math.random() * 10) + 1;
+        const n2 = Math.floor(Math.random() * 10) + 1;
+        this.currentAnswer = n1 + n2;
+        this.changeState('MATH_GAME');
+        this.gamePanel.classList.remove('hidden');
+        this.gameText.innerText = `${n1} + ${n2}`;
+        this.speak(`¡Bip! ¡Hora de sumar! ¿Cuánto es ${n1} más ${n2}?`);
+    },
+
+    handleMathAnswer(text) {
+        const num = parseInt(text.replace(/[^0-9]/g, ''));
+        if (num === this.currentAnswer) {
+            this.setExpression('star');
+            this.speak("¡Increíble! ¡Eres un genio de los números! ¡Bip bip!");
+            setTimeout(() => this.startMathGame(), 3000);
+        } else if (!isNaN(num)) {
+            this.setExpression('sad');
+            this.speak(`¡Casi! Inténtalo otra vez, amiguito.`);
+        }
+    },
+
+    startReadingGame() {
+        const phrases = ["EL GATO ES AZUL", "MAMÁ ME AMA", "RON ES MI AMIGO", "EL SOL BRILLA", "VAMOS A JUGAR"];
+        this.targetPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+        this.changeState('READING_GAME');
+        this.gamePanel.classList.remove('hidden');
+        this.gameText.innerText = this.targetPhrase;
+        this.speak(`¡Bip! ¡Leemos juntos! Di lo que ves en la pantalla.`);
+    },
+
+    handleReadingAnswer(text) {
+        const input = text.toUpperCase().trim().replace(/[.,!¡?¿]/g, "");
+        if (input === this.targetPhrase) {
+            this.setExpression('happy');
+            this.speak("¡Perfecto! ¡Lees de maravilla! ¡Bip!");
+            setTimeout(() => this.startReadingGame(), 3000);
+        } else {
+            this.log(`Leído: ${input} | Esperado: ${this.targetPhrase}`);
+            this.speak("¡Casi! Repite conmigo con cuidado.");
+        }
+    },
+
+    triggerSafetyGlitch(reason) {
+        this.log(`⚠️ GLITCH: ${reason}`);
+        this.changeState('GLITCH');
+        this.setExpression('glitch');
+        this.startGlitchEffect();
+        
+        setTimeout(async () => {
+            this.stopGlitchEffect();
+            await this.speak("¡Bip! Error de sistema. Reiniciando amistad.");
+            this.changeState('IDLE');
+            this.setExpression('neutral');
+        }, 3000);
+    },
+
     captureOptimizedFrame() {
-        const MAX = 1024; // Resolución Eagle Eye v16.9        const canvas = document.createElement('canvas');
+        const MAX = 1024; // Resolución Eagle Eye v16.9
+        const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
         else { if (h > MAX) { w *= MAX / h; h = MAX; } }
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(this.video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.9); // 90% calidad para ver muñecos
+        return canvas.toDataURL('image/jpeg', 0.9);
     },
 
     speak(text) {

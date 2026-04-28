@@ -169,6 +169,31 @@ body, html {
 
 #debug-info { display: none !important; }
 
+/* PANEL DE JUEGOS (v19.0) */
+.game-panel {
+    position: absolute;
+    bottom: 15%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.9);
+    padding: 20px 40px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    z-index: 1000;
+    min-width: 280px;
+    text-align: center;
+    border: 4px solid #e6f0f8;
+    backdrop-filter: blur(10px);
+}
+.game-panel.hidden { display: none; }
+#game-text {
+    font-size: 42px;
+    font-weight: 800;
+    color: #1a1a1a;
+    letter-spacing: 2px;
+    font-family: 'Outfit', sans-serif;
+}
+
 .api-modal {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center;
