@@ -62,16 +62,18 @@ const ronFace = {
     async preInit() {
         this.log("Iniciando Ron v16.8 - Edición Estable HD...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
-        window.onYouTubeIframeAPIReady = () => {
+        const initYT = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
                 height: '200', width: '200', videoId: 'dQw4w9WgXcQ',
                 playerVars: { 'autoplay': 0, 'controls': 0, 'disablekb': 1, 'modestbranding': 1, 'rel': 0 },
                 events: { 
                     'onReady': () => this.log("Sistema de Audio: LISTO"),
-                    'onError': (e) => this.log(`Error Audio: ${e.data}`)
+                    'onError': (e) => this.log(`Error Audio YouTube: ${e.data}`)
                 }
             });
         };
+        if (window.YT && window.YT.Player) initYT();
+        else window.onYouTubeIframeAPIReady = initYT;
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { 
             this.powerBtn.style.display = 'none'; 
@@ -81,9 +83,9 @@ const ronFace = {
                 this.ytPlayer.setVolume(100);
                 this.ytPlayer.playVideo(); // Reproduce el Rickroll de prueba
                 setTimeout(() => {
-                    this.ytPlayer.stopVideo(); // Lo para tras 500ms
+                    this.ytPlayer.stopVideo(); // Lo para tras 1 segundo v17.4
                     this.log("Motor Audio Desbloqueado.");
-                }, 500);
+                }, 1000);
             }
             await this.init(); 
         };
