@@ -585,10 +585,28 @@ const ronFace = {
 
     stopGlitchEffect() { if (this.glitchInterval) clearInterval(this.glitchInterval); this.glitchOverlay.innerHTML = ''; },
 
-    // FUNCIÓN DE MÚSICA (v18.0 - APP LAUNCHER)
+    // FUNCIÓN DE MÚSICA (v18.1 - AUTO-PLAY LAUNCHER)
     playMusic(query) {
-        this.log(`¡Bip! Abriendo YouTube Music: ${query}`);
-        const url = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+        this.log(`¡Bip! Reproduciendo: ${query}`);
+        
+        // Mapeo de IDs para Auto-Play v18.1
+        const directIDs = {
+            'mecano': '92S_pY8mK8U', // Hijo de la Luna
+            'fiesta': 'S_62_z3B_yY',
+            'relax': '5qap5aO4i9A'
+        };
+
+        const targetID = directIDs[query.toLowerCase()];
+        let url;
+        
+        if (targetID) {
+            // Enlace de reproducción directa (WATCH) para que suene solo
+            url = `https://music.youtube.com/watch?v=${targetID}`;
+        } else {
+            // Fallback a búsqueda si no tenemos la ID
+            url = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+        }
+        
         window.open(url, '_blank');
     },
 
