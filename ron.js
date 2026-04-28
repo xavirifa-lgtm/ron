@@ -34,6 +34,7 @@ const ronFace = {
         lastPan: 90,
         lastTilt: 90
     },
+    wakeLock: null, // Sistema anti-suspensión v17.0
     isRecognitionActive: false, // Flag de seguridad v16.5
 
     // MEMORIA A LARGO PLAZO (LocalStorage)
@@ -81,6 +82,7 @@ const ronFace = {
         try {
             await this.loadModels();
             await this.startCamera();
+            this.requestWakeLock(); // Mantener pantalla encendida v17.0
             this.setupInteractions();
             this.bootScreen.classList.add('hidden');
             this.changeState('IDLE');
@@ -110,6 +112,21 @@ const ronFace = {
         this.video.srcObject = stream;
         await this.video.play();
         return new Promise(res => this.video.onloadedmetadata = res);
+    },
+
+    // --- SISTEMA ANTI-SUSPENSIÓN v17.0 ---
+    async requestWakeLock() {
+        try {
+            if ('wakeLock' in navigator) {
+                this.wakeLock = await navigator.wakeLock.request('screen');
+                this.log("Pantalla bloqueada: No se suspenderá.");
+                this.wakeLock.addEventListener('release', () => {
+                    this.log("Wake Lock liberado.");
+                });
+            }
+        } catch (err) {
+            this.log(`Error WakeLock: ${err.message}`);
+        }
     },
 
     setupInteractions() {
@@ -599,4 +616,12 @@ const ronFace = {
     goFullscreen() { const d = document.documentElement; if (!document.fullscreenElement) (d.requestFullscreen || d.webkitRequestFullScreen).call(d).catch(()=>{}); }
 };
 
-window.onload = () => ronFace.preInit();
+window.onload = () => {
+    ronFace.preInit();
+    // Re-activar Wake Lock si la app vuelve al primer plano
+    document.addEventListener('visibilitychange', async () => {
+        if (ronFace.wakeLock !== null && document.visibilityState === 'visible') {
+            await ronFace.requestWakeLock();
+        }
+    });
+};
