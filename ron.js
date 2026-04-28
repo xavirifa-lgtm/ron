@@ -60,7 +60,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v16.8 - Edición Estable HD...");
+        this.log("Iniciando Ron v17.6 - RED EDITION...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         const initYT = () => {
             this.ytPlayer = new YT.Player('ron-yt-player', {
@@ -473,8 +473,7 @@ const ronFace = {
     },
 
     captureOptimizedFrame() {
-        const MAX = 1024; // Resolución Eagle Eye v16.9
-        const canvas = document.createElement('canvas');
+        const MAX = 1024; // Resolución Eagle Eye v16.9        const canvas = document.createElement('canvas');
         let w = this.video.videoWidth || 640; let h = this.video.videoHeight || 480;
         if (w > h) { if (w > MAX) { h *= MAX / w; w = MAX; } } 
         else { if (h > MAX) { w *= MAX / h; h = MAX; } }

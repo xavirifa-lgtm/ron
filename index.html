@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Ron B*Bot</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script>
+        // Cache Buster v17.6: Forzar limpieza de Service Worker viejo
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                for(let registration of registrations) { registration.unregister(); }
+            });
+        }
+    </script>
     <script src="https://www.youtube.com/iframe_api"></script>
     <link rel="stylesheet" href="styles.css?v=17.2">
     <link rel="manifest" href="manifest.json">
@@ -18,7 +27,7 @@
         <!-- Pantalla de Inicio -->
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">ENCENDER A RON (v17.5 - SEARCH RECOVERY)</button>
+            <button id="power-btn" style="background: #ff0000; box-shadow: 0 0 30px #ff0000;">ENCENDER A RON (v17.6 - RED EDITION)</button>
         </div>
 
         <!-- Botones de Control -->
@@ -67,6 +76,6 @@
         <!-- UI de Control (Invisible por defecto) -->
         <div id="debug-info" class="hidden"></div>
     </div>
-    <script src="ron.js?v=17.5"></script>
+    <script src="ron.js?v=17.6"></script>
 </body>
 </html>
