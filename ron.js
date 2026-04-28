@@ -48,14 +48,15 @@ const ronFace = {
 
     log(msg) {
         console.log(msg);
+        if (!this.fixedLog) this.fixedLog = document.getElementById('debug-info');
         if (this.fixedLog) {
             const time = new Date().toLocaleTimeString('es-ES', { hour12: false });
             const div = document.createElement('div');
-            div.innerText = `[${time}] ${msg}`;
+            div.style.marginBottom = "5px";
+            div.innerText = `> ${msg}`;
             this.fixedLog.appendChild(div);
-            const lines = this.fixedLog.querySelectorAll('div');
-            if (lines.length > 5) lines[0].remove();
             this.fixedLog.scrollTop = this.fixedLog.scrollHeight;
+            if (this.fixedLog.children.length > 50) this.fixedLog.children[0].remove();
         }
     },
 
@@ -608,32 +609,35 @@ const ronFace = {
     
     // FUNCIÓN DE MÚSICA (v11.1 - CHRONOTECH)
     playMusic(query) {
-        if (!this.ytPlayer || !this.ytPlayer.loadPlaylist) return this.log("Error: Audio no inicializado.");
+        if (!this.ytPlayer || !this.ytPlayer.cuePlaylist) return this.log("Error: Player no disponible.");
         
-        this.log(`🔍 Buscando: "${query}"...`);
+        this.log(`Attempting search for: ${query}`);
         try {
             this.ytPlayer.unMute();
             this.ytPlayer.setVolume(100);
             
-            // Forzar carga de búsqueda v17.5
-            this.ytPlayer.loadPlaylist({
+            // Método Alternativo v17.7
+            this.ytPlayer.cuePlaylist({
                 listType: 'search',
                 list: query,
                 index: 0,
                 startSeconds: 0,
-                suggestedQuality: 'medium'
+                suggestedQuality: 'small'
             });
 
-            // Re-intentar play si se queda parado
+            // Forzar reproducción tras el cue
             setTimeout(() => {
-                const state = this.ytPlayer.getPlayerState();
-                this.log(`Estado actual: ${state}`);
-                if (state !== 1 && state !== 3) {
-                    this.log("Forzando inicio de música...");
-                    this.ytPlayer.playVideo();
-                }
-            }, 2000);
-        } catch(e) { this.log(`Error Crítico Música: ${e.message}`); }
+                this.log("Carga completa. Iniciando...");
+                this.ytPlayer.playVideo();
+                // Si sigue sin sonar, intentamos carga directa
+                setTimeout(() => {
+                    if (this.ytPlayer.getPlayerState() !== 1) {
+                        this.log("Re-intentando carga directa...");
+                        this.ytPlayer.playVideo();
+                    }
+                }, 2000);
+            }, 1500);
+        } catch(e) { this.log(`Error: ${e.message}`); }
     },
 
     stopMusic() {
