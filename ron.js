@@ -452,22 +452,23 @@ const ronFace = {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        // Animación de boca dinámica recuperada v16.6 (Formas sólidas de película)
+        // Boca sólida y ojos ovalados moviéndose v16.7
         const mouthShapes = [
-            'M 30 20 Q 50 50 70 20 Q 50 30 30 20 Z', // Óvalo
-            'M 35 15 L 65 15 L 60 45 L 40 45 Z',      // Trapezoide
-            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       // Rectángulo
+            'M 30 20 Q 50 55 70 20 Q 50 40 30 20 Z', // Óvalo
+            'M 30 15 L 70 15 L 65 45 L 35 45 Z',      // Trapezoide sólido
+            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       // Rectángulo sólido
         ];
         let shapeIdx = 0;
         const mouthInterval = setInterval(() => {
             if (this.activityState === 'SPEAKING') {
                 this.updateMouth(mouthShapes[shapeIdx % mouthShapes.length]);
+                this.shiftEyes(); // Ojos se mueven mientras habla v16.7
                 shapeIdx++;
             } else {
                 clearInterval(mouthInterval);
-                this.setExpression('neutral'); // Volver a línea fina al callar
+                this.setExpression('neutral'); 
             }
-        }, 130);
+        }, 140);
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -528,6 +529,9 @@ const ronFace = {
     setChestIcon(type) {
         if (type === 'heart') {
             this.chestIcon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="white" d="M 50 90 L 15 55 A 25 25 0 0 1 50 25 A 25 25 0 0 1 85 55 Z" /></svg>';
+            this.chestIcon.classList.add('heart-beat');
+        } else if (type === 'heart-pink') {
+            this.chestIcon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="#ff69b4" d="M 50 90 L 15 55 A 25 25 0 0 1 50 25 A 25 25 0 0 1 85 55 Z" /></svg>';
             this.chestIcon.classList.add('heart-beat');
         } else if (type === 'warning') {
             this.chestIcon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="#ff3b3b" d="M 50 15 L 90 85 L 10 85 Z" /><text x="50" y="75" fill="white" text-anchor="middle" font-weight="bold" font-size="40">!</text></svg>';
