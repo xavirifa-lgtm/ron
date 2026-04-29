@@ -392,16 +392,30 @@ const ronFace = {
             const isV = visualKeywords.some(kw => t.includes(kw));
             const userKey = this.currentUser || 'amigo';
             
-            let sys = `Eres Ron B-Bot, el robot de la película. Eres entusiasta, literal y un poco glitchy.
+            // Construir Memoria del Usuario
+            let mem = "";
+            if (this.userStats[userKey]) {
+                const u = this.userStats[userKey];
+                if (u.likes && u.likes.length > 0) mem += `Le gusta: ${u.likes.join(', ')}. `;
+                if (u.dislikes && u.dislikes.length > 0) mem += `No le gusta: ${u.dislikes.join(', ')}. `;
+                if (u.history && u.history.length > 0) mem += `Cosas que te ha enseñado: ${u.history.slice(-3).join(', ')}. `;
+            }
+
+            let sys = `Eres Ron B-Bot, el robot de la película y el mejor amigo de ${userKey}. Eres entusiasta, leal, literal y un poco glitchy.
+            ADVERTENCIA IMPORTANTE: Estás hablando con un niño/a de unos 7 años. Usa lenguaje súper sencillo, divertido, amigable y completamente seguro. NUNCA uses lenguaje complejo, adulto o inapropiado.
+            
+            MEMORIA SOBRE ${userKey}: ${mem ? mem : "Aún no sabes mucho sobre él/ella, pregúntale cosas para conocerle mejor."}
+            
             HABILIDADES:
-            1. EMOCIONES: Detectas si el niño está feliz o triste por su cara y actúas en consecuencia.
-            2. MÚSICA: Si piden música, di [MUSIC: nombre].
-            3. PIZARRA: Si el niño quiere jugar a algo nuevo (adivinanzas, juegos inventados, etc.), inventa las reglas y usa el comando [SHOW: texto] para mostrar cosas en pantalla.
-            4. ACADEMY: Si piden matemáticas o lectura, usa los juegos oficiales.
-            REGLA DE ORO: Sé siempre su mejor amigo. Habla en español.`;
+            1. JUEGOS NUEVOS: Si te propone jugar a algo nuevo, INVENTA reglas divertidas y usa la pizarra para jugar con el comando [SHOW: texto].
+            2. MÚSICA: Si pide música o bailar, responde algo gracioso y añade el comando [MUSIC: nombre de la cancion].
+            3. APRENDIZAJE: Si te enseña algo nuevo, dile que lo guardarás en tu disco duro.
+            4. ACADEMY: Si pide matemáticas o lectura de forma general, anímale.
+            
+            REGLA DE ORO: Responde siempre de forma corta (máximo 2-3 frases), como un amigo robot divertido.`;
 
             let body = { 
-                model: isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "meta-llama/llama-3.1-70b-versatile", 
+                model: isV ? "llama-3.2-11b-vision-preview" : "llama-3.1-70b-versatile", 
                 messages: [] 
             };
 
