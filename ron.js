@@ -166,7 +166,7 @@ const ronFace = {
                 this.setEyeColor('#1a1a1a'); 
                 break;
             case 'GLITCH':
-                this.setEyeColor('#ff3b3b');
+                this.setEyeColor('#1a1a1a'); // Negro, nada de rojo v20.3
                 break;
         }
     },
@@ -498,7 +498,6 @@ const ronFace = {
         
         setTimeout(async () => {
             this.stopGlitchEffect();
-            await this.speak("¡Bip! Error de sistema. Reiniciando amistad.");
             this.changeState('IDLE');
             this.setExpression('neutral');
         }, 3000);
@@ -518,6 +517,7 @@ const ronFace = {
 
     speak(text) {
         if (!window.speechSynthesis) return this.changeState('IDLE');
+        if (this.recognition) try { this.recognition.abort(); } catch(e) {} // Silenciar micro al hablar
         this.changeState('SPEAKING');
         
         const mouthPath = document.getElementById('mouth-path');
