@@ -75,9 +75,10 @@ body, html {
 
 .eyes-layer {
     display: flex;
-    justify-content: space-between;
-    gap: 150px; /* Separación fija para mantener proporciones v20.0 */
-    margin-bottom: -10px;
+    justify-content: center;
+    gap: 80px; /* Ojos más juntos v20.1 */
+    margin-bottom: -15px; /* La boca sube más */
+    z-index: 2;
 }
 
 .eye {
@@ -104,11 +105,12 @@ body, html {
 @keyframes blink-anim { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.01); } }
 .eye.blink { animation: blink-anim 0.15s ease-in-out; }
 
-/* BOCA (MASTERCLASS v15.0) */
-.mouth-container {
+/* BOCA (POSICIÓN CINEMÁTICA) */
+.mouth-layer {
     width: 140px;
     height: 60px;
     z-index: 10;
+    margin-top: -15px; /* Solapamiento con los ojos v20.1 */
 }
 .mouth-svg { 
     width: 100%; 

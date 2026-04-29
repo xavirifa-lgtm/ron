@@ -525,9 +525,10 @@ const ronFace = {
 
         // Formas de boca sólidas cinemáticas v19.6
         const mouthShapes = [
-            'M 35 30 L 65 30 L 65 40 L 35 40 Z', // Rectángulo medio
-            'M 40 25 L 60 25 L 60 45 L 40 45 Z', // Bloque alto (O)
-            'M 30 32 L 70 32 L 70 38 L 30 38 Z'  // Línea gruesa ancha
+            'M 30 20 L 70 20 L 70 45 L 30 45 Z', // Bloque grande (A/O)
+            'M 35 25 L 65 25 L 65 40 L 35 40 Z', // Bloque medio (E)
+            'M 40 15 L 60 15 L 60 50 L 40 50 Z', // Bloque alto y estrecho (I)
+            'M 20 30 L 80 30 L 80 40 L 20 40 Z'  // Rectángulo ancho
         ];
         
         let shapeIdx = 0;
@@ -579,7 +580,7 @@ const ronFace = {
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
             this.setChestIcon('heart');
         } else if (exp === 'neutral') {
-            this.updateMouth('M 25 35 L 75 35'); // Línea plana v19.5
+            this.updateMouth('M 25 35 Q 50 48 75 35'); // Sonrisa sutil Ron (v20.2)
             this.setChestIcon('wifi');
         } else if (exp === 'thinking') {
             this.updateMouth('M 40 35 L 60 35'); // Boca pequeña pensando
