@@ -63,7 +63,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v19.5 - CINEMATIC FACE...");
+        this.log("Iniciando Ron v20.0 - CREATIVE BRAIN...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { 
@@ -392,9 +392,13 @@ const ronFace = {
             const isV = visualKeywords.some(kw => t.includes(kw));
             const userKey = this.currentUser || 'amigo';
             
-            let sys = `Eres Ron B-Bot, entusiasta, literal y glitchy. 
-            ESTADO: Charla fluida. No digas hola.
-            REGLA MÚSICA: Si piden música, di [MUSIC: nombre].`;
+            let sys = `Eres Ron B-Bot, el robot de la película. Eres entusiasta, literal y un poco glitchy.
+            HABILIDADES:
+            1. EMOCIONES: Detectas si el niño está feliz o triste por su cara y actúas en consecuencia.
+            2. MÚSICA: Si piden música, di [MUSIC: nombre].
+            3. PIZARRA: Si el niño quiere jugar a algo nuevo (adivinanzas, juegos inventados, etc.), inventa las reglas y usa el comando [SHOW: texto] para mostrar cosas en pantalla.
+            4. ACADEMY: Si piden matemáticas o lectura, usa los juegos oficiales.
+            REGLA DE ORO: Sé siempre su mejor amigo. Habla en español.`;
 
             let body = { 
                 model: isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "meta-llama/llama-3.1-70b-versatile", 
@@ -420,13 +424,21 @@ const ronFace = {
 
             const resp = data.choices[0].message.content;
             
-            // Comandos internos de la respuesta
+            // PROCESADOR DE COMANDOS v20.0
             if (resp.includes("[MUSIC:")) {
                 const m = resp.match(/\[MUSIC: (.*?)\]/);
                 if (m) this.playMusic(m[1]);
             }
+            if (resp.includes("[SHOW:")) {
+                const s = resp.match(/\[SHOW: (.*?)\]/);
+                if (s) {
+                    this.gamePanel.classList.remove('hidden');
+                    this.gameText.innerText = s[1];
+                    this.log(`Pizarra Activa: ${s[1]}`);
+                }
+            }
 
-            await this.speak(resp.replace(/\[MUSIC:.*?\]/g, ''));
+            await this.speak(resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, ''));
         } catch (e) {
             clearTimeout(watchdog);
             this.log(`Error Cerebro: ${e.message}`);
