@@ -63,7 +63,7 @@ const ronFace = {
     },
 
     async preInit() {
-        this.log("Iniciando Ron v19.0 - RON ACADEMY...");
+        this.log("Iniciando Ron v19.5 - CINEMATIC FACE...");
         this.setChestIcon('wifi'); // Icono inicial de prueba v15.0
         window.speechSynthesis.onvoiceschanged = () => this.listAvailableVoices();
         this.powerBtn.onclick = async () => { 
@@ -508,25 +508,28 @@ const ronFace = {
         if (!window.speechSynthesis) return this.changeState('IDLE');
         this.changeState('SPEAKING');
         
-        this.mouth.classList.add('is-speaking'); // Forzar relleno sólido v16.9
+        const mouthPath = document.getElementById('mouth-path');
+        mouthPath.classList.add('is-speaking'); 
 
+        // Formas de boca sólidas cinemáticas v19.6
         const mouthShapes = [
-            'M 30 20 Q 50 55 70 20 Q 50 40 30 20 Z', 
-            'M 30 15 L 70 15 L 65 45 L 35 45 Z',      
-            'M 30 25 L 70 25 L 70 45 L 30 45 Z'       
+            'M 35 30 L 65 30 L 65 40 L 35 40 Z', // Rectángulo medio
+            'M 40 25 L 60 25 L 60 45 L 40 45 Z', // Bloque alto (O)
+            'M 30 32 L 70 32 L 70 38 L 30 38 Z'  // Línea gruesa ancha
         ];
+        
         let shapeIdx = 0;
         const mouthInterval = setInterval(() => {
             if (this.activityState === 'SPEAKING') {
                 this.updateMouth(mouthShapes[shapeIdx % mouthShapes.length]);
-                this.shiftEyes(); // Ojos se mueven mientras habla v16.7
+                this.shiftEyes(); 
                 shapeIdx++;
             } else {
                 clearInterval(mouthInterval);
-                this.mouth.classList.remove('is-speaking'); // Volver a línea v16.9
+                mouthPath.classList.remove('is-speaking'); 
                 this.setExpression('neutral'); 
             }
-        }, 140);
+        }, 110); // Más rápido y frenético v19.6
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -560,21 +563,31 @@ const ronFace = {
         this.chestIcon.className = 'chest-icon-container';
 
         if (exp === 'happy') { 
-            this.updateMouth('M 25 35 Q 50 55 75 35'); // Línea fina feliz
+            this.updateMouth('M 20 30 Q 50 45 80 30'); // Sonrisa fina v19.5
             this.eyes.left.classList.add('happy'); this.eyes.right.classList.add('happy');
             this.setChestIcon('heart');
-        }
-        else if (exp === 'star') { 
-            this.updateMouth('M 30 35 Q 50 45 70 35');
-            this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star');
+        } else if (exp === 'neutral') {
+            this.updateMouth('M 25 35 L 75 35'); // Línea plana v19.5
             this.setChestIcon('wifi');
-        }
-        else if (exp === 'fear') {
+        } else if (exp === 'thinking') {
+            this.updateMouth('M 40 35 L 60 35'); // Boca pequeña pensando
+            this.eyes.left.classList.add('thinking'); this.eyes.right.classList.add('thinking');
+            this.setChestIcon('search');
+        } else if (exp === 'sad') {
+            this.updateMouth('M 30 45 Q 50 30 70 45'); // Tristeza sutil
+            this.setChestIcon('sad');
+        } else if (exp === 'star') {
+            this.updateMouth('M 20 30 Q 50 50 80 30');
+            this.eyes.left.classList.add('star'); this.eyes.right.classList.add('star');
+            this.setChestIcon('star');
+        } else if (exp === 'glitch') {
+            this.updateMouth('M 20 35 L 80 35');
+            this.eyes.left.classList.add('glitch'); this.eyes.right.classList.add('glitch');
+        } else if (exp === 'fear') {
             this.updateMouth('M 35 45 Q 50 35 65 45'); 
             this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('fear');
             this.setChestIcon('warning');
         }
-        else if (exp === 'thinking') { 
             this.updateMouth('M 35 40 L 65 40'); 
             this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
         }

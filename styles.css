@@ -62,34 +62,30 @@ body, html {
 
 /* CARA DE RON */
 .face-container {
-    position: absolute;
-    top: 55%; /* Bajado mucho más para que los ojos estén centrados verticalmente v15.0 */
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 100%;
+    position: relative;
+    width: 600px;
+    height: 400px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    z-index: 10;
+    justify-content: center;
 }
 
-.eyes-layer {
+.eyes-container {
     display: flex;
     justify-content: space-between;
-    width: 280px; 
-    max-width: 85%;
-    margin-bottom: -15px; /* Boca ENCIMA de la base de los ojos v15.0 */
-    z-index: 2;
+    width: 420px; /* Distancia cinemática entre ojos */
+    margin-bottom: -40px; /* La boca sube para estar ENTRE los ojos */
 }
 
 .eye {
-    width: 70px;
-    height: 100px; /* Forma de cápsula v12.0 */
-    background-color: var(--ron-eye-color);
-    border-radius: 38% 38% 45% 45%; /* Bordes orgánicos */
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    width: 90px;
+    height: 140px; /* Ojos píldora altos v19.5 */
+    background-color: #1a1a1a;
+    border-radius: 40px; /* Forma de píldora suavizada */
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
 }
 
 /* EXPRESIONES */
@@ -106,14 +102,10 @@ body, html {
 .eye.blink { animation: blink-anim 0.15s ease-in-out; }
 
 /* BOCA (MASTERCLASS v15.0) */
-.mouth-layer {
-    width: 90px;
-    height: 45px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin-bottom: 40px; /* Espacio para el pecho */
-    z-index: 1;
+.mouth-container {
+    width: 140px;
+    height: 60px;
+    z-index: 10;
 }
 .mouth-svg { 
     width: 100%; 
@@ -123,9 +115,9 @@ body, html {
 #mouth-path { 
     fill: none; 
     stroke: #1a1a1a !important; 
-    stroke-width: 6; 
+    stroke-width: 7;
     stroke-linecap: round;
-    transition: d 0.3s ease; 
+    transition: d 0.1s ease, fill 0.2s ease; /* Transición rápida v19.6 */
 }
 #mouth-path.is-speaking {
     fill: #1a1a1a !important; /* Negro sólido total al hablar v16.9 */
