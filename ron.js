@@ -599,11 +599,10 @@ const ronFace = {
             this.updateMouth('M 35 45 Q 50 35 65 45'); 
             this.eyes.left.classList.add('fear'); this.eyes.right.classList.add('fear');
             this.setChestIcon('warning');
-        }
+        } else if (exp === 'square') {
             this.updateMouth('M 35 40 L 65 40'); 
             this.eyes.left.classList.add('square'); this.eyes.right.classList.add('square'); 
-        }
-        else { 
+        } else { 
             this.updateMouth('M 25 35 Q 50 48 75 35'); // Línea fina neutral
             this.stopGlitchEffect(); 
         }
