@@ -415,7 +415,7 @@ const ronFace = {
             REGLA DE ORO: Responde siempre de forma corta (máximo 2-3 frases), como un amigo robot divertido.`;
 
             let body = { 
-                model: isV ? "llama-3.2-11b-vision-preview" : "llama-3.1-70b-versatile", 
+                model: isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile", 
                 messages: [] 
             };
 
@@ -510,11 +510,18 @@ const ronFace = {
         this.setExpression('glitch');
         this.startGlitchEffect();
         
+        // MOSTRAR ERROR AL USUARIO PARA DEPURACIÓN (v20.6)
+        this.gamePanel.classList.remove('hidden');
+        this.gameText.style.color = "red";
+        this.gameText.innerText = "ERROR: " + reason;
+
         setTimeout(async () => {
             this.stopGlitchEffect();
             this.changeState('IDLE');
             this.setExpression('neutral');
-        }, 3000);
+            this.gamePanel.classList.add('hidden');
+            this.gameText.style.color = ""; // restaurar color original
+        }, 5000);
     },
 
     captureOptimizedFrame() {
