@@ -1,6 +1,7 @@
 import { RonState, log, changeState } from './core.js';
-import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto } from './ui.js';
+import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto, flash } from './ui.js';
 import { speak } from './speech.js';
+import * as Sounds from './sounds.js';
 import { startMathGame, startReadingGame, startHideAndSeek } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
 
@@ -32,6 +33,9 @@ export async function handleInput(userText, isInternal = false) {
     if (t.includes("escondite") || (t.includes("jugar") && t.includes("esconder"))) {
         return startHideAndSeek();
     }
+    if (t.includes("veo veo") || (t.includes("jugar") && t.includes("veo"))) {
+        return triggerSpontaneous("Vamos a jugar al Veo Veo. Elige un objeto que veas por mi cámara en la habitación, pero no me lo digas. Dame una pista de qué color es o qué forma tiene y yo intentaré adivinarlo mirando por la cámara.");
+    }
     if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron")) {
         RonState.ui.gamePanel.classList.add('hidden');
         changeState('IDLE');
@@ -61,8 +65,15 @@ export async function handleInput(userText, isInternal = false) {
             let newName = match[1];
             newName = newName.charAt(0).toUpperCase() + newName.slice(1);
             if (RonState.currentUser) {
-                let face = RonState.knownFaces.find(f => f.label === RonState.currentUser);
-                if (face) face.label = newName;
+                // Inteligencia de Limpieza: Buscamos caras similares y las eliminamos para evitar duplicados
+                const currentDescriptor = new Float32Array(RonState.lastDescriptor);
+                RonState.knownFaces = RonState.knownFaces.filter(f => {
+                    const dist = faceapi.euclideanDistance(currentDescriptor, new Float32Array(f.descriptor));
+                    return dist > 0.45; // Eliminamos cualquiera que sea "casi igual" a la cara actual
+                });
+
+                // Añadimos la nueva firma con el nombre correcto
+                RonState.knownFaces.push({ label: newName, descriptor: Array.from(currentDescriptor) });
                 localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
                 
                 if (RonState.userStats[RonState.currentUser]) {
@@ -72,7 +83,7 @@ export async function handleInput(userText, isInternal = false) {
                 }
                 RonState.currentUser = newName;
                 changeState('IDLE');
-                return speak(`¡Bip! Perdona mis circuitos oxidados. He actualizado tu perfil, ahora te llamaré ${newName}.`);
+                return speak(`¡Bip! Entendido. He borrado los datos erróneos de mi disco duro. A partir de ahora eres ${newName} para siempre.`);
             }
         }
     }
@@ -97,8 +108,9 @@ export async function handleInput(userText, isInternal = false) {
         
         if (isSelfie) {
             setExpression('star');
-            await speak("¡Sonríe! 3, 2, 1... ¡Bip!");
-            await new Promise(r => setTimeout(r, 2500)); // Esperar a que hable
+            await speak("¡Sonríe! 3... 2... 1...");
+            flash();
+            await new Promise(r => setTimeout(r, 1000)); // Flash delay
         }
 
         let mem = "";
@@ -115,10 +127,11 @@ export async function handleInput(userText, isInternal = false) {
         MEMORIA SOBRE ${userKey}: ${mem ? mem : "Aún no sabes mucho sobre él/ella, pregúntale cosas para conocerle mejor."}
         
         HABILIDADES:
-        1. JUEGOS NUEVOS: Si te propone jugar a algo nuevo, INVENTA reglas divertidas.
+        1. JUEGOS NUEVOS: Si te propone jugar a algo nuevo, INVENTA reglas divertidas y usa la pizarra para jugar con el comando [SHOW: texto].
         2. MÚSICA: Si pide música o bailar, responde algo gracioso y añade el comando [MUSIC: nombre de la cancion].
+        3. ACADEMY: Si pide matemáticas o lectura de forma general, anímale y propón jugar.
         
-        REGLA DE ORO: Responde siempre de forma corta (máximo 2-3 frases), como un amigo robot divertido.`;
+        REGLA DE ORO: Responde siempre de forma corta (máximo 2-3 frases), como un amigo robot divertido. Usarás [SHOW: ...] para poner sumas, palabras o dibujos simples en tu pantalla cuando el juego lo requiera.`;
 
         const hour = new Date().getHours();
         if ((hour >= 21 || hour < 7) && !isInternal) {
@@ -169,6 +182,7 @@ export async function handleInput(userText, isInternal = false) {
                 
                 if (res.ok) {
                     success = true;
+                    Sounds.playThinkingBeep();
                     log(`Respuesta generada con éxito usando: ${model}`);
                     break;
                 } else {

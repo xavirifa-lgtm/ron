@@ -1,4 +1,5 @@
 import { RonState, log, changeState } from './core.js';
+import * as Sounds from './sounds.js';
 
 let glitchInterval = null;
 
@@ -21,8 +22,24 @@ export function initUI() {
         powerBtn: document.getElementById('power-btn'),
         micToggleBtn: document.getElementById('mic-toggle-btn'),
         photoPanel: document.getElementById('photo-panel'),
-        photoImg: document.getElementById('photo-img')
+        photoImg: document.getElementById('photo-img'),
+        flash: document.getElementById('camera-flash'),
+        mainApp: document.getElementById('ron-app')
     };
+    initBattery();
+}
+
+async function initBattery() {
+    if ('getBattery' in navigator) {
+        const b = await navigator.getBattery();
+        const update = () => {
+            const level = Math.round(b.level * 100);
+            log(`🔋 Energía: ${level}%`);
+            // El icono de wifi ahora mostrará el nivel de batería en el futuro
+        };
+        b.addEventListener('levelchange', update);
+        update();
+    }
 }
 
 export function handleStateChange(newState) {
@@ -133,6 +150,8 @@ export function triggerSafetyGlitch(reason) {
     log(`⚠️ GLITCH: ${reason}`);
     changeState('GLITCH');
     setExpression('glitch');
+    RonState.ui.mainApp.classList.add('glitch-vibration');
+    Sounds.playGlitchSound();
     startGlitchEffect();
     
     RonState.ui.gamePanel.classList.remove('hidden');
@@ -141,11 +160,18 @@ export function triggerSafetyGlitch(reason) {
 
     setTimeout(() => {
         stopGlitchEffect();
+        RonState.ui.mainApp.classList.remove('glitch-vibration');
         changeState('IDLE');
         setExpression('neutral');
         RonState.ui.gamePanel.classList.add('hidden');
         RonState.ui.gameText.style.color = ""; 
     }, 5000);
+}
+
+export function flash() {
+    Sounds.playPhotoSound();
+    RonState.ui.flash.classList.add('flash-active');
+    setTimeout(() => RonState.ui.flash.classList.remove('flash-active'), 500);
 }
 
 export function showPhoto(imgData) {

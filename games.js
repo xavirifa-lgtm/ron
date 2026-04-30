@@ -58,6 +58,10 @@ export function startHideAndSeek() {
             changeState('HIDE_SEEK_SEARCH');
             setExpression('neutral');
             log("Buscando en el escondite...");
+            // Pequeño retardo para dar tiempo a que la cámara procese el primer frame
+            setTimeout(() => {
+                if (RonState.activityState === 'HIDE_SEEK_SEARCH') speak("¡Voy a buscarte!");
+            }, 1000);
         }
-    }, 11000); 
+    }, 12000); 
 }

@@ -2,6 +2,7 @@ import { RonState, log, changeState } from './core.js';
 import { initUI, setChestIcon, setExpression, startBlinkCycle } from './ui.js';
 import { loadModels, startCamera, startVisionLoop, connectBLE } from './vision.js';
 import { startListening, speak } from './speech.js';
+import * as Sounds from './sounds.js';
 
 async function preInit() {
     log("Iniciando Ron v20.7 - MODULAR BRAIN...");
@@ -40,6 +41,7 @@ async function init() {
         setExpression('neutral');
         startBlinkCycle();
         startVisionLoop();
+        Sounds.playStartupSound();
         speak("¡Bip! Hola amigo. Soy Ron, tu mejor amigo para siempre.");
         goFullscreen();
     } catch (err) {

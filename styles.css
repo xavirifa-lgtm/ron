@@ -238,3 +238,24 @@ body, html {
 
 .glitch-overlay { position: absolute; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 .glitch-block { position: absolute; background: #00d4ff; opacity: 0.3; }
+
+/* Efectos de Hardware v21.0 */
+.camera-flash {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: white; z-index: 10000; opacity: 0; pointer-events: none;
+}
+.flash-active { animation: flashAnim 0.5s ease-out; }
+@keyframes flashAnim {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+.glitch-vibration { animation: glitchVib 0.2s infinite; filter: hue-rotate(90deg) contrast(1.5); }
+@keyframes glitchVib {
+    0% { transform: translate(0); }
+    25% { transform: translate(2px, -2px); }
+    50% { transform: translate(-2px, 2px); }
+    75% { transform: translate(2px, 2px); }
+    100% { transform: translate(0); }
+}
+
