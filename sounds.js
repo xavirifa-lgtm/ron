@@ -1,7 +1,12 @@
 let audioCtx = null;
 
+export function resume() {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
 function getCtx() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    resume();
     return audioCtx;
 }
 

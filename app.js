@@ -16,6 +16,7 @@ async function preInit() {
     };
 
     RonState.ui.powerBtn.onclick = async () => { 
+        Sounds.resume();
         RonState.ui.powerBtn.style.display = 'none'; 
         await init(); 
     };

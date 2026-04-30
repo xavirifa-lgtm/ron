@@ -69,7 +69,7 @@ export function resetSpontaneousTimer() {
     if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
     RonState.spontaneousTimer = setTimeout(() => {
         if (RonState.activityState === 'IDLE') {
-            import('./ai.js').then(ai => ai.triggerSpontaneous("Llevamos un rato callados. Inicia una conversación corta proponiendo un juego (leer, mates, escondite) o recordando algo que me gusta."));
+            import('./ai.js').then(ai => ai.triggerSpontaneous("Llevamos mucho rato callados. Inicia una conversación corta saludando o preguntando si quiere jugar a algo."));
         }
-    }, 90000 + Math.random() * 60000); // Entre 1.5 y 2.5 minutos
+    }, 300000 + Math.random() * 300000); // Entre 5 y 10 minutos
 }

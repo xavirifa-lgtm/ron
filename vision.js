@@ -62,11 +62,12 @@ export function startVisionLoop() {
 
                 let found = null;
                 if (RonState.knownFaces.length > 0) {
-                    const matcher = new faceapi.FaceMatcher(RonState.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])), 0.55);
+                    const matcher = new faceapi.FaceMatcher(RonState.knownFaces.map(f => new faceapi.LabeledFaceDescriptors(f.label, [new Float32Array(f.descriptor)])), 0.65);
                     const bestMatch = matcher.findBestMatch(d.descriptor);
                     
                     if (bestMatch.label !== 'unknown') {
                         found = bestMatch.label;
+                        RonState.unknownStabilityCounter = 0; // Reseteamos si vemos a alguien conocido
                         
                         // Inteligencia de Limpieza Automática: 
                         // Si hay otro nombre que también coincide mucho con esta cara, lo borramos para evitar duplicados futuros
@@ -79,6 +80,13 @@ export function startVisionLoop() {
                                 RonState.knownFaces = RonState.knownFaces.filter(f => f.label !== dupe.label);
                                 localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
                             }
+                        }
+                    } else {
+                        // Si no lo reconoce, pero el currentUser estaba activo hace poco, mantenemos la identidad 
+                        // para que no se pierda al sonreír o poner caras. Histeresis de 8 frames (~6 segundos)
+                        if (RonState.currentUser && RonState.unknownStabilityCounter < 8) {
+                            found = RonState.currentUser;
+                            RonState.unknownStabilityCounter++;
                         }
                     }
                 }
@@ -111,9 +119,15 @@ export function startVisionLoop() {
                         }
                     }
                 } else if (!RonState.isLearningFace) {
-                    RonState.tempDescriptor = Array.from(d.descriptor);
-                    RonState.isLearningFace = true;
-                    speak("¡Bip! Eres un amigo nuevo. ¿Cómo te llamas?");
+                    // Solo preguntamos el nombre si llevamos un rato sin reconocer a nadie (para evitar falsos positivos)
+                    if (RonState.unknownStabilityCounter > 10) {
+                        RonState.tempDescriptor = Array.from(d.descriptor);
+                        RonState.isLearningFace = true;
+                        speak("¡Bip! Eres un amigo nuevo. ¿Cómo te llamas?");
+                        RonState.unknownStabilityCounter = 0;
+                    } else {
+                        RonState.unknownStabilityCounter++;
+                    }
                 }
                 RonState.lastEmotion = RonState.currentEmotion;
             }
