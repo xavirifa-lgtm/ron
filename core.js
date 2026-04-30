@@ -29,6 +29,10 @@ export const RonState = {
     // INICIATIVA
     spontaneousTimer: null,
     isCheeringUp: false,
+    isSilentMode: false,        // Modo silencio: Ron escucha pero no habla
+    unknownStabilityCounter: 0, // Contador de frames sin reconocer cara conocida
+    emotionCooldownUntil: 0,    // Timestamp: no habla de emociones hasta este momento
+    lastSpontaneousTime: 0,     // Timestamp: cuándo fue la última charla espontánea
 
     // DOM Refs (Cargadas en app.js)
     ui: {}
@@ -71,5 +75,5 @@ export function resetSpontaneousTimer() {
         if (RonState.activityState === 'IDLE') {
             import('./ai.js').then(ai => ai.triggerSpontaneous("Llevamos mucho rato callados. Inicia una conversación corta saludando o preguntando si quiere jugar a algo."));
         }
-    }, 300000 + Math.random() * 300000); // Entre 5 y 10 minutos
+    }, 600000 + Math.random() * 600000); // Entre 10 y 20 minutos (menos insistente)
 }

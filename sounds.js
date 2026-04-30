@@ -50,7 +50,12 @@ export function playPhotoSound() {
 }
 
 export function playThinkingBeep() {
-    if (Math.random() > 0.7) {
+    if (Math.random() > 0.3) { // Aumentada la frecuencia para que suene más a robot pensando
         playBeep(Math.random() * 400 + 600, 'sine', 0.03, 0.02);
     }
+}
+
+export function playErrorBeep() {
+    playBeep(200, 'sawtooth', 0.2, 0.1);
+    setTimeout(() => playBeep(150, 'sawtooth', 0.3, 0.1), 250);
 }

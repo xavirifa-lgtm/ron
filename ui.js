@@ -35,23 +35,35 @@ async function initBattery() {
         const update = () => {
             const level = Math.round(b.level * 100);
             log(`🔋 Energía: ${level}%`);
-            // El icono de wifi ahora mostrará el nivel de batería en el futuro
+            RonState.batteryLevel = level;
+            
+            // Aviso de batería crítica
+            if (level <= 15 && !b.charging) {
+                import('./speech.js').then(s => s.speak("¡Bip! Batería de supervivencia crítica. Por favor, enchufa mi cable o me apagaré pronto."));
+                setChestIcon('warning');
+            } else if (RonState.activityState === 'IDLE') {
+                setChestIcon('wifi');
+            }
         };
         b.addEventListener('levelchange', update);
+        b.addEventListener('chargingchange', update);
         update();
     }
 }
 
 export function handleStateChange(newState) {
+    const isNight = document.body.classList.contains('night-mode');
+    const baseColor = isNight ? '#00d4ff' : '#1a1a1a';
+    
     switch (newState) {
         case 'IDLE':
         case 'THINKING':
         case 'SPEAKING':
         case 'GLITCH':
-            setEyeColor('#1a1a1a'); 
+            setEyeColor(baseColor); 
             break;
         case 'LISTENING': 
-            setEyeColor('#00d4ff'); 
+            setEyeColor(isNight ? '#ffffff' : '#00d4ff'); // Aún más brillante al escuchar de noche
             break;
     }
 }
@@ -64,9 +76,21 @@ export function updateMouth(d) {
     RonState.ui.mouth.setAttribute('d', d); 
 }
 
-export function shiftEyes() {
-    const offset = (Math.random() - 0.5) * 20;
-    [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { el.style.transform = `translateX(${offset}px)`; });
+export function shiftEyes(errX = null, errY = null) {
+    if (errX !== null && errY !== null) {
+        // Mover los ojos de la pantalla hacia la cara
+        const moveX = errX * -80; // Invertido y escalado para seguir la cara
+        const moveY = errY * -40;
+        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { 
+            el.style.transform = `translate(${moveX}px, ${moveY}px)`; 
+        });
+    } else {
+        // Movimiento aleatorio natural al hablar
+        const offset = (Math.random() - 0.5) * 20;
+        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { 
+            el.style.transform = `translateX(${offset}px)`; 
+        });
+    }
 }
 
 export function setChestIcon(type) {
@@ -113,6 +137,10 @@ export function setExpression(exp) {
         updateMouth('M 35 45 Q 50 35 65 45'); 
         RonState.ui.eyes.left.classList.add('fear'); RonState.ui.eyes.right.classList.add('fear');
         setChestIcon('warning');
+    } else if (exp === 'flat') {
+        updateMouth('M 40 40 L 60 40'); // Boca recta, dormido
+        RonState.ui.eyes.left.classList.add('flat'); RonState.ui.eyes.right.classList.add('flat');
+        setChestIcon('heart'); // Latido lento
     } else { 
         updateMouth('M 25 35 Q 50 48 75 35'); 
         stopGlitchEffect(); 
@@ -124,6 +152,15 @@ export function startBlinkCycle() {
         if (RonState.activityState !== 'SPEAKING' && RonState.expressionState !== 'surprise') {
             [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => e.classList.add('blink'));
             setTimeout(() => [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => e.classList.remove('blink')), 150);
+            
+            // Tics y glitches aleatorios de la película (10% de probabilidad)
+            if (Math.random() > 0.9) {
+                setTimeout(() => {
+                    const randomEye = Math.random() > 0.5 ? RonState.ui.eyes.left : RonState.ui.eyes.right;
+                    randomEye.classList.add('glitch');
+                    setTimeout(() => randomEye.classList.remove('glitch'), 100 + Math.random() * 150);
+                }, 200);
+            }
         }
         setTimeout(b, Math.random() * 4000 + 2000);
     };
@@ -182,4 +219,24 @@ export function showPhoto(imgData) {
 export function hidePhoto() {
     RonState.ui.photoPanel.classList.add('hidden');
     setTimeout(() => { RonState.ui.photoImg.src = ""; }, 500); // Limpiar memoria
+}
+
+export function startScanningUI() {
+    RonState.ui.mainApp.classList.add('scanning-mode');
+    setChestIcon('search');
+}
+
+export function stopScanningUI() {
+    RonState.ui.mainApp.classList.remove('scanning-mode');
+}
+
+export function checkNightMode() {
+    const hour = new Date().getHours();
+    if (hour >= 21 || hour < 7) {
+        document.body.classList.add('night-mode');
+        setEyeColor('#00d4ff');
+    } else {
+        document.body.classList.remove('night-mode');
+        setEyeColor('#1a1a1a');
+    }
 }

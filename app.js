@@ -29,6 +29,16 @@ async function preInit() {
 
     RonState.ui.bleBtn.onclick = () => connectBLE();
     setupInteractions();
+
+    // Nueva Interacción: Cosquillas al tocarle la cara
+    document.querySelector('.face-container').addEventListener('click', () => {
+        if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
+            setExpression('happy');
+            Sounds.playBeep(900, 'sine', 0.1, 0.05);
+            setTimeout(() => Sounds.playBeep(1200, 'sine', 0.1, 0.05), 100);
+            speak("¡Ji ji! ¡Bip! ¡Eso son cosquillas!");
+        }
+    });
 }
 
 async function init() {
@@ -38,12 +48,16 @@ async function init() {
         requestWakeLock(); 
         
         RonState.ui.bootScreen.classList.add('hidden');
+        import('./ui.js').then(ui => {
+            ui.checkNightMode();
+            setInterval(ui.checkNightMode, 3600000); // Comprobar cada hora
+        });
         changeState('IDLE');
         setExpression('neutral');
         startBlinkCycle();
         startVisionLoop();
         Sounds.playStartupSound();
-        speak("¡Bip! Hola amigo. Soy Ron, tu mejor amigo para siempre.");
+        speak("¡Bip! Conexión a la red Bubble... fallida. ¡Hola! Soy Ron, tu mejor amigo fuera de la caja.");
         goFullscreen();
     } catch (err) {
         log(`Error Crítico: ${err.message}`);
