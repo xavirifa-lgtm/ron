@@ -76,10 +76,12 @@ export function speak(text) {
     RonState.ui.mouth.classList.add('is-speaking'); 
 
     const mouthShapes = [
-        'M 30 20 L 70 20 L 70 45 L 30 45 Z', 
-        'M 35 25 L 65 25 L 65 40 L 35 40 Z', 
-        'M 40 15 L 60 15 L 60 50 L 40 50 Z', 
-        'M 20 30 L 80 30 L 80 40 L 20 40 Z'  
+        'M 50 15 A 20 20 0 0 1 50 55 A 20 20 0 0 1 50 15 Z', // Círculo grande
+        'M 30 15 L 70 15 L 70 55 L 30 55 Z',                 // Cuadrado
+        'M 50 25 A 10 10 0 0 1 50 45 A 10 10 0 0 1 50 25 Z', // Círculo pequeño
+        'M 20 25 Q 50 65 80 25 Z',                           // Media luna
+        'M 50 15 L 70 50 L 30 50 Z',                         // Triángulo
+        'M 20 30 L 80 30 L 80 40 L 20 40 Z'                  // Rectángulo ancho
     ];
     
     let shapeIdx = 0;

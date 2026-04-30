@@ -19,7 +19,9 @@ export function initUI() {
         fixedLog: document.getElementById('fixed-log'),
         bootScreen: document.getElementById('boot-screen'),
         powerBtn: document.getElementById('power-btn'),
-        micToggleBtn: document.getElementById('mic-toggle-btn')
+        micToggleBtn: document.getElementById('mic-toggle-btn'),
+        photoPanel: document.getElementById('photo-panel'),
+        photoImg: document.getElementById('photo-img')
     };
 }
 
@@ -144,4 +146,14 @@ export function triggerSafetyGlitch(reason) {
         RonState.ui.gamePanel.classList.add('hidden');
         RonState.ui.gameText.style.color = ""; 
     }, 5000);
+}
+
+export function showPhoto(imgData) {
+    RonState.ui.photoImg.src = imgData;
+    RonState.ui.photoPanel.classList.remove('hidden');
+}
+
+export function hidePhoto() {
+    RonState.ui.photoPanel.classList.add('hidden');
+    setTimeout(() => { RonState.ui.photoImg.src = ""; }, 500); // Limpiar memoria
 }

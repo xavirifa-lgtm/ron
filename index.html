@@ -14,7 +14,7 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=20.8">
+    <link rel="stylesheet" href="styles.css?v=20.11">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -27,7 +27,7 @@
         <!-- Pantalla de Inicio -->
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">ENCENDER A RON (v20.8 - ROTATION)</button>
+            <button id="power-btn">ENCENDER A RON (v20.11 - SELFIE)</button>
         </div>
 
         <!-- Botones de Control -->
@@ -80,8 +80,15 @@
         
         <!-- UI de Control (Invisible por defecto) -->
         <div id="debug-info" class="hidden"></div>
+        
+        <!-- Panel de Selfie (Polaroid) -->
+        <div id="photo-panel" class="hidden">
+            <div class="polaroid">
+                <img id="photo-img" src="" alt="Selfie">
+            </div>
+        </div>
     </div>
-    <script>const CACHE_NAME = 'ron-bot-v20.8';</script>
-    <script type="module" src="app.js?v=20.8"></script>
+    <script>const CACHE_NAME = 'ron-bot-v20.11';</script>
+    <script type="module" src="app.js?v=20.11"></script>
 </body>
 </html>

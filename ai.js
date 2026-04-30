@@ -1,5 +1,5 @@
 import { RonState, log, changeState } from './core.js';
-import { triggerSafetyGlitch, setExpression } from './ui.js';
+import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto } from './ui.js';
 import { speak } from './speech.js';
 import { startMathGame, startReadingGame } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
@@ -56,10 +56,19 @@ export async function handleInput(userText) {
     }, 12000);
 
     try {
+        const selfieKeywords = ['selfie', 'hazme una foto', 'sácame una foto', 'foto tuya', 'haz una foto'];
+        const isSelfie = selfieKeywords.some(kw => t.includes(kw));
+        
         const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro', 'tengo'];
-        const isV = visualKeywords.some(kw => t.includes(kw));
+        const isV = isSelfie || visualKeywords.some(kw => t.includes(kw));
         const userKey = RonState.currentUser || 'amigo';
         
+        if (isSelfie) {
+            setExpression('star');
+            await speak("¡Sonríe! 3, 2, 1... ¡Bip!");
+            await new Promise(r => setTimeout(r, 2500)); // Esperar a que hable
+        }
+
         let mem = "";
         if (RonState.userStats[userKey]) {
             const u = RonState.userStats[userKey];
@@ -81,35 +90,49 @@ export async function handleInput(userText) {
         
         REGLA DE ORO: Responde siempre de forma corta (máximo 2-3 frases), como un amigo robot divertido.`;
 
-        // MODEL ROTATION (v20.7 Fallback Logic)
-        const primaryModel = isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile";
-        const fallbackModel = isV ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
+        // MODEL ROTATION (v20.8 Fallback Logic)
+        const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b", "allam-2-7b"];
+        const visionModel = "meta-llama/llama-4-scout-17b-16e-instruct";
         
-        let body = { 
-            model: primaryModel, 
-            messages: [] 
-        };
+        let res, data;
+        let success = false;
 
         if (isV) {
+            let body = { model: visionModel, messages: [] };
             const img = captureOptimizedFrame();
+            
+            if (isSelfie) {
+                showPhoto(img);
+                sys += `\n[MODO SELFIE ACTIVADO]: Acabas de sacar esta foto. Haz un comentario SÚPER GRACIOSO, simpático y corto (1 frase) sobre lo que sale en la foto.`;
+            }
+            
             body.messages = [{ role: "user", content: [ { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` }, { type: "image_url", image_url: { url: img } } ] }];
-        } else {
-            body.messages = [{ role: "system", content: sys }, { role: "user", content: userText }];
-        }
-
-        let res = await callGroqAPI(body);
-        let data = await res.json();
-        
-        // Fallback en caso de límite de tokens o error de rate limit
-        if (!res.ok && (data.error?.message?.toLowerCase().includes("token") || data.error?.message?.toLowerCase().includes("rate limit"))) {
-            log(`Fallo con ${primaryModel}, intentando fallback a ${fallbackModel}...`);
-            body.model = fallbackModel;
+            
             res = await callGroqAPI(body);
             data = await res.json();
+            if (res.ok) success = true;
+        } else {
+            for (let model of textModels) {
+                let body = { 
+                    model: model, 
+                    messages: [{ role: "system", content: sys }, { role: "user", content: userText }] 
+                };
+                
+                res = await callGroqAPI(body);
+                data = await res.json();
+                
+                if (res.ok) {
+                    success = true;
+                    log(`Respuesta generada con éxito usando: ${model}`);
+                    break;
+                } else {
+                    log(`Fallo con ${model} (${data.error?.message}). Probando siguiente modelo...`);
+                }
+            }
         }
 
         clearTimeout(watchdog);
-        if (!res.ok) throw new Error(data.error?.message || "Error API");
+        if (!success) throw new Error(data?.error?.message || "Error API crítico en todos los modelos.");
 
         const resp = data.choices[0].message.content;
         
@@ -124,6 +147,10 @@ export async function handleInput(userText) {
                 RonState.ui.gameText.innerText = s[1];
                 log(`Pizarra Activa: ${s[1]}`);
             }
+        }
+
+        if (isSelfie) {
+            setTimeout(() => { hidePhoto(); }, 8000); // Borrar tras 8 segundos
         }
 
         await speak(resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, ''));

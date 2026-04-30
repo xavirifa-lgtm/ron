@@ -49,4 +49,11 @@ export function changeState(newState) {
     
     // Notificamos a UI para cambiar colores si hace falta
     import('./ui.js').then(ui => ui.handleStateChange(newState));
+    
+    // Reiniciar escucha si volvemos a IDLE
+    if (newState === 'IDLE' && RonState.isMicEnabled) {
+        import('./speech.js').then(speech => {
+            setTimeout(() => speech.startListening(), 1000);
+        });
+    }
 }

@@ -141,7 +141,45 @@ body, html {
     cursor: pointer; z-index: 10000;
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(5px);
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
+}
+
+/* PANEL SELFIE (POLAROID) */
+#photo-panel {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+    animation: slide-up 0.5s ease-out;
+}
+
+#photo-panel.hidden {
+    display: none;
+}
+
+.polaroid {
+    background: white;
+    padding: 10px 10px 30px 10px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+    border-radius: 4px;
+    transform: rotate(5deg);
+    transition: transform 0.3s ease;
+}
+
+.polaroid:hover {
+    transform: scale(1.05) rotate(2deg);
+}
+
+#photo-img {
+    width: 200px;
+    height: auto;
+    background: #333;
+    border: 1px solid #ddd;
+}
+
+@keyframes slide-up {
+    from { transform: translateY(100px) rotate(10deg); opacity: 0; }
+    to { transform: translateY(0) rotate(5deg); opacity: 1; }
 }
 .mic-toggle-btn { right: 20px; }
 .ble-btn { right: 80px; }
