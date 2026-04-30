@@ -21,11 +21,20 @@ export async function startCamera() {
 
 export function startVisionLoop() {
     setInterval(async () => {
-        if (RonState.activityState === 'THINKING' || RonState.activityState === 'SPEAKING' || RonState.isLearningFace) return;
+        if (RonState.activityState === 'THINKING' || RonState.activityState === 'SPEAKING' || RonState.activityState === 'HIDE_SEEK' || RonState.isLearningFace) return;
         try {
             const detections = await faceapi.detectAllFaces(RonState.ui.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }))
                 .withFaceLandmarks().withFaceExpressions().withFaceDescriptors();
             
+            if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
+                if (detections.length > 0) {
+                    import('./core.js').then(c => c.changeState('IDLE'));
+                    setExpression('happy');
+                    speak("¡Te pillé! ¡Bip! ¡Qué escondite más bueno!");
+                }
+                return;
+            }
+
             if (detections.length > 0) {
                 const d = detections[0];
                 trackFace(d); 
@@ -51,11 +60,19 @@ export function startVisionLoop() {
                         speak(`¡Bip! ¡Hola, ${found}! Te he reconocido. Te veo ${RonState.currentEmotion}.`);
                     } else if (RonState.currentEmotion !== RonState.lastEmotion && RonState.activityState === 'IDLE') {
                         if (RonState.currentEmotion === 'triste') {
-                            setExpression('fear');
-                            speak(`¡Bip! Amigo ${RonState.currentUser}, te veo triste. ¿Qué pasa?`);
+                            setExpression('sad');
+                            RonState.isCheeringUp = true;
+                            speak(`¡Bip! Amigo ${RonState.currentUser}, te veo triste. Voy a intentar animarte.`);
+                            import('./ai.js').then(ai => ai.triggerSpontaneous("El niño está triste. Cuenta un chiste MUY corto o di algo súper gracioso sobre ti para intentar animarle."));
                         } else if (RonState.currentEmotion === 'feliz') {
-                            setExpression('happy');
-                            speak(`¡Bip! ¡Me encanta verte feliz, ${RonState.currentUser}!`);
+                            if (RonState.isCheeringUp) {
+                                RonState.isCheeringUp = false;
+                                setExpression('happy');
+                                speak(`¡Bip! ¡Bien! ¡Ya estás sonriendo de nuevo!`);
+                            } else {
+                                setExpression('happy');
+                                speak(`¡Bip! ¡Me encanta verte feliz, ${RonState.currentUser}!`);
+                            }
                         }
                     }
                 } else if (!RonState.isLearningFace) {

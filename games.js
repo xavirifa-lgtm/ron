@@ -47,3 +47,17 @@ export function handleReadingAnswer(text) {
         speak("¡Casi! Repite conmigo con cuidado.");
     }
 }
+
+export function startHideAndSeek() {
+    changeState('HIDE_SEEK');
+    setExpression('thinking');
+    speak("¡Bip! ¡Al escondite! Cierro los ojos. Uno, dos, tres, cuatro, cinco, seis, siete, ocho, nueve, y diez! ¡Allá voy!");
+    
+    setTimeout(() => {
+        if (RonState.activityState === 'HIDE_SEEK') {
+            changeState('HIDE_SEEK_SEARCH');
+            setExpression('neutral');
+            log("Buscando en el escondite...");
+        }
+    }, 11000); 
+}

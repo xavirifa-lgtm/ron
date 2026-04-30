@@ -1,10 +1,16 @@
 import { RonState, log, changeState } from './core.js';
 import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto } from './ui.js';
 import { speak } from './speech.js';
-import { startMathGame, startReadingGame } from './games.js';
+import { startMathGame, startReadingGame, startHideAndSeek } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
 
-export async function handleInput(userText) {
+export async function triggerSpontaneous(prompt) {
+    if (RonState.activityState !== 'IDLE') return;
+    log("Iniciativa espontánea activada.");
+    handleInput(`[INICIATIVA INTERNA]: ${prompt}`, true);
+}
+
+export async function handleInput(userText, isInternal = false) {
     if (RonState.activityState === 'MATH_GAME') {
         const games = await import('./games.js');
         return games.handleMathAnswer(userText);
@@ -22,6 +28,9 @@ export async function handleInput(userText) {
     }
     if (t.includes("vamos a leer") || t.includes("quiero leer") || t.includes("juego de lectura")) {
         return startReadingGame();
+    }
+    if (t.includes("escondite") || (t.includes("jugar") && t.includes("esconder"))) {
+        return startHideAndSeek();
     }
     if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron")) {
         RonState.ui.gamePanel.classList.add('hidden');
@@ -43,6 +52,29 @@ export async function handleInput(userText) {
     if (t.includes("para la música") || t.includes("para la musica") || t.includes("para ron")) {
         log("Música parada.");
         return speak("¡Bip! Música fuera.");
+    }
+
+    // CORRECCIÓN DE IDENTIDAD
+    if ((t.includes("no me llamo") || t.includes("equivocado") || t.includes("te has confundido")) && t.includes("me llamo")) {
+        const match = t.match(/me llamo ([a-záéíóúñ]+)/);
+        if (match && match[1]) {
+            let newName = match[1];
+            newName = newName.charAt(0).toUpperCase() + newName.slice(1);
+            if (RonState.currentUser) {
+                let face = RonState.knownFaces.find(f => f.label === RonState.currentUser);
+                if (face) face.label = newName;
+                localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
+                
+                if (RonState.userStats[RonState.currentUser]) {
+                    RonState.userStats[newName] = RonState.userStats[RonState.currentUser];
+                    delete RonState.userStats[RonState.currentUser];
+                    localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+                }
+                RonState.currentUser = newName;
+                changeState('IDLE');
+                return speak(`¡Bip! Perdona mis circuitos oxidados. He actualizado tu perfil, ahora te llamaré ${newName}.`);
+            }
+        }
     }
 
     log(`Procesando: ${userText}`);
@@ -83,12 +115,24 @@ export async function handleInput(userText) {
         MEMORIA SOBRE ${userKey}: ${mem ? mem : "Aún no sabes mucho sobre él/ella, pregúntale cosas para conocerle mejor."}
         
         HABILIDADES:
-        1. JUEGOS NUEVOS: Si te propone jugar a algo nuevo, INVENTA reglas divertidas y usa la pizarra para jugar con el comando [SHOW: texto].
+        1. JUEGOS NUEVOS: Si te propone jugar a algo nuevo, INVENTA reglas divertidas.
         2. MÚSICA: Si pide música o bailar, responde algo gracioso y añade el comando [MUSIC: nombre de la cancion].
-        3. APRENDIZAJE: Si te enseña algo nuevo, dile que lo guardarás en tu disco duro.
-        4. ACADEMY: Si pide matemáticas o lectura de forma general, anímale.
         
         REGLA DE ORO: Responde siempre de forma corta (máximo 2-3 frases), como un amigo robot divertido.`;
+
+        const hour = new Date().getHours();
+        if ((hour >= 21 || hour < 7) && !isInternal) {
+            sys += `\n[MODO NOCHE]: Ya es muy tarde. Estás medio dormido y bostezas. Sugiérele amablemente al niño que es hora de irse a dormir porque tus baterías de diversión están muy bajas.`;
+        }
+
+        const activityKeywords = ['vamos a', 'estamos', 'estoy', 'voy a', 'viendo', 'comiendo', 'jugando a'];
+        if (activityKeywords.some(kw => t.includes(kw)) && !isInternal) {
+            sys += `\n[MODO ACOMPAÑANTE]: El niño te está explicando lo que está haciendo o lo que vais a hacer. Muestra muchísimo interés, actúa como si estuvieras ahí con él participando, y hazle una pregunta muy específica sobre la actividad para involucrarte.`;
+        }
+
+        if (isInternal) {
+            sys += `\n[INSTRUCCIÓN DIRECTA]: Tienes que cumplir la orden del usuario de forma proactiva, como si se te acabara de ocurrir a ti.`;
+        }
 
         // MODEL ROTATION (v20.8 Fallback Logic)
         const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b", "allam-2-7b"];
@@ -104,6 +148,8 @@ export async function handleInput(userText) {
             if (isSelfie) {
                 showPhoto(img);
                 sys += `\n[MODO SELFIE ACTIVADO]: Acabas de sacar esta foto. Haz un comentario SÚPER GRACIOSO, simpático y corto (1 frase) sobre lo que sale en la foto.`;
+            } else {
+                sys += `\n[MODO VISIÓN ACTIVADO]: El niño te está enseñando algo a la cámara. Reconócelo con ENORME ENTUSIASMO. Tienes la obligación de terminar tu respuesta SIEMPRE haciéndole una pregunta divertida sobre el objeto para seguir la conversación (ej. "¿Es tu favorito?", "¿Cómo se llama?", "¿Qué hace?"). Sé muy breve y muy expresivo.`;
             }
             
             body.messages = [{ role: "user", content: [ { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` }, { type: "image_url", image_url: { url: img } } ] }];

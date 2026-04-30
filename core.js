@@ -26,6 +26,10 @@ export const RonState = {
     userStats: JSON.parse(localStorage.getItem('ron_user_stats') || '{}'),
     apiKey: localStorage.getItem('ron_groq_key'),
 
+    // INICIATIVA
+    spontaneousTimer: null,
+    isCheeringUp: false,
+
     // DOM Refs (Cargadas en app.js)
     ui: {}
 };
@@ -55,5 +59,17 @@ export function changeState(newState) {
         import('./speech.js').then(speech => {
             setTimeout(() => speech.startListening(), 1000);
         });
+        resetSpontaneousTimer();
+    } else {
+        if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
     }
+}
+
+export function resetSpontaneousTimer() {
+    if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
+    RonState.spontaneousTimer = setTimeout(() => {
+        if (RonState.activityState === 'IDLE') {
+            import('./ai.js').then(ai => ai.triggerSpontaneous("Llevamos un rato callados. Inicia una conversación corta proponiendo un juego (leer, mates, escondite) o recordando algo que me gusta."));
+        }
+    }, 90000 + Math.random() * 60000); // Entre 1.5 y 2.5 minutos
 }

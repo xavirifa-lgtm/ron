@@ -56,6 +56,9 @@ export function saveNewUser(text) {
     if (name.length < 2 || name === "Me llamo" || name === "Soy") {
         return speak("¡Bip! No he pillado bien tu nombre. ¿Me lo repites clarito?");
     }
+    if (name.split(" ").length > 3) {
+        return speak("¡Bip! Ese nombre es muy largo para mi disco duro. Dime solo tu nombre real.");
+    }
 
     RonState.knownFaces.push({ label: name, descriptor: RonState.tempDescriptor });
     localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
@@ -72,6 +75,7 @@ export function speak(text) {
     if (!window.speechSynthesis) return changeState('IDLE');
     if (RonState.recognition) try { RonState.recognition.abort(); } catch(e) {} 
     changeState('SPEAKING');
+    setExpression('neutral'); // <-- BUG FIX: Elimina los ojos rectangulares de "Thinking"
     
     RonState.ui.mouth.classList.add('is-speaking'); 
 
@@ -95,7 +99,7 @@ export function speak(text) {
             RonState.ui.mouth.classList.remove('is-speaking'); 
             setExpression('neutral'); 
         }
-    }, 110); 
+    }, 200); // <-- Ralentizado de 110ms a 200ms para más fluidez
 
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
