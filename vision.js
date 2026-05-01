@@ -121,7 +121,7 @@ export function startVisionLoop() {
                                 setExpression('sad');
                                 RonState.isCheeringUp = true;
                                 RonState.emotionCooldownUntil = now + 180000; // 3 minutos
-                                speak(`¡Bip! Te veo un poco triste. ¿Qué pasa, amigo?`);
+                                speak(`¡Bip! Te veo un poco triste. ¿Qué pasa, ${found}?`);
                                 setTimeout(() => {
                                     if (RonState.currentEmotion === 'triste' && !RonState.isSilentMode) {
                                         import('./ai.js').then(ai => ai.triggerSpontaneous("El niño está triste. Cuenta un chiste MUY corto para animarle."));

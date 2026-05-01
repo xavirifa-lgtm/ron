@@ -90,6 +90,11 @@ export function shiftEyes(errX = null, errY = null) {
         [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { 
             el.style.transform = `translateX(${offset}px)`; 
         });
+        
+        // Ruidito robótico ocasional al mover los motores de los ojos
+        if (Math.random() > 0.8) {
+            import('./sounds.js').then(s => s.playBeep(2500, 'square', 0.01, 0.01));
+        }
     }
 }
 
@@ -152,6 +157,11 @@ export function startBlinkCycle() {
         if (RonState.activityState !== 'SPEAKING' && RonState.expressionState !== 'surprise') {
             [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => e.classList.add('blink'));
             setTimeout(() => [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => e.classList.remove('blink')), 150);
+            
+            // Sonido de parpadeo mecánico a veces
+            if (Math.random() > 0.7) {
+                import('./sounds.js').then(s => s.playBeep(3000, 'sine', 0.01, 0.02));
+            }
             
             // Tics y glitches aleatorios de la película (10% de probabilidad)
             if (Math.random() > 0.9) {

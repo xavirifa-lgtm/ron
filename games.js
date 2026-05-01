@@ -52,7 +52,7 @@ export function handleMathAnswer(text) {
         setTimeout(() => startMathGame(), 4000);
     } else if (!isNaN(num) || text.length > 0) {
         setExpression('sad');
-        speak(`¡Casi! Inténtalo otra vez, amiguito.`);
+        speak(`¡Casi! Inténtalo otra vez, ${RonState.currentUser || 'bip'}.`);
     }
 }
 

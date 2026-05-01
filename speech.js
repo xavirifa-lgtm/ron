@@ -27,7 +27,7 @@ export function startListening() {
             if (t.includes("ron") || t.includes("hola ron") || t.includes("oye ron") || t.includes("amigo ron")) {
                 RonState.isWaitingForWakeWord = false;
                 if (t.split(" ").length < 2) {
-                    speak("¡Bip! ¿Qué pasa, amigo?");
+                    speak(`¡Bip! ¿Qué pasa, ${RonState.currentUser || 'humano'}?`);
                     return;
                 }
             } else {
@@ -58,7 +58,13 @@ export function startListening() {
             }
         }
     };
-    try { RonState.recognition.start(); } catch(e) { changeState('IDLE'); }
+    try { 
+        RonState.recognition.start(); 
+    } catch(e) { 
+        log("Fallo hardware mic: " + e.message);
+        RonState.isRecognitionActive = false;
+        setTimeout(() => { if (RonState.activityState === 'IDLE') changeState('IDLE'); }, 2000); // Disparador suave
+    }
 }
 
 export function saveNewUser(text) {
