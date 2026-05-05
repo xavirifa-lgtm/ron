@@ -60,10 +60,11 @@ export function startVisionLoop() {
                 // Umbral alto (0.5) = más estricto. Menos falsos positivos entre padre e hija.
                 let found = null;
                 if (RonState.knownFaces.length > 0) {
-                    const labeled = RonState.knownFaces.map(f =>
-                        new faceapi.LabeledFaceDescriptors(f.label, f.descriptors.map(dd => new Float32Array(dd)))
-                    );
-                    const matcher = new faceapi.FaceMatcher(labeled, 0.40); // Ajustado para no confundir caras similares
+                    const labeled = RonState.knownFaces.map(f => {
+                        const descriptors = f.descriptors || [f.descriptor]; // Soporte para versiones viejas
+                        return new faceapi.LabeledFaceDescriptors(f.label, descriptors.map(dd => new Float32Array(dd)));
+                    });
+                    const matcher = new faceapi.FaceMatcher(labeled, 0.40); 
                     const best = matcher.findBestMatch(d.descriptor);
 
                     if (best.label !== 'unknown') {
@@ -73,9 +74,10 @@ export function startVisionLoop() {
                         // Desduplicación: si otra cara tiene distancia < 0.38 = misma persona
                         if (RonState.knownFaces.length > 1) {
                             const others = RonState.knownFaces.filter(f => f.label !== found);
-                            const dupe = others.find(f =>
-                                f.descriptors.some(dd => faceapi.euclideanDistance(d.descriptor, new Float32Array(dd)) < 0.38)
-                            );
+                            const dupe = others.find(f => {
+                                const descriptors = f.descriptors || [f.descriptor];
+                                return descriptors.some(dd => faceapi.euclideanDistance(d.descriptor, new Float32Array(dd)) < 0.38);
+                            });
                             if (dupe) {
                                 log(`Desduplicando ${dupe.label} → ${found}`);
                                 RonState.knownFaces = RonState.knownFaces.filter(f => f.label !== dupe.label);

@@ -82,7 +82,7 @@ export function saveNewUser(text) {
         return speak("¡Bip! Ese nombre es muy largo para mi disco duro. Dime solo tu nombre real.");
     }
 
-    RonState.knownFaces.push({ label: name, descriptor: RonState.tempDescriptor });
+    RonState.knownFaces.push({ label: name, descriptors: [RonState.tempDescriptor] });
     localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
     RonState.currentUser = name;
     RonState.userStats[name] = { likes: [], dislikes: [], lastSeen: new Date().toISOString() };

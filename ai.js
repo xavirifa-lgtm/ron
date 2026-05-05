@@ -265,8 +265,11 @@ export async function handleInput(userText, isInternal = false) {
                 const newName = r[1].trim().charAt(0).toUpperCase() + r[1].trim().slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ]/g, '');
                 if (RonState.currentUser && RonState.lastDescriptor) {
                     const currentDescriptor = new Float32Array(RonState.lastDescriptor);
-                    RonState.knownFaces = RonState.knownFaces.filter(f => faceapi.euclideanDistance(currentDescriptor, new Float32Array(f.descriptor)) > 0.45);
-                    RonState.knownFaces.push({ label: newName, descriptor: Array.from(currentDescriptor) });
+                    RonState.knownFaces = RonState.knownFaces.filter(f => {
+                        const descriptors = f.descriptors || [f.descriptor];
+                        return descriptors.some(dd => faceapi.euclideanDistance(currentDescriptor, new Float32Array(dd)) > 0.45);
+                    });
+                    RonState.knownFaces.push({ label: newName, descriptors: [Array.from(currentDescriptor)] });
                     localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
                     
                     if (RonState.userStats[RonState.currentUser]) {
