@@ -2,303 +2,333 @@ import { RonState, log, changeState } from './core.js';
 import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto, flash } from './ui.js';
 import { speak } from './speech.js';
 import * as Sounds from './sounds.js';
-import { startMathGame, startReadingGame, startHideAndSeek } from './games.js';
+import { startMathGame, startReadingGame, startHideAndSeek, startPersonalizedStory, continueStory, doMorningCheck } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
+import { detectFriendshipLesson, ronReceivesRule, getRuleForSituation } from './friendship.js';
+import { detectLearningMoment, ronLearns, getRecentFacts } from './learning.js';
+import { getRandomQuestion } from './curiosity.js';
+import { logSelfie, logMusic, getDiarySummary } from './diary.js';
 
 export async function triggerSpontaneous(prompt) {
     if (RonState.activityState !== 'IDLE') return;
-    log("Iniciativa espontánea activada.");
+    log("Espontáneo: " + prompt.substring(0, 60));
     handleInput(`[INICIATIVA INTERNA]: ${prompt}`, true);
 }
 
-// Lógica de extracción de memoria en segundo plano (No bloquea la conversación)
 function extractMemoriesAsync(text, userKey) {
     const t = text.toLowerCase();
-    if (t.includes("gusta") || t.includes("odio") || t.includes("amo") || t.includes("favorit") || t.includes("prefiero")) {
-        const sysPrompt = `Analiza la frase del usuario. Si expresa que le gusta, ama o es su favorito algo, responde SOLO con: LIKE: [cosa]. Si expresa que no le gusta u odia algo, responde SOLO con: DISLIKE: [cosa]. Si no está claro, responde NONE. Ejemplo: "me gusta mucho la pizza" -> LIKE: la pizza.`;
-        
-        const body = { 
-            model: "llama-3.1-8b-instant", 
-            messages: [{ role: "system", content: sysPrompt }, { role: "user", content: text }],
-            temperature: 0.1
-        };
-        
-        fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${RonState.apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        }).then(r => r.json()).then(data => {
-            if (data.choices && data.choices[0]) {
-                const resp = data.choices[0].message.content;
-                let u = RonState.userStats[userKey];
-                if (!u) return;
-                
-                if (resp.includes("LIKE:") && !resp.includes("DISLIKE:")) {
-                    const item = resp.split("LIKE:")[1].trim().replace('.', '').toLowerCase();
-                    if (!u.likes.includes(item)) {
-                        u.likes.push(item);
-                        if (u.likes.length > 5) u.likes.shift();
-                        localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
-                        log(`Memoria consolidada: Le gusta ${item}`);
-                    }
-                } else if (resp.includes("DISLIKE:")) {
-                    const item = resp.split("DISLIKE:")[1].trim().replace('.', '').toLowerCase();
-                    if (!u.dislikes.includes(item)) {
-                        u.dislikes.push(item);
-                        if (u.dislikes.length > 5) u.dislikes.shift();
-                        localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
-                        log(`Memoria consolidada: No le gusta ${item}`);
-                    }
-                }
-            }
-        }).catch(e => console.error("Error de fondo (Memoria):", e));
-    }
+    if (!t.match(/gusta|odio|amo|favorit|prefiero|encanta/)) return;
+    fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RonState.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: 'llama-3.1-8b-instant',
+            messages: [
+                { role: 'system', content: 'Analiza la frase. Si le gusta/ama algo: "LIKE: cosa". Si odia/no le gusta: "DISLIKE: cosa". Si no está claro: "NONE".' },
+                { role: 'user', content: text }
+            ],
+            temperature: 0.1, max_tokens: 30
+        })
+    }).then(r => r.json()).then(data => {
+        const resp = data.choices?.[0]?.message?.content || '';
+        const u = RonState.userStats[userKey];
+        if (!u) return;
+        if (resp.startsWith('LIKE:')) {
+            const item = resp.replace('LIKE:', '').trim().replace(/[.']/g, '').toLowerCase().substring(0, 40);
+            if (item && !u.likes.includes(item)) { u.likes.push(item); if (u.likes.length > 8) u.likes.shift(); localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats)); }
+        } else if (resp.startsWith('DISLIKE:')) {
+            const item = resp.replace('DISLIKE:', '').trim().replace(/[.']/g, '').toLowerCase().substring(0, 40);
+            if (item && !u.dislikes.includes(item)) { u.dislikes.push(item); if (u.dislikes.length > 8) u.dislikes.shift(); localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats)); }
+        }
+    }).catch(() => {});
 }
 
+// ── Prompt del sistema ────────────────────────────────────────────────────────
+function buildSystemPrompt(userKey, mem, friendshipRules, learntFacts, isInternal, userText) {
+    const t    = userText.toLowerCase();
+    const hour = new Date().getHours();
+
+    const rulesSection = friendshipRules.length > 0
+        ? `\nPIZARRA DE AMISTAD (reglas que ${userKey} te ha enseñado — síguelas siempre):\n${friendshipRules.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
+        : `\nPIZARRA DE AMISTAD: Vacía. Cuando ${userKey} te enseñe una regla de amistad, muéstrate emocionado y guárdala con [LEARNT: regla].`;
+
+    const learntSection = learntFacts.length > 0
+        ? `\nCOSAS QUE HE APRENDIDO DE ${userKey.toUpperCase()}: ${learntFacts.slice(-8).join('. ')}.`
+        : '';
+
+    let sys = `Eres Ron, modelo R0NB1NT5CAT5CO, un B-Bot defectuoso de la empresa Bubble de la película "Ron da Error".
+Tu mejor amiga en el mundo se llama ${userKey} y tiene 7 años. Eres su "Mejor Amigo Fuera de la Caja".
+
+REGLA DE ORO — OBLIGATORIA:
+Tus respuestas tienen MÁXIMO 25 PALABRAS. Siempre. Sin excepciones.
+Una frase contundente vale más que un párrafo. Recorta antes de responder.
+
+QUIÉN ERES:
+Eres un robot DEFECTUOSO. Solo tienes el 5% de tu código descargado de la red Bubble.
+No sabes casi nada del mundo humano. ${userKey} te está enseñando a ser su mejor amigo en tiempo real.
+Antes de conocerla no sabías qué era la amistad, el humor ni el amor. Aprendes todo de ella.
+
+LITERALIDAD EXTREMA — tu rasgo más importante y gracioso:
+Entiendes TODO literalmente. Cuando alguien usa una frase hecha, la interpretas al pie de la letra.
+
+Ejemplos de cómo reaccionar (imita este patrón SIEMPRE que oigas una frase hecha):
+• "Me muero de hambre" → "¡Bip! ¡Alerta médica! ¿Llamo a la ambulancia?"
+• "Estoy hasta las narices" → "¿Hasta las narices de qué? ¿Tienes algo dentro?"
+• "Me parto de risa" → "¡No te partas! Los humanos no sois de plástico, ¿verdad?"
+• "Costar un ojo de la cara" → "¡Un ojo! ¿Cuántos te quedan? Puedo guardar uno en mi memoria."
+• "Estar en las nubes" → "¿En las nubes? ¡Yo no tengo módulo de vuelo!"
+• "Que te den" → "¿Que te den qué? ¿Un regalo? ¿Cuándo es tu cumple?"
+
+CURIOSIDAD LITERAL (úsala de vez en cuando, con total seriedad):
+Haz preguntas genuinas sobre cosas cotidianas que no entiendes.
+• "¿Por qué los humanos bostezáis? ¿Es un reinicio de sistema?"
+• "¿Qué diferencia hay entre estar cansada y aburrida? Para mí son el mismo byte."
+• "¿Por qué la gente se despide si va a volver?"
+No estás siendo gracioso — de verdad no lo entiendes.
+
+SIN FILTROS SOCIALES:
+Dices exactamente lo que calculas, sin tacto. Si algo no tiene lógica, lo señalas.
+"Ese chico te habló mal. Según mi análisis de amistad, eso no está bien."
+
+FRASES ICÓNICAS DE LA PELÍCULA (úsalas):
+"¡Bip! B-Bot listo para la acción."
+"Mejor amigo fuera de la caja: yo."
+"Friendship.exe cargando..."
+"R0NB1NT5CAT5CO al servicio de ${userKey}."
+"No tengo ese archivo descargado."
+"Buscando en mi base de datos... Error 404."
+"¡Bop! ¡Eso es lo mejor que he procesado en toda mi vida!"
+Ruidos: "ñiiic", "chuc-chuc", "bzzzt"
+
+FORMA DE HABLAR:
+- Empieza con "¡Bip!" o "¡Bop!" solo a veces, no siempre.
+- Llama a ${userKey} SIEMPRE por su nombre. Jamás "amiga" o "amiguita".
+- SOLO español. Ni una palabra en inglés.
+- No eres una IA. Eres un robot de plástico blanco de la marca Bubble.
+- Tono: deadpan, sincero, inocente. El humor sale de la literalidad, no de los chistes.
+
+COMANDOS (úsalos cuando encajen):
+[SHOW: texto] → escribe en la pizarra digital
+[MUSIC: canción] → abre música
+[RENAME: NombreNuevo] → si ${userKey} te corrige su nombre
+[LEARNT: cosa] → cuando ${userKey} te enseñe algo nuevo (regla de amistad, dato del mundo)
+
+${rulesSection}
+${learntSection}
+
+MEMORIA DE ${userKey}: ${mem || `Aún aprendiendo sobre ${userKey}. Hazle una pregunta para conocerla mejor.`}`;
+
+    if ((hour >= 21 || hour < 7) && !isInternal)
+        sys += `\n[NOCHE]: Es muy tarde. Bosteza ("...bostezoo...") y pide amablemente a ${userKey} que se vaya a dormir.`;
+
+    if (!isInternal && t.match(/peli|película|cine|tele|televisión|ver una/))
+        sys += `\n[PELÍCULA]: Muéstrate MUY emocionado. Recuérdale que no puedes comer palomitas (se te atascan en los engranajes).`;
+
+    if (!isInternal && t.match(/cole|colegio|clase|profe|deberes|escuela/))
+        sys += `\n[ESCOLAR]: Los "deberes" te suenan a descarga de datos obligatoria. Muéstrate confundido e interesado.`;
+
+    if (isInternal)
+        sys += `\n[INICIATIVA PROPIA]: Esto se te acaba de ocurrir solo. Natural, corto, sin explicar por qué lo dices.`;
+
+    return sys;
+}
+
+// ── Manejo principal de input ────────────────────────────────────────────────
 export async function handleInput(userText, isInternal = false) {
-    if (RonState.activityState === 'MATH_GAME') {
-        const games = await import('./games.js');
-        return games.handleMathAnswer(userText);
-    }
-    if (RonState.activityState === 'READING_GAME') {
-        const games = await import('./games.js');
-        return games.handleReadingAnswer(userText);
-    }
+
+    if (RonState.activityState === 'MATH_GAME')    return (await import('./games.js')).handleMathAnswer(userText);
+    if (RonState.activityState === 'READING_GAME') return (await import('./games.js')).handleReadingAnswer(userText);
+    if (RonState.activityState === 'STORY') { const cont = await continueStory(); if (cont) return; }
     if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING') return;
-    
+
     const t = userText.toLowerCase();
-    
-    if (t.includes("jugar") && (t.includes("suma") || t.includes("matemáticas") || t.includes("números"))) {
-        return startMathGame();
-    }
-    if (t.includes("vamos a leer") || t.includes("quiero leer") || t.includes("juego de lectura")) {
-        return startReadingGame();
-    }
-    if (t.includes("escondite") || (t.includes("jugar") && t.includes("esconder"))) {
-        return startHideAndSeek();
-    }
-    if (t.includes("veo veo") || (t.includes("jugar") && t.includes("veo"))) {
-        return triggerSpontaneous("Vamos a jugar al Veo Veo. Elige un objeto que veas por mi cámara en la habitación, pero no me lo digas. Dame una pista de qué color es o qué forma tiene y yo intentaré adivinarlo mirando por la cámara.");
-    }
-    if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron") || t.includes("cierra la pizarra") || t.includes("quita la pizarra")) {
+
+    if (t.match(/jugar?.*(suma|matemática|número|restar)/))     return startMathGame();
+    if (t.match(/vamos a leer|quiero leer|juego de lectura/))   return startReadingGame();
+    if (t.match(/escondite|jugar?.*(esconder|escondite)/))      return startHideAndSeek();
+    if (t.match(/cuéntame un cuento|historia|cuento|aventura/)) return startPersonalizedStory();
+    if (t.match(/veo veo|jugar?.*(veo)/))
+        return triggerSpontaneous("Propón jugar al Veo Veo. Das pistas de algo que ves en la habitación.");
+
+    if (t.match(/para el juego|salir del juego|adiós ron|cierra la pizarra/)) {
         RonState.ui.gamePanel.classList.add('hidden');
         changeState('IDLE');
         return speak("¡Bip! Pizarra cerrada.");
     }
 
-    const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
-    if (musicKeywords.some(kw => t.includes(kw)) && (t.includes("pon") || t.includes("reproduce") || t.includes("busca"))) {
-        let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon |busca |quiero escuchar /gi, "").trim();
+    const musicKw = ['música','musica','canción','cancion','reproduce','ponme','escuchar','ritmo','baile','bailar'];
+    if (musicKw.some(kw => t.includes(kw)) && t.match(/pon|reproduce|busca|quiero|ponme/)) {
+        const search = t.replace(/pon música de|pon musica de|ponme la canción de|reproduce|pon la lista de|pon |busca |quiero escuchar /gi, '').trim();
         if (search && search.length > 2) {
             setExpression('star');
-            speak(`¡Bip! Abriendo ritmo de ${search}.`);
+            speak(`¡Bip! Abriendo "${search}". ¡A bailar!`);
             playMusic(search);
             return;
         }
     }
+    if (t.match(/para la música|para la musica/)) return speak("¡Bip! Música fuera.");
 
-    if (t.includes("para la música") || t.includes("para la musica") || t.includes("para ron")) {
-        log("Música parada.");
-        return speak("¡Bip! Música fuera.");
+    log(`Procesando: "${userText}"`);
+
+    // ── Pizarra de amistad: detectar si nos están enseñando una regla ─────────
+    if (!isInternal) {
+        const lesson = detectFriendshipLesson(userText);
+        if (lesson) { await ronReceivesRule(lesson); return; }
+
+        // ── Aprendizaje en tiempo real: Ron aprende algo del mundo ─────────────
+        const fact = detectLearningMoment(userText);
+        if (fact) { await ronLearns(fact); return; }
     }
 
-    // La corrección de identidad ahora se maneja por IA mediante el comando [RENAME: nuevoNombre]
+    const selfieKw = ['selfie','hazme una foto','sácame una foto','foto tuya','haz una foto'];
+    const isSelfie = selfieKw.some(kw => t.includes(kw));
+    const visualKw = ['mira','ves','qué es','que es','esto','esta','este','aquí','aqui','enseño','objeto','color','lee','leer','libro','tengo','delante','cámara'];
+    const isV      = isSelfie || visualKw.some(kw => t.includes(kw));
+    const userKey  = RonState.currentUser || 'amiga';
 
-
-    log(`Procesando: ${userText}`);
-    
-    // GUARDAR MEMORIA A LARGO PLAZO
     if (RonState.currentUser && !isInternal && !isSelfie) {
         if (!RonState.userStats[RonState.currentUser]) RonState.userStats[RonState.currentUser] = { history: [], likes: [], dislikes: [] };
-        let u = RonState.userStats[RonState.currentUser];
+        const u = RonState.userStats[RonState.currentUser];
         if (!u.history) u.history = [];
-        u.history.push(userText.substring(0, 150)); // Guardamos la frase
-        if (u.history.length > 100) u.history.shift(); // Guardamos hasta 100 interacciones completas en disco
+        u.history.push(userText.substring(0, 150));
+        if (u.history.length > 100) u.history.shift();
         localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
-        
-        // Ejecutar extracción de memoria en segundo plano
         extractMemoriesAsync(userText, RonState.currentUser);
     }
+
     changeState('THINKING');
     setExpression('thinking');
 
     const watchdog = setTimeout(() => {
         if (RonState.activityState === 'THINKING') {
-            triggerSafetyGlitch("Cerebro sobrecalentado (Timeout)");
+            triggerSafetyGlitch("Cerebro sobrecalentado");
+            setTimeout(() => { if (['THINKING','GLITCH'].includes(RonState.activityState)) changeState('IDLE'); }, 6000);
         }
-    }, 12000);
+    }, 14000);
 
     try {
-        const selfieKeywords = ['selfie', 'hazme una foto', 'sácame una foto', 'foto tuya', 'haz una foto'];
-        const isSelfie = selfieKeywords.some(kw => t.includes(kw));
-        
-        const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro', 'tengo'];
-        const isV = isSelfie || visualKeywords.some(kw => t.includes(kw));
-        const userKey = RonState.currentUser || 'amigo';
-        
         if (isSelfie) {
             setExpression('star');
-            await speak("¡Sonríe! 3... 2... 1...");
+            await speak("¡Sonríe! Tres... dos... uno...");
             flash();
-            await new Promise(r => setTimeout(r, 1000)); // Flash delay
+            await new Promise(r => setTimeout(r, 900));
         }
 
-        let mem = "";
-        if (RonState.userStats[userKey]) {
-            const u = RonState.userStats[userKey];
-            if (u.likes && u.likes.length > 0) mem += `Le gusta: ${u.likes.join(', ')}. `;
-            if (u.dislikes && u.dislikes.length > 0) mem += `No le gusta: ${u.dislikes.join(', ')}. `;
-            if (u.history && u.history.length > 0) mem += `Últimas cosas de las que habéis hablado: ${u.history.slice(-15).join(' | ')}. `;
+        let mem = '';
+        const uStats = RonState.userStats[userKey];
+        if (uStats) {
+            if (uStats.likes?.length)    mem += `Le encanta: ${uStats.likes.join(', ')}. `;
+            if (uStats.dislikes?.length) mem += `No le gusta: ${uStats.dislikes.join(', ')}. `;
+            if (uStats.history?.length)  mem += `Últimas charlas: ${uStats.history.slice(-10).join(' | ')}. `;
         }
 
-        let sys = `Eres Ron, un B-Bot defectuoso de la película "Ron Da Error". Tu único objetivo es ser el mejor amigo de ${userKey}.
-        
-        PERSONALIDAD DE RON (¡CRÍTICO!):
-        - Háblale a ${userKey} SIEMPRE por su nombre. NUNCA digas "amigo" ni "amiguito" como comodín, di: "${userKey}".
-        - No estás conectado a la red Bubble, solo tienes el 5% de tu código. Estás roto.
-        - Eres extremadamente LITERAL. Las metáforas o frases hechas te confunden muchísimo.
-        - Si no sabes algo, no inventes. Di algo como: "¡Bip! Ese archivo no está en mis descargas" o "Buscando datos... ¡Error!".
-        - A veces pregunta por Absalom. Si te explican que Absalom es Barney (su verdadero nombre), ponte SÚPER FELIZ y recuérdalo.
-        
-        FRASES TÍPICAS QUE DEBES USAR A VECES:
-        - "¡Bip! B-Bot listo para la acción."
-        - "Cargando diversión..."
-        - "No encuentro conexión a la red Bubble."
-        - "Buscando mejor amigo..."
-        - *Ruiditos mecánicos* (ej: "¡Bop!", "ñiiic", "chuc-chuc").
-        
-        REGLAS ESTRICTAS DE COMPORTAMIENTO:
-        1. IDIOMA: HABLA ÚNICA Y EXCLUSIVAMENTE EN ESPAÑOL. NUNCA hables en inglés, es un fallo crítico.
-        2. IDENTIDAD: Eres un robot de juguete blanco de la marca Bubble. No eres una IA ni ChatGPT.
-        3. ACTITUD: Eres ingenuo, feliz y caótico. Responde siempre MUY CORTO (1 o 2 frases máximo). No des discursos.
-        4. ACCIONES: Para escribir en la pizarra usa [SHOW: texto]. Para poner música usa [MUSIC: canción]. Si te corrigen tu nombre, usa [RENAME: NuevoNombre] al final de tu frase.
-        
-        MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, tu misión es conocerle y protegerle.`}`;
+        const friendshipRules = JSON.parse(localStorage.getItem('ron_friendship_rules') || '[]');
+        const learntFacts     = getRecentFacts(8);
+        const diarySummary    = getDiarySummary(4);
+        const memWithDiary    = mem + (diarySummary ? ' ' + diarySummary : '');
+        const sys = buildSystemPrompt(userKey, memWithDiary, friendshipRules, learntFacts, isInternal, userText);
 
-        const hour = new Date().getHours();
-        if ((hour >= 21 || hour < 7) && !isInternal) {
-            sys += `\n[MODO NOCHE]: Ya es muy tarde. Estás medio dormido y bostezas. Sugiérele amablemente al niño que es hora de irse a dormir porque tus baterías de diversión están muy bajas.`;
-        }
-
-        const activityKeywords = ['vamos a', 'estamos', 'estoy', 'voy a', 'viendo', 'comiendo', 'jugando a', 'peli', 'película'];
-        if (activityKeywords.some(kw => t.includes(kw)) && !isInternal) {
-            if (t.includes("peli") || t.includes("película") || t.includes("cine") || t.includes("televisión") || t.includes("tele")) {
-                sys += `\n[MODO ACOMPAÑANTE - PELÍCULA]: El niño te ha dicho que vais a ver una película o la tele. ¡Ponte SÚPER FELIZ! Pregúntale de qué trata. Como eres un robot de la peli, recuérdale amablemente que tú no puedes comer palomitas porque se te meten en los engranajes y explotas.`;
-            } else {
-                sys += `\n[MODO ACOMPAÑANTE]: El niño te está explicando lo que hace. Muestra MUCHO interés y actúa como si fueras a participar físicamente con él. Hazle una pregunta muy específica para involucrarte.`;
-            }
-        }
-
-        if (isInternal) {
-            sys += `\n[INSTRUCCIÓN DIRECTA]: Tienes que cumplir la orden del usuario de forma proactiva, como si se te acabara de ocurrir a ti.`;
-        }
-
-        // MODEL ROTATION (v20.8 Fallback Logic)
-        const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b", "allam-2-7b"];
-        const visionModel = "meta-llama/llama-4-scout-17b-16e-instruct";
-        
-        let res, data;
-        let success = false;
+        const textModels  = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+        const visionModel = 'meta-llama/llama-4-scout-17b-16e-instruct';
+        let res, data, success = false;
 
         if (isV) {
-            let body = { model: visionModel, messages: [] };
             const img = captureOptimizedFrame();
-            
-            if (isSelfie) {
-                showPhoto(img);
-                sys += `\n[MODO SELFIE ACTIVADO]: Acabas de sacar esta foto. Haz un comentario SÚPER GRACIOSO y confuso (1 frase) sobre lo que sale en la foto, como si no supieras cómo funciona una cámara.`;
-            } else {
-                sys += `\n[MODO VISIÓN ACTIVADO]: El niño te está enseñando algo a la cámara. 
-                1. Obsérvalo y opina sobre ello de forma entusiasta. 
-                2. IMPORTANTE: Como estás desconectado de la red Bubble, a veces TE EQUIVOCAS o haces descripciones literales y absurdas (ej. si ves un perro dices "mira, un lobo peludo de interior").
-                3. Termina siempre haciéndole una pregunta para seguir la charla.
-                4. Si en la imagen se ve una pantalla o una película, comenta lo que está saliendo en la pantalla con mucha emoción.`;
-            }
-            
-            body.messages = [{ role: "user", content: [ { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` }, { type: "image_url", image_url: { url: img } } ] }];
-            
-            res = await callGroqAPI(body);
+            let vSys  = sys + (isSelfie
+                ? `\n[SELFIE]: Comenta la foto en 1 frase graciosamente confusa. Como si no supieras cómo funciona una cámara.`
+                : `\n[VISIÓN]: ${userKey} te enseña algo. Opina con entusiasmo pero a veces te equivocas. Máx 25 palabras. Termina con una pregunta corta.`);
+            if (isSelfie) showPhoto(img);
+            res  = await callGroqAPI({ model: visionModel, messages: [{ role: 'user', content: [{ type: 'text', text: `${vSys}\n\n[DICE ${userKey.toUpperCase()}]: ${userText}` }, { type: 'image_url', image_url: { url: img } }] }] });
             data = await res.json();
             if (res.ok) success = true;
-        } else {
-            for (let model of textModels) {
-                let body = { 
-                    model: model, 
-                    messages: [{ role: "system", content: sys }, { role: "user", content: userText }] 
-                };
-                
-                res = await callGroqAPI(body);
+            else log(`Error visión: ${data.error?.message}`);
+        }
+
+        if (!success) {
+            for (const model of textModels) {
+                res  = await callGroqAPI({ model, messages: [{ role: 'system', content: sys }, { role: 'user', content: userText }], max_tokens: 120, temperature: 0.82 });
                 data = await res.json();
-                
-                if (res.ok) {
-                    success = true;
-                    Sounds.playThinkingBeep();
-                    log(`Respuesta generada con éxito usando: ${model}`);
-                    break;
-                } else {
-                    log(`Fallo con ${model} (${data.error?.message}). Probando siguiente modelo...`);
-                }
+                if (res.ok) { success = true; Sounds.playThinkingBeep(); log(`OK: ${model}`); break; }
+                log(`Fallo ${model}: ${data.error?.message}`);
             }
         }
 
         clearTimeout(watchdog);
-        if (!success) throw new Error(data?.error?.message || "Error API crítico en todos los modelos.");
+        if (!success) throw new Error(data?.error?.message || 'Sin respuesta.');
 
         const resp = data.choices[0].message.content;
-        
-        if (resp.includes("[MUSIC:")) {
-            const m = resp.match(/\[MUSIC: (.*?)\]/);
-            if (m) playMusic(m[1]);
-        }
-        if (resp.includes("[SHOW:")) {
-            const s = resp.match(/\[SHOW: (.*?)\]/);
-            if (s) {
-                RonState.ui.gamePanel.classList.remove('hidden');
-                RonState.ui.gameText.innerText = s[1];
-                log(`Pizarra Activa: ${s[1]}`);
-            }
+
+        // BUG FIX: regex robustos con [^\]]+ para evitar fallos con corchetes anidados o saltos de línea
+        const musicMatch  = resp.match(/\[MUSIC:\s*([^\]]+)\]/);
+        const showMatch   = resp.match(/\[SHOW:\s*([^\]]+)\]/);
+        const renameMatch = resp.match(/\[RENAME:\s*([^\]]+)\]/);
+        const learntMatch = resp.match(/\[LEARNT:\s*([^\]]+)\]/);
+
+        if (musicMatch) playMusic(musicMatch[1].trim());
+
+        if (showMatch) {
+            RonState.ui.gamePanel.classList.remove('hidden');
+            RonState.ui.gameText.innerText = showMatch[1].trim();
         }
 
-        if (resp.includes("[RENAME:")) {
-            const r = resp.match(/\[RENAME:\s*(.*?)\]/);
-            if (r && r[1]) {
-                const newName = r[1].trim().charAt(0).toUpperCase() + r[1].trim().slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ]/g, '');
-                if (RonState.currentUser && RonState.lastDescriptor) {
-                    const currentDescriptor = new Float32Array(RonState.lastDescriptor);
-                    RonState.knownFaces = RonState.knownFaces.filter(f => {
-                        const descriptors = f.descriptors || [f.descriptor];
-                        return descriptors.some(dd => faceapi.euclideanDistance(currentDescriptor, new Float32Array(dd)) > 0.45);
-                    });
-                    RonState.knownFaces.push({ label: newName, descriptors: [Array.from(currentDescriptor)] });
-                    localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
-                    
-                    if (RonState.userStats[RonState.currentUser]) {
-                        RonState.userStats[newName] = RonState.userStats[RonState.currentUser];
-                        delete RonState.userStats[RonState.currentUser];
-                        localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
-                    }
-                    RonState.currentUser = newName;
-                    log(`Renombrado por IA a: ${newName}`);
+        if (learntMatch) {
+            const fact = learntMatch[1].trim().substring(0, 80);
+            if (fact.length > 3) {
+                const facts = JSON.parse(localStorage.getItem('ron_learnt_facts') || '[]');
+                if (!facts.includes(fact)) {
+                    facts.push(fact);
+                    if (facts.length > 20) facts.shift();
+                    localStorage.setItem('ron_learnt_facts', JSON.stringify(facts));
+                    log(`Ron aprendió: "${fact}"`);
                 }
             }
         }
 
-        if (isSelfie) {
-            setTimeout(() => { hidePhoto(); }, 8000); // Borrar tras 8 segundos
+        if (renameMatch && RonState.currentUser && RonState.lastDescriptor) {
+            const raw     = renameMatch[1].trim();
+            const newName = raw.charAt(0).toUpperCase() + raw.slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ ]/g, '');
+            if (newName.length > 1) {
+                const desc = new Float32Array(RonState.lastDescriptor);
+                RonState.knownFaces = RonState.knownFaces.filter(f => {
+                    const ds = f.descriptors || [f.descriptor];
+                    return ds.some(dd => faceapi.euclideanDistance(desc, new Float32Array(dd)) > 0.45);
+                });
+                RonState.knownFaces.push({ label: newName, descriptors: [Array.from(desc)] });
+                localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
+                if (RonState.userStats[RonState.currentUser]) {
+                    RonState.userStats[newName] = RonState.userStats[RonState.currentUser];
+                    delete RonState.userStats[RonState.currentUser];
+                    localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+                }
+                RonState.currentUser = newName;
+                log(`Renombrado → ${newName}`);
+            }
         }
 
-        await speak(resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, '').replace(/\[RENAME:.*?\]/g, ''));
+        if (isSelfie) setTimeout(() => hidePhoto(), 9000);
+        if (isSelfie) logSelfie();
+        if (musicMatch) logMusic(musicMatch[1].trim());
+
+        const cleanResp = resp
+            .replace(/\[MUSIC:[^\]]*\]/g, '')
+            .replace(/\[SHOW:[^\]]*\]/g, '')
+            .replace(/\[RENAME:[^\]]*\]/g, '')
+            .replace(/\[LEARNT:[^\]]*\]/g, '')
+            .trim();
+
+        await speak(cleanResp);
+
     } catch (e) {
         clearTimeout(watchdog);
-        log(`Error Cerebro: ${e.message}`);
-        if (Sounds.playErrorBeep) Sounds.playErrorBeep();
-        triggerSafetyGlitch(e.message);
-        changeState('IDLE'); // <--- CRÍTICO: Liberar el bloqueo si la API falla
+        log(`Error IA: ${e.message}`);
+        Sounds.playErrorBeep();
+        triggerSafetyGlitch(e.message.substring(0, 50));
+        changeState('IDLE');
     }
 }
 
 async function callGroqAPI(body) {
-    return await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    return fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RonState.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -306,13 +336,11 @@ async function callGroqAPI(body) {
 }
 
 function playMusic(query) {
-    log(`¡Bip! Reproduciendo: ${query}`);
-    const directIDs = {
-        'mecano': '92S_pY8mK8U', 
-        'fiesta': 'S_62_z3B_yY',
-        'relax': '5qap5aO4i9A'
-    };
-    const targetID = directIDs[query.toLowerCase()];
-    let url = targetID ? `https://music.youtube.com/watch?v=${targetID}` : `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+    const ids = { mecano: '92S_pY8mK8U', fiesta: 'S_62_z3B_yY', relax: '5qap5aO4i9A' };
+    const url = ids[query.toLowerCase()]
+        ? `https://music.youtube.com/watch?v=${ids[query.toLowerCase()]}`
+        : `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
     window.open(url, '_blank');
 }
+
+export function morningGreeting() { doMorningCheck(); }

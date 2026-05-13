@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v23.0';
+const CACHE_NAME = 'ron-bot-v25.1';
 const ASSETS = [
   './',
   'index.html',
@@ -9,7 +9,13 @@ const ASSETS = [
   'speech.js',
   'ai.js',
   'games.js',
+  'friendship.js',
+  'curiosity.js',
+  'learning.js',
+  'defender.js',
+  'diary.js',
   'app.js',
+  'sounds.js',
   'manifest.json',
   'icon.png'
 ];
@@ -24,25 +30,26 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys.filter(key => key !== CACHE_NAME)
-            .map(key => caches.delete(key))
-      );
-    })
+    caches.keys().then(keys =>
+      Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', event => {
+  // No interceptar peticiones a APIs externas (Groq, face-api CDN)
+  const url = event.request.url;
+  if (url.includes('api.groq.com') || url.includes('jsdelivr.net') || url.includes('youtube.com')) {
+    return;
+  }
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Guarda en caché la nueva versión
         if (response && response.status === 200) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
-          });
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
       })

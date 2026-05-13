@@ -1,243 +1,305 @@
 import { RonState, log, changeState } from './core.js';
 import * as Sounds from './sounds.js';
 
-let glitchInterval = null;
+let glitchInterval  = null;
+let moodBubbleTimer = null;
 
 export function initUI() {
     RonState.ui = {
-        eyes: { left: document.getElementById('eye-left'), right: document.getElementById('eye-right') },
-        mouth: document.getElementById('mouth-path'),
+        eyes: {
+            left:  document.getElementById('eye-left'),
+            right: document.getElementById('eye-right')
+        },
+        mouth:          document.getElementById('mouth-path'),
         mouthContainer: document.querySelector('.mouth-svg'),
-        chestIcon: document.getElementById('chest-icon-container'),
-        bleBtn: document.getElementById('ble-connect-btn'),
-        glitchOverlay: document.getElementById('glitch-overlay'),
-        video: document.getElementById('webcam'),
-        gamePanel: document.getElementById('game-panel'),
-        gameText: document.getElementById('game-text'),
-        apiModal: document.getElementById('api-modal'),
-        apiKeyInput: document.getElementById('groq-key-input'),
-        saveBtn: document.getElementById('save-api-key'),
-        fixedLog: document.getElementById('fixed-log'),
-        bootScreen: document.getElementById('boot-screen'),
-        powerBtn: document.getElementById('power-btn'),
-        micToggleBtn: document.getElementById('mic-toggle-btn'),
-        photoPanel: document.getElementById('photo-panel'),
-        photoImg: document.getElementById('photo-img'),
-        flash: document.getElementById('camera-flash'),
-        mainApp: document.getElementById('ron-app')
+        mouthLayer:     document.querySelector('.mouth-layer'),
+        chestIcon:      document.getElementById('chest-icon-container'),
+        bleBtn:         document.getElementById('ble-connect-btn'),
+        glitchOverlay:  document.getElementById('glitch-overlay'),
+        video:          document.getElementById('webcam'),
+        gamePanel:      document.getElementById('game-panel'),
+        gameText:       document.getElementById('game-text'),
+        apiModal:       document.getElementById('api-modal'),
+        apiKeyInput:    document.getElementById('groq-key-input'),
+        saveBtn:        document.getElementById('save-api-key'),
+        fixedLog:       document.getElementById('debug-info'),
+        bootScreen:     document.getElementById('boot-screen'),
+        powerBtn:       document.getElementById('power-btn'),
+        micToggleBtn:   document.getElementById('mic-toggle-btn'),
+        photoPanel:     document.getElementById('photo-panel'),
+        photoImg:       document.getElementById('photo-img'),
+        flash:          document.getElementById('camera-flash'),
+        mainApp:        document.getElementById('ron-app'),
+        storyPanel:     document.getElementById('story-panel'),
+        storyText:      document.getElementById('story-text'),
+        moodBubble:     document.getElementById('mood-bubble'),
+        faceWrapper:    document.querySelector('.face-wrapper'),
+        closeGameBtn:   document.getElementById('close-game-btn'),
     };
+
+    if (RonState.ui.closeGameBtn) {
+        RonState.ui.closeGameBtn.onclick = () => {
+            RonState.ui.gamePanel.classList.add('hidden');
+        };
+    }
+
     initBattery();
 }
 
 async function initBattery() {
-    if ('getBattery' in navigator) {
+    if (!('getBattery' in navigator)) return;
+    try {
         const b = await navigator.getBattery();
         const update = () => {
             const level = Math.round(b.level * 100);
-            log(`🔋 Energía: ${level}%`);
             RonState.batteryLevel = level;
-            
-            // Aviso de batería crítica
-            if (level <= 15 && !b.charging) {
-                import('./speech.js').then(s => s.speak("¡Bip! Batería de supervivencia crítica. Por favor, enchufa mi cable o me apagaré pronto."));
+            log(`Batería: ${level}%`);
+            if (level <= 15 && !b.charging && RonState.activityState === 'IDLE') {
+                import('./speech.js').then(s =>
+                    s.speak("¡Bip! Batería crítica. Por favor enchúfame antes de que me duerma para siempre... bueno, hasta que me cargues.")
+                );
                 setChestIcon('warning');
-            } else if (RonState.activityState === 'IDLE') {
-                setChestIcon('wifi');
             }
         };
         b.addEventListener('levelchange', update);
         b.addEventListener('chargingchange', update);
         update();
-    }
+    } catch(e) { log("Battery API no disponible."); }
 }
 
 export function handleStateChange(newState) {
     const isNight = document.body.classList.contains('night-mode');
-    const baseColor = isNight ? '#00d4ff' : '#1a1a1a';
-    
     switch (newState) {
-        case 'IDLE':
-        case 'THINKING':
-        case 'SPEAKING':
-        case 'GLITCH':
-            setEyeColor(baseColor); 
-            break;
-        case 'LISTENING': 
-            setEyeColor(isNight ? '#ffffff' : '#00d4ff'); // Aún más brillante al escuchar de noche
-            break;
+        case 'LISTENING': setEyeColor(isNight ? '#ffffff' : '#0099cc'); break;
+        case 'SLEEPING':  setEyeColor(isNight ? '#003344' : '#888888'); break;
+        default:          setEyeColor(isNight ? '#00d4ff' : '#111111'); break;
     }
 }
 
-export function setEyeColor(color) { 
-    document.documentElement.style.setProperty('--ron-eye-color', color); 
+export function setEyeColor(color) {
+    document.documentElement.style.setProperty('--ron-eye-color', color);
 }
 
-export function updateMouth(d) { 
-    RonState.ui.mouth.setAttribute('d', d); 
+export function updateMouth(d) {
+    if (RonState.ui.mouth) RonState.ui.mouth.setAttribute('d', d);
 }
 
 export function shiftEyes(errX = null, errY = null) {
+    const maxShift = 12;
     if (errX !== null && errY !== null) {
-        // Mover los ojos de la pantalla hacia la cara
-        const moveX = errX * -80; // Invertido y escalado para seguir la cara
-        const moveY = errY * -40;
-        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { 
-            el.style.transform = `translate(${moveX}px, ${moveY}px)`; 
+        const mx = Math.max(-maxShift, Math.min(maxShift, errX * -90));
+        const my = Math.max(-maxShift, Math.min(maxShift, errY * -50));
+        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
+            if (el) el.style.transform = `translate(${mx}px,${my}px)`;
         });
     } else {
-        // Movimiento aleatorio natural al hablar
-        const offset = (Math.random() - 0.5) * 20;
-        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { 
-            el.style.transform = `translateX(${offset}px)`; 
+        const offset = (Math.random() - 0.5) * 16;
+        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
+            if (el) el.style.transform = `translateX(${offset}px)`;
         });
-        
-        // Ruidito robótico ocasional al mover los motores de los ojos
-        if (Math.random() > 0.8) {
-            import('./sounds.js').then(s => s.playBeep(2500, 'square', 0.01, 0.01));
+        if (Math.random() > 0.82) {
+            import('./sounds.js').then(s => s.playBeep(2800, 'square', 0.006, 0.01));
         }
     }
 }
 
 export function setChestIcon(type) {
     const icon = RonState.ui.chestIcon;
+    if (!icon) return;
     icon.innerHTML = '';
     icon.className = 'chest-icon-container';
 
     if (type === 'heart') {
-        icon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="white" d="M 50 90 L 15 55 A 25 25 0 0 1 50 25 A 25 25 0 0 1 85 55 Z" /></svg>';
+        icon.innerHTML = `<svg viewBox="0 0 100 90">
+            <path fill="#ff4466" d="M50 85 C50 85 10 55 10 28 C10 10 28 5 40 15 C44 18 48 22 50 26 C52 22 56 18 60 15 C72 5 90 10 90 28 C90 55 50 85 50 85Z"/>
+        </svg>`;
         icon.classList.add('heart-beat');
     } else if (type === 'warning') {
-        icon.innerHTML = '<svg viewBox="0 0 100 100"><path fill="#ff3b3b" d="M 50 15 L 90 85 L 10 85 Z" /><text x="50" y="75" fill="white" text-anchor="middle" font-weight="bold" font-size="40">!</text></svg>';
+        icon.innerHTML = `<svg viewBox="0 0 100 100">
+            <path fill="#ff3b3b" d="M50 12 L92 88 L8 88 Z"/>
+            <text x="50" y="78" fill="white" text-anchor="middle" font-weight="900" font-size="42">!</text>
+        </svg>`;
     } else if (type === 'wifi') {
-        icon.innerHTML = '<svg viewBox="0 0 100 100" fill="white"><path d="M 50 80 A 10 10 0 1 1 50 81 Z M 20 50 A 40 40 0 0 1 80 50 L 75 55 A 35 35 0 0 0 25 55 Z M 5 35 A 55 55 0 0 1 95 35 L 90 40 A 50 50 0 0 0 10 40 Z" /></svg>';
+        icon.innerHTML = `<svg viewBox="0 0 100 80" fill="none">
+            <circle cx="50" cy="68" r="7" fill="#111"/>
+            <path d="M28 48 A31 31 0 0 1 72 48" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+            <path d="M14 33 A50 50 0 0 1 86 33" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+            <path d="M2 18 A68 68 0 0 1 98 18"  stroke="#111" stroke-width="7" stroke-linecap="round"/>
+        </svg>`;
     } else if (type === 'search') {
-        icon.innerHTML = '<svg viewBox="0 0 100 100" fill="none" stroke="white" stroke-width="8"><circle cx="40" cy="40" r="25"/><line x1="60" y1="60" x2="85" y2="85"/></svg>';
+        icon.innerHTML = `<svg viewBox="0 0 100 100" fill="none">
+            <circle cx="40" cy="40" r="26" stroke="#111" stroke-width="7"/>
+            <line x1="60" y1="60" x2="88" y2="88" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+        </svg>`;
+    } else if (type === 'zz') {
+        icon.innerHTML = `<svg viewBox="0 0 100 80">
+            <text x="8"  y="58" fill="#888" font-size="38" font-weight="900" font-family="sans-serif">z</text>
+            <text x="40" y="42" fill="#aaa" font-size="28" font-weight="900" font-family="sans-serif">z</text>
+            <text x="65" y="30" fill="#ccc" font-size="20" font-weight="900" font-family="sans-serif">z</text>
+        </svg>`;
     }
 }
 
 export function setExpression(exp) {
     RonState.expressionState = exp;
-    [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
-    
-    if (exp === 'happy') { 
-        updateMouth('M 20 30 Q 50 45 80 30'); 
-        RonState.ui.eyes.left.classList.add('happy'); RonState.ui.eyes.right.classList.add('happy');
-        setChestIcon('heart');
-    } else if (exp === 'neutral') {
-        updateMouth('M 25 35 Q 50 48 75 35'); 
-        setChestIcon('wifi');
-    } else if (exp === 'thinking') {
-        updateMouth('M 40 35 L 60 35'); 
-        RonState.ui.eyes.left.classList.add('thinking'); RonState.ui.eyes.right.classList.add('thinking');
-        setChestIcon('search');
-    } else if (exp === 'sad') {
-        updateMouth('M 30 45 Q 50 30 70 45'); 
-    } else if (exp === 'star') {
-        updateMouth('M 20 30 Q 50 50 80 30');
-        RonState.ui.eyes.left.classList.add('star'); RonState.ui.eyes.right.classList.add('star');
-    } else if (exp === 'glitch') {
-        updateMouth('M 20 35 L 80 35');
-        RonState.ui.eyes.left.classList.add('glitch'); RonState.ui.eyes.right.classList.add('glitch');
-    } else if (exp === 'fear') {
-        updateMouth('M 35 45 Q 50 35 65 45'); 
-        RonState.ui.eyes.left.classList.add('fear'); RonState.ui.eyes.right.classList.add('fear');
-        setChestIcon('warning');
-    } else if (exp === 'flat') {
-        updateMouth('M 40 40 L 60 40'); // Boca recta, dormido
-        RonState.ui.eyes.left.classList.add('flat'); RonState.ui.eyes.right.classList.add('flat');
-        setChestIcon('heart'); // Latido lento
-    } else { 
-        updateMouth('M 25 35 Q 50 48 75 35'); 
-        stopGlitchEffect(); 
+    const { left, right } = RonState.ui.eyes;
+    if (!left || !right) return;
+
+    [left, right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
+
+    switch (exp) {
+        case 'happy':
+            updateMouth('M 15 32 Q 50 52 85 32');
+            [left, right].forEach(el => el.classList.add('happy'));
+            setChestIcon('heart');
+            break;
+
+        case 'neutral':
+        default:
+            updateMouth('M 22 30 Q 50 44 78 30');
+            setChestIcon('wifi');
+            break;
+
+        case 'thinking':
+            updateMouth('M 32 34 Q 50 36 68 34');
+            [left, right].forEach(el => el.classList.add('thinking'));
+            setChestIcon('search');
+            break;
+
+        case 'sad':
+            updateMouth('M 25 38 Q 50 24 75 38');
+            setChestIcon('wifi');
+            break;
+
+        case 'star':
+            updateMouth('M 15 28 Q 50 56 85 28');
+            [left, right].forEach(el => el.classList.add('star'));
+            setChestIcon('heart');
+            break;
+
+        case 'surprise':
+            // BUG FIX: elipse simple como boca "O" abierta — válido en todos los navegadores
+            // Usamos path de elipse manual en vez de encadenar arcos A que fallan
+            updateMouth('M 38 18 Q 50 10 62 18 Q 72 28 62 42 Q 50 52 38 42 Q 28 28 38 18 Z');
+            [left, right].forEach(el => el.classList.add('surprise'));
+            setChestIcon('wifi');
+            break;
+
+        case 'glitch':
+            updateMouth('M 15 33 L 85 33');
+            [left, right].forEach(el => el.classList.add('glitch'));
+            break;
+
+        case 'fear':
+            updateMouth('M 30 40 Q 50 28 70 40');
+            [left, right].forEach(el => el.classList.add('fear'));
+            setChestIcon('warning');
+            break;
+
+        case 'flat':
+            updateMouth('M 35 33 L 65 33');
+            [left, right].forEach(el => el.classList.add('flat'));
+            setChestIcon('zz');
+            break;
     }
 }
 
 export function startBlinkCycle() {
-    const b = () => {
-        if (RonState.activityState !== 'SPEAKING' && RonState.expressionState !== 'surprise') {
-            [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => e.classList.add('blink'));
-            setTimeout(() => [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => e.classList.remove('blink')), 150);
-            
-            // Sonido de parpadeo mecánico a veces
-            if (Math.random() > 0.7) {
-                import('./sounds.js').then(s => s.playBeep(3000, 'sine', 0.01, 0.02));
-            }
-            
-            // Tics y glitches aleatorios de la película (10% de probabilidad)
-            if (Math.random() > 0.9) {
-                setTimeout(() => {
-                    const randomEye = Math.random() > 0.5 ? RonState.ui.eyes.left : RonState.ui.eyes.right;
-                    randomEye.classList.add('glitch');
-                    setTimeout(() => randomEye.classList.remove('glitch'), 100 + Math.random() * 150);
-                }, 200);
+    const blink = () => {
+        const skip = ['SPEAKING','surprise','flat'].includes(RonState.activityState) ||
+                     ['surprise','flat'].includes(RonState.expressionState);
+        if (!skip) {
+            [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => {
+                if (e) e.classList.add('blink');
+            });
+            setTimeout(() => {
+                [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => {
+                    if (e) e.classList.remove('blink');
+                });
+            }, 130);
+            if (Math.random() > 0.72) import('./sounds.js').then(s => s.playBeep(3200, 'sine', 0.005, 0.012));
+            // Tic de glitch aleatorio en un solo ojo
+            if (Math.random() > 0.88) {
+                const eye = Math.random() > 0.5 ? RonState.ui.eyes.left : RonState.ui.eyes.right;
+                if (eye) {
+                    eye.classList.add('glitch');
+                    setTimeout(() => eye.classList.remove('glitch'), 80 + Math.random() * 120);
+                }
             }
         }
-        setTimeout(b, Math.random() * 4000 + 2000);
+        setTimeout(blink, Math.random() * 4500 + 2000);
     };
-    b();
+    blink();
 }
 
 export function startGlitchEffect() {
     stopGlitchEffect();
     glitchInterval = setInterval(() => {
-        const b = document.createElement('div'); b.className = 'glitch-block';
-        b.style.width = `${Math.random()*100+20}px`; b.style.height = `${Math.random()*50+10}px`;
-        b.style.left = `${Math.random()*100}vw`; b.style.top = `${Math.random()*100}vh`;
-        RonState.ui.glitchOverlay.appendChild(b);
-        setTimeout(() => b.remove(), 200);
-    }, 150);
+        const b = document.createElement('div');
+        b.className = 'glitch-block';
+        b.style.cssText = `width:${Math.random()*120+20}px;height:${Math.random()*40+8}px;left:${Math.random()*100}vw;top:${Math.random()*100}vh`;
+        if (RonState.ui.glitchOverlay) {
+            RonState.ui.glitchOverlay.appendChild(b);
+            setTimeout(() => b.remove(), 180);
+        }
+    }, 140);
 }
 
-export function stopGlitchEffect() { 
-    if (glitchInterval) clearInterval(glitchInterval); 
-    if (RonState.ui.glitchOverlay) RonState.ui.glitchOverlay.innerHTML = ''; 
+export function stopGlitchEffect() {
+    if (glitchInterval) { clearInterval(glitchInterval); glitchInterval = null; }
+    if (RonState.ui.glitchOverlay) RonState.ui.glitchOverlay.innerHTML = '';
 }
 
 export function triggerSafetyGlitch(reason) {
     log(`⚠️ GLITCH: ${reason}`);
     changeState('GLITCH');
     setExpression('glitch');
-    RonState.ui.mainApp.classList.add('glitch-vibration');
+    if (RonState.ui.mainApp) RonState.ui.mainApp.classList.add('glitch-vibration');
     Sounds.playGlitchSound();
     startGlitchEffect();
-    
-    RonState.ui.gamePanel.classList.remove('hidden');
-    RonState.ui.gameText.style.color = "red";
-    RonState.ui.gameText.innerText = "ERROR: " + reason;
+
+    if (RonState.ui.gamePanel && RonState.ui.gameText) {
+        RonState.ui.gamePanel.classList.remove('hidden');
+        RonState.ui.gameText.style.color    = 'red';
+        RonState.ui.gameText.style.fontSize = '18px';
+        RonState.ui.gameText.innerText      = '⚠️ ERROR: ' + reason.substring(0, 60);
+    }
 
     setTimeout(() => {
         stopGlitchEffect();
-        RonState.ui.mainApp.classList.remove('glitch-vibration');
+        if (RonState.ui.mainApp) RonState.ui.mainApp.classList.remove('glitch-vibration');
         changeState('IDLE');
         setExpression('neutral');
-        RonState.ui.gamePanel.classList.add('hidden');
-        RonState.ui.gameText.style.color = ""; 
+        if (RonState.ui.gamePanel) RonState.ui.gamePanel.classList.add('hidden');
+        if (RonState.ui.gameText) { RonState.ui.gameText.style.color = ''; RonState.ui.gameText.style.fontSize = ''; }
     }, 5000);
 }
 
 export function flash() {
     Sounds.playPhotoSound();
-    RonState.ui.flash.classList.add('flash-active');
-    setTimeout(() => RonState.ui.flash.classList.remove('flash-active'), 500);
+    if (RonState.ui.flash) {
+        RonState.ui.flash.classList.add('flash-active');
+        setTimeout(() => RonState.ui.flash.classList.remove('flash-active'), 500);
+    }
 }
 
 export function showPhoto(imgData) {
-    RonState.ui.photoImg.src = imgData;
-    RonState.ui.photoPanel.classList.remove('hidden');
+    if (RonState.ui.photoImg)   RonState.ui.photoImg.src = imgData;
+    if (RonState.ui.photoPanel) RonState.ui.photoPanel.classList.remove('hidden');
 }
 
 export function hidePhoto() {
-    RonState.ui.photoPanel.classList.add('hidden');
-    setTimeout(() => { RonState.ui.photoImg.src = ""; }, 500); // Limpiar memoria
+    if (RonState.ui.photoPanel) RonState.ui.photoPanel.classList.add('hidden');
+    setTimeout(() => { if (RonState.ui.photoImg) RonState.ui.photoImg.src = ''; }, 600);
 }
 
 export function startScanningUI() {
-    RonState.ui.mainApp.classList.add('scanning-mode');
+    if (RonState.ui.mainApp) RonState.ui.mainApp.classList.add('scanning-mode');
     setChestIcon('search');
 }
 
 export function stopScanningUI() {
-    RonState.ui.mainApp.classList.remove('scanning-mode');
+    if (RonState.ui.mainApp) RonState.ui.mainApp.classList.remove('scanning-mode');
 }
 
 export function checkNightMode() {
@@ -247,6 +309,32 @@ export function checkNightMode() {
         setEyeColor('#00d4ff');
     } else {
         document.body.classList.remove('night-mode');
-        setEyeColor('#1a1a1a');
+        setEyeColor('#111111');
     }
+}
+
+export function showMoodBubble(emotion) {
+    if (!RonState.ui.moodBubble) return;
+    const moodMap = {
+        feliz: '😊 Feliz', triste: '😢 Triste', sorprendido: '😮 Sorprendida',
+        enfadado: '😤 Enfadada', miedo: '😨 Asustada', neutral: null
+    };
+    const label = moodMap[emotion];
+    if (!label) { RonState.ui.moodBubble.classList.add('hidden'); return; }
+    RonState.ui.moodBubble.textContent = label;
+    RonState.ui.moodBubble.classList.remove('hidden');
+    if (moodBubbleTimer) clearTimeout(moodBubbleTimer);
+    moodBubbleTimer = setTimeout(() => {
+        if (RonState.ui.moodBubble) RonState.ui.moodBubble.classList.add('hidden');
+    }, 5000);
+}
+
+export function showStoryPanel(text) {
+    if (!RonState.ui.storyPanel || !RonState.ui.storyText) return;
+    RonState.ui.storyText.innerHTML = text;
+    RonState.ui.storyPanel.classList.remove('hidden');
+}
+
+export function hideStoryPanel() {
+    if (RonState.ui.storyPanel) RonState.ui.storyPanel.classList.add('hidden');
 }

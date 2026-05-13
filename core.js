@@ -1,79 +1,103 @@
-// core.js - Estado Central y Funciones Base
+// core.js v24 - Estado Central
 export const RonState = {
-    activityState: 'BOOTING', 
-    expressionState: 'neutral', 
+    activityState: 'BOOTING',
+    expressionState: 'neutral',
     isMicEnabled: true,
     isLearningFace: false,
     isWaitingForWakeWord: true,
-    
-    // ESTADO BLE
-    ble: {
-        device: null,
-        characteristic: null,
-        isConnected: false,
-        lastPan: 90,
-        lastTilt: 90
-    },
-    
+    storyPendingNextChapter: false,
+
+    ble: { device: null, characteristic: null, isConnected: false, lastPan: 90, lastTilt: 90 },
+
     wakeLock: null,
     isRecognitionActive: false,
-    
-    // MEMORIA A LARGO PLAZO
+
     currentUser: null,
     currentEmotion: 'neutral',
     lastEmotion: 'neutral',
-    knownFaces: JSON.parse(localStorage.getItem('ron_known_faces') || '[]'),
-    userStats: JSON.parse(localStorage.getItem('ron_user_stats') || '{}'),
-    apiKey: localStorage.getItem('ron_groq_key'),
+    knownFaces:  JSON.parse(localStorage.getItem('ron_known_faces')  || '[]'),
+    userStats:   JSON.parse(localStorage.getItem('ron_user_stats')   || '{}'),
+    apiKey:      localStorage.getItem('ron_groq_key'),
 
-    // INICIATIVA
     spontaneousTimer: null,
-    isCheeringUp: false,
-    isSilentMode: false,        // Modo silencio: Ron escucha pero no habla
-    unknownStabilityCounter: 0, // Contador de frames sin reconocer cara conocida
-    emotionCooldownUntil: 0,    // Timestamp: no habla de emociones hasta este momento
-    lastSpontaneousTime: 0,     // Timestamp: cuándo fue la última charla espontánea
+    isCheeringUp:  false,
+    isSilentMode:  false,
+    unknownStabilityCounter: 0,
+    emotionCooldownUntil: 0,
+    lastSpontaneousTime:  0,
+    framesWithoutFace:    0,
+    userLastSeen:  {},
+    batteryLevel:  100,
 
-    // DOM Refs (Cargadas en app.js)
     ui: {}
 };
 
 export function log(msg) {
-    console.log(msg);
-    if (!RonState.ui.fixedLog) RonState.ui.fixedLog = document.getElementById('debug-info');
-    if (RonState.ui.fixedLog) {
+    console.log('[Ron]', msg);
+    const el = RonState.ui.fixedLog || document.getElementById('debug-info');
+    if (el) {
         const div = document.createElement('div');
-        div.style.marginBottom = "5px";
+        div.style.marginBottom = '4px';
         div.innerText = `> ${msg}`;
-        RonState.ui.fixedLog.appendChild(div);
-        RonState.ui.fixedLog.scrollTop = RonState.ui.fixedLog.scrollHeight;
-        if (RonState.ui.fixedLog.children.length > 50) RonState.ui.fixedLog.children[0].remove();
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+        if (el.children.length > 60) el.children[0].remove();
     }
 }
 
+// BUG FIX #5: timer con ID para evitar doble startListening
+let idleListenTimer = null;
+
 export function changeState(newState) {
     if (RonState.activityState === newState) return;
+    log(`Estado: ${RonState.activityState} → ${newState}`);
     RonState.activityState = newState;
-    
-    // Notificamos a UI para cambiar colores si hace falta
+
     import('./ui.js').then(ui => ui.handleStateChange(newState));
-    
-    // Reiniciar escucha si volvemos a IDLE
+
     if (newState === 'IDLE' && RonState.isMicEnabled) {
-        import('./speech.js').then(speech => {
-            setTimeout(() => speech.startListening(), 1000);
-        });
+        if (idleListenTimer) { clearTimeout(idleListenTimer); idleListenTimer = null; }
+        idleListenTimer = setTimeout(() => {
+            idleListenTimer = null;
+            if (RonState.activityState === 'IDLE' && !RonState.isRecognitionActive) {
+                import('./speech.js').then(s => s.startListening());
+            }
+        }, 900);
         resetSpontaneousTimer();
+        checkMorningGreeting();
     } else {
+        if (idleListenTimer) { clearTimeout(idleListenTimer); idleListenTimer = null; }
         if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
     }
 }
 
 export function resetSpontaneousTimer() {
     if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
-    RonState.spontaneousTimer = setTimeout(() => {
-        if (RonState.activityState === 'IDLE') {
-            import('./ai.js').then(ai => ai.triggerSpontaneous("Llevamos mucho rato callados. Inicia una conversación corta saludando o preguntando si quiere jugar a algo."));
+    const delay = 480000 + Math.random() * 600000;
+    RonState.spontaneousTimer = setTimeout(async () => {
+        if (RonState.activityState !== 'IDLE') return;
+        // 30% probabilidad de recordar algo del diario, 70% conversación espontánea
+        if (Math.random() < 0.3) {
+            const { ronRemembersSomething } = await import('./diary.js');
+            const remembered = await ronRemembersSomething().catch(() => false);
+            if (remembered) return;
         }
-    }, 600000 + Math.random() * 600000); // Entre 10 y 20 minutos (menos insistente)
+        import('./ai.js').then(ai => ai.triggerSpontaneous(
+            "Llevamos un rato callados. Inicia una conversación corta y divertida o propón un juego."
+        ));
+    }, delay);
+}
+
+function checkMorningGreeting() {
+    const today = new Date().toDateString();
+    const lastGreeting = localStorage.getItem('ron_last_morning') || '';
+    const hour = new Date().getHours();
+    if (hour >= 7 && hour < 11 && lastGreeting !== today && RonState.currentUser) {
+        localStorage.setItem('ron_last_morning', today);
+        setTimeout(() => {
+            if (RonState.activityState === 'IDLE') {
+                import('./ai.js').then(ai => ai.morningGreeting());
+            }
+        }, 3000);
+    }
 }

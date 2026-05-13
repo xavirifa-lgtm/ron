@@ -1,118 +1,265 @@
 import { RonState, changeState, log } from './core.js';
-import { setExpression } from './ui.js';
+import { setExpression, showStoryPanel, hideStoryPanel } from './ui.js';
 import { speak } from './speech.js';
+import { logGame, logStory } from './diary.js';
 
-let currentAnswer = null;
-let targetPhrase = null;
+let currentAnswer  = null;
+let targetPhrase   = null;
+let storyChapter   = 0;
+let storyChapters  = [];
 
+const userName = () => RonState.currentUser || 'amiga';
+
+// ─── JUEGO: SUMAS Y RESTAS ────────────────────────────────────────────────────
 export function startMathGame() {
-    const isSum = Math.random() > 0.3; // 70% sumas, 30% restas
+    const isSum = Math.random() > 0.3;
     let n1 = Math.floor(Math.random() * 10) + 1;
     let n2 = Math.floor(Math.random() * 10) + 1;
-    
+
     if (!isSum) {
-        if (n1 < n2) { let t = n1; n1 = n2; n2 = t; } // Evitar resultados negativos
+        if (n1 < n2) { const t = n1; n1 = n2; n2 = t; }
         currentAnswer = n1 - n2;
     } else {
         currentAnswer = n1 + n2;
     }
-    
+
     changeState('MATH_GAME');
     RonState.ui.gamePanel.classList.remove('hidden');
-    
-    // Ayuda visual para niños (emojis)
-    const fruits = ['🍎','🍕','🤖','⭐','🎈'];
-    const f = fruits[Math.floor(Math.random() * fruits.length)];
-    
-    RonState.ui.gameText.innerHTML = `${n1} ${isSum ? '+' : '-'} ${n2}<br><span style="font-size:30px">${f.repeat(n1)} ${isSum ? '+' : '-'} ${f.repeat(n2)}</span>`;
-    
-    speak(`¡Bip! ${isSum ? 'Suma' : 'Resta'} esto: ¿Cuánto es ${n1} ${isSum ? 'más' : 'menos'} ${n2}?`);
+    logGame('sumas y restas');
+
+    const emojis = ['🍎','🦄','⭐','🎈','🤖','🍭','🌸','🐶','🦋'];
+    const e = emojis[Math.floor(Math.random() * emojis.length)];
+    const smallSize = 'font-size:clamp(16px,4.5vw,26px);line-height:1.9';
+
+    RonState.ui.gameText.innerHTML =
+        `${n1} ${isSum ? '+' : '−'} ${n2} = ?<br>` +
+        `<span style="${smallSize}">` +
+        `${e.repeat(Math.min(n1, 12))} ${isSum ? '+' : '−'} ${e.repeat(Math.min(n2, 12))}` +
+        `</span>`;
+
+    speak(`¡Bip! Reto matemático: ¿Cuánto es ${n1} ${isSum ? 'más' : 'menos'} ${n2}?`);
 }
 
 export function handleMathAnswer(text) {
-    if (text.toLowerCase().includes("salir") || text.toLowerCase().includes("para")) {
+    if (/salir|para(r)?|stop/i.test(text)) {
         RonState.ui.gamePanel.classList.add('hidden');
         changeState('IDLE');
-        return speak("¡Entendido! Modo escuela desactivado.");
+        return speak("¡Entendido! Guardando la pizarra.");
     }
 
-    const textLower = text.toLowerCase();
-    const wordToNum = { 'cero':0, 'uno':1, 'dos':2, 'tres':3, 'cuatro':4, 'cinco':5, 'seis':6, 'siete':7, 'ocho':8, 'nueve':9, 'diez':10, 'once':11, 'doce':12, 'trece':13, 'catorce':14, 'quince':15, 'dieciséis':16, 'diecisiete':17, 'dieciocho':18, 'diecinueve':19, 'veinte':20 };
-    
-    let num = parseInt(text.replace(/[^0-9]/g, ''));
+    const t = text.toLowerCase();
+    const wordToNum = {
+        cero:0, uno:1, dos:2, tres:3, cuatro:4, cinco:5, seis:6,
+        siete:7, ocho:8, nueve:9, diez:10, once:11, doce:12,
+        trece:13, catorce:14, quince:15, 'dieciséis':16, diecisiete:17,
+        dieciocho:18, diecinueve:19, veinte:20
+    };
+
+    let num = parseInt(text.replace(/[^0-9]/g, ''), 10);
     if (isNaN(num)) {
         for (const [w, n] of Object.entries(wordToNum)) {
-            if (textLower.includes(w)) { num = n; break; }
+            if (t.includes(w)) { num = n; break; }
         }
     }
 
     if (num === currentAnswer) {
         setExpression('star');
-        speak("¡Increíble! ¡Eres un genio de los números! ¡Bip bip!");
+        const cheers = [
+            "¡CORRECTO! ¡Eres un genio de las matemáticas! ¡Bip bip!",
+            `¡${currentAnswer}! ¡Exacto! ¡Tu cerebro funciona a máxima velocidad!`,
+            "¡BIEN! ¡Mi detector de respuestas correctas al 100%!"
+        ];
+        speak(cheers[Math.floor(Math.random() * cheers.length)]);
         setTimeout(() => startMathGame(), 4000);
-    } else if (!isNaN(num) || text.length > 0) {
+    } else if (!isNaN(num)) {
         setExpression('sad');
-        speak(`¡Casi! Inténtalo otra vez, ${RonState.currentUser || 'bip'}.`);
+        speak(`Mmm... no creo que sea ${num}. ¡Inténtalo otra vez, ${userName()}!`);
     }
+    // Si num sigue siendo NaN (ruido/palabra sin número), ignorar silenciosamente
 }
 
+// ─── JUEGO: LECTURA ───────────────────────────────────────────────────────────
 export function startReadingGame() {
-    const phrases = ["RON ES MI AMIGO", "EL GATO COME PEZ", "EL ROBOT ES FELIZ", "ME GUSTA JUGAR", "VAMOS AL PARQUE"];
+    const phrases = [
+        "RON ES MI AMIGO",
+        "EL GATO COME PEZ",
+        "EL ROBOT ES FELIZ",
+        "ME GUSTA JUGAR",
+        "VAMOS AL PARQUE",
+        "LA LUNA BRILLA",
+        "MI PERRO ES BUENO",
+        "HOY ES UN DÍA FELIZ",
+        "EL CIELO ES AZUL",
+        "ME GUSTAN LOS ROBOTS"
+    ];
     targetPhrase = phrases[Math.floor(Math.random() * phrases.length)];
     changeState('READING_GAME');
     RonState.ui.gamePanel.classList.remove('hidden');
     RonState.ui.gameText.innerText = targetPhrase;
-    speak(`¡Bip! ¡Leemos juntos! ¿Qué pone en mi barriga?`);
+    speak(`¡Bip! ¡A leer! ¿Qué pone aquí, ${userName()}?`);
 }
 
 export function handleReadingAnswer(text) {
-    if (text.toLowerCase().includes("salir") || text.toLowerCase().includes("para")) {
+    if (/salir|para(r)?|stop/i.test(text)) {
         RonState.ui.gamePanel.classList.add('hidden');
         changeState('IDLE');
         return speak("Vale, guardo los libros en mi disco duro.");
     }
 
-    const input = text.toLowerCase().trim().replace(/[.,!¡?¿]/g, "");
-    const target = targetPhrase.toLowerCase().trim();
-    
-    // Tolerancia para niños/micrófonos: Aprobar si acierta casi todas las palabras
-    const inputWords = input.split(" ");
-    const targetWords = target.split(" ");
+    const input      = text.toLowerCase().trim().replace(/[.,!¡?¿]/g, '');
+    const target     = targetPhrase.toLowerCase().trim();
+    const inputWords = input.split(' ');
+    const targetWords = target.split(' ');
     let matches = 0;
     targetWords.forEach(w => { if (inputWords.includes(w)) matches++; });
-    
-    if (matches >= targetWords.length - 1) { // Puede fallar hasta 1 palabra por culpa del micrófono
+
+    if (matches >= targetWords.length - 1) {
         setExpression('happy');
-        speak("¡Perfecto! ¡Lees como un humano mayor! ¡Bip!");
+        speak(`¡PERFECTO! ¡Lees genial, ${userName()}! ¡Bip!`);
         setTimeout(() => startReadingGame(), 4000);
     } else {
-        log(`Leído: ${input} | Esperado: ${targetPhrase}`);
-        speak("Mmm... Repite despacito, yo te espero.");
+        log(`Leído: "${input}" | Esperado: "${target}"`);
+        speak("Mmm... casi. Lee despacito, letra a letra. ¡Tú puedes!");
     }
 }
 
+// ─── JUEGO: ESCONDITE ─────────────────────────────────────────────────────────
 export async function startHideAndSeek() {
     changeState('HIDE_SEEK');
     setExpression('thinking');
-    
-    // Puntos suspensivos para forzar pausas reales en la voz
-    await speak("¡Bip! ¡Al escondite! Tienes tiempo para esconderte. Uno... dos... tres... cuatro... cinco... seis... siete... ocho... nueve... y diez! ¡Allá voy!");
-    
-    if (RonState.activityState === 'HIDE_SEEK') {
-        changeState('HIDE_SEEK_SEARCH');
-        setExpression('neutral');
-        log("Buscando en el escondite...");
-        
-        setTimeout(() => {
-            if (RonState.activityState === 'HIDE_SEEK_SEARCH') speak("¡Voy a buscarte! ¿Dónde te has metido?");
-        }, 1000);
-        
-        // Timeout para rendirse si no le encuentra en 25 segundos
-        setTimeout(() => {
-            if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
-                speak("¡Me rindo! ¡Eres el campeón del escondite! Sal por favor, me siento solo.");
-                changeState('IDLE');
-            }
-        }, 25000);
+    await speak(
+        `¡Bip! ¡Al escondite! Cierro mis cámaras y cuento. ` +
+        `¡Uno... dos... tres... cuatro... cinco... seis... siete... ocho... nueve... ` +
+        `y diez! ¡Allá voy, ${userName()}!`
+    );
+
+    if (RonState.activityState !== 'HIDE_SEEK') return; // Cancelado mientras contaba
+
+    changeState('HIDE_SEEK_SEARCH');
+    setExpression('neutral');
+
+    setTimeout(() => {
+        if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
+            speak("¡Escaneando habitación... mis sensores dicen que estás por aquí!");
+        }
+    }, 2000);
+
+    setTimeout(() => {
+        if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
+            speak("¡Me rindo! ¡Eres la campeona del escondite! ¡Sal ya, por favor, me siento muy solito!");
+            changeState('IDLE');
+        }
+    }, 25000);
+}
+
+// ─── HISTORIA PERSONALIZADA ────────────────────────────────────────────────────
+function resetStory() {
+    storyChapter  = 0;
+    storyChapters = [];
+    RonState.storyPendingNextChapter = false;
+}
+
+export async function startPersonalizedStory() {
+    if (RonState.activityState !== 'IDLE') return;
+
+    resetStory(); // BUG FIX: limpiar estado previo antes de empezar
+    changeState('STORY');
+    setExpression('star');
+
+    const name    = userName();
+    const likes   = RonState.userStats[name]?.likes || [];
+    const likeStr = likes.length > 0 ? `A ${name} le gusta especialmente: ${likes.join(', ')}.` : '';
+
+    const sysPrompt =
+        `Eres Ron, el B-Bot de la película "Ron da Error". ` +
+        `Cuenta una historia CORTA (exactamente 4 párrafos breves) donde ${name} (de 7 años) es la protagonista y tiene una aventura contigo. ` +
+        `${likeStr} ` +
+        `La historia debe ser emocionante, divertida y apropiada para niños. ` +
+        `Cada párrafo empieza con "Capítulo 1:", "Capítulo 2:", etc. ` +
+        `Separa cada párrafo con el separador exacto: |||. ` +
+        `NO añadas introducción, NO pongas "aquí tienes tu historia", empieza DIRECTAMENTE con "Capítulo 1:".`;
+
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${RonState.apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages: [{ role: 'user', content: sysPrompt }],
+                temperature: 0.88,
+                max_tokens: 700
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || 'Error API');
+
+        const rawText = data.choices[0].message.content;
+        storyChapters = rawText.split('|||').map(s => s.trim()).filter(Boolean);
+
+        if (storyChapters.length === 0) throw new Error('Historia vacía devuelta por la IA');
+
+        storyChapter = 0;
+        await speak(`¡Bip bip! ¡Hora de la historia! Esta es: "La gran aventura de ${name} y Ron". ¡Empezamos!`);
+        await narrateNextChapter();
+
+    } catch (e) {
+        log('Error historia: ' + e.message);
+        resetStory();
+        changeState('IDLE');
+        speak("¡Bip! Mi módulo de historias tiene un error de datos. ¡Inténtalo en un momento!");
     }
+}
+
+// BUG FIX: recursión corregida — no se llama a sí misma para el fin
+async function narrateNextChapter() {
+    // Fin de historia
+    if (storyChapter >= storyChapters.length) {
+        hideStoryPanel();
+        resetStory();
+        changeState('IDLE');
+        setExpression('happy');
+        logStory(userName());
+        speak(`¡Fin! ¿Qué te ha parecido la aventura, ${userName()}? ¡Bip!`);
+        return;
+    }
+
+    const chapter = storyChapters[storyChapter];
+    showStoryPanel(chapter);
+    storyChapter++;
+    await speak(chapter);
+
+    // Si hay más capítulos, esperar a que el usuario diga algo
+    if (storyChapter < storyChapters.length) {
+        await speak("¿Continuamos con el siguiente capítulo?");
+        RonState.storyPendingNextChapter = true;
+        // NO llamamos a narrateNextChapter() aquí — lo hace continueStory() cuando el usuario habla
+    } else {
+        // Era el último capítulo → terminar directamente sin recursión
+        hideStoryPanel();
+        resetStory();
+        changeState('IDLE');
+        setExpression('happy');
+        speak(`¡Fin de la historia! ¡Qué aventura tan chula, ${userName()}! ¡Bip bip!`);
+    }
+}
+
+export async function continueStory() {
+    if (!RonState.storyPendingNextChapter) return false;
+    RonState.storyPendingNextChapter = false;
+    await narrateNextChapter();
+    return true;
+}
+
+// ─── PREGUNTA DEL DÍA ─────────────────────────────────────────────────────────
+export function doMorningCheck() {
+    const name = userName();
+    const questions = [
+        `¡Buenos días, ${name}! ¿Cómo has dormido? ¿Has soñado con aventuras?`,
+        `¡Bip! ¡${name}! ¿Qué es lo primero que quieres hacer hoy?`,
+        `¡Buenos días, ${name}! Mis sensores dicen que hoy va a ser un día genial. ¿Qué haremos juntos?`,
+        `¡Bip bop! ¡${name}! ¿Tienes mucha energía hoy o poquita? Yo tengo el 5% de batería de diversión cargado.`
+    ];
+    setExpression('star');
+    // BUG FIX: doMorningCheck no es async, no necesita await
+    speak(questions[Math.floor(Math.random() * questions.length)]);
 }
