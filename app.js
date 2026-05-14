@@ -1,12 +1,12 @@
 import { RonState, log, changeState } from './core.js';
-import { initUI, setChestIcon, setExpression, startBlinkCycle, checkNightMode } from './ui.js';
+import { initUI, setChestIcon, setExpression, startBlinkCycle, checkNightMode, startDanceMode, stopDanceMode } from './ui.js';
 import { loadModels, startCamera, startVisionLoop, connectBLE } from './vision.js';
 import { startListening, speak } from './speech.js';
 import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v25.0...");
+    log("Iniciando Ron v25.1...");
     initUI();
     setChestIcon('wifi');
 
@@ -32,6 +32,7 @@ async function preInit() {
 
     RonState.ui.bleBtn.onclick = () => connectBLE();
 
+    // Cosquillas al tocar la cara
     const faceEl = document.querySelector('.face-wrapper');
     if (faceEl) {
         faceEl.addEventListener('click', () => {
@@ -40,7 +41,7 @@ async function preInit() {
                 Sounds.playBeep(900, 'sine', 0.08, 0.05);
                 setTimeout(() => Sounds.playBeep(1200, 'sine', 0.08, 0.05), 110);
                 const tickles = [
-                    "¡Bip! ¡Mis sensores táctiles detectan cosquillas! ¡No tengo ese archivo descargado!",
+                    "¡Bip! ¡Mis sensores táctiles detectan cosquillas!",
                     "¡Bop! ¡Error de cosquillas! ¿Por qué hacen eso los humanos?",
                     "¡Ñiiic! ¡Sistema de risa activado involuntariamente!"
                 ];
@@ -67,7 +68,7 @@ async function init() {
         setExpression('neutral');
         startBlinkCycle();
         startVisionLoop();
-        startCuriosityLoop(); // Preguntas absurdas periódicas
+        startCuriosityLoop();
         Sounds.playStartupSound();
 
         await speak(
@@ -95,9 +96,8 @@ async function requestWakeLock() {
         if ('wakeLock' in navigator) {
             RonState.wakeLock = await navigator.wakeLock.request('screen');
             log("WakeLock activo.");
-            // Cuando el sistema libera el WakeLock, ponemos null para poder reactivarlo
             RonState.wakeLock.addEventListener('release', () => {
-                log("WakeLock liberado por el sistema.");
+                log("WakeLock liberado.");
                 RonState.wakeLock = null;
             });
         }
@@ -117,11 +117,9 @@ function setupInteractions() {
             speak("¡Bip! Cerebro activado. Friendship.exe cargando al 5%.");
         }
     };
-
     RonState.ui.apiKeyInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') RonState.ui.saveBtn.click();
     });
-
     if (!RonState.apiKey) RonState.ui.apiModal.classList.remove('hidden');
 }
 
@@ -133,12 +131,9 @@ function goFullscreen() {
 
 window.onload = () => {
     preInit();
-
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState === 'visible') {
-            // BUG FIX: comprobación correcta — wakeLock es null cuando fue liberado
             if (!RonState.wakeLock) await requestWakeLock();
-
             if (window.speechSynthesis && RonState.activityState !== 'SPEAKING') {
                 window.speechSynthesis.cancel();
             }

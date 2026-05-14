@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Ron B*Bot</title>
-
-    <!-- Service Worker: registrar (no matar) para que el PWA funcione offline -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -15,11 +13,8 @@
             });
         }
     </script>
-
-    <!-- Face-API (detección facial) -->
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
-
-    <link rel="stylesheet" href="styles.css?v=24.0">
+    <link rel="stylesheet" href="styles.css?v=25.1">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#eaf6ff">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -29,40 +24,46 @@
 <body>
     <div id="ron-app" class="ron-container">
 
-        <!-- Flash de cámara -->
         <div id="camera-flash" class="camera-flash"></div>
 
-        <!-- Pantalla de arranque -->
+        <!-- Pantalla arranque -->
         <div id="boot-screen" class="boot-screen">
             <div class="boot-logo">B<span>*</span>BOT</div>
             <button id="power-btn">¡ENCENDER A RON!</button>
         </div>
 
-        <!-- Botones de control -->
-        <button id="mic-toggle-btn" class="mic-toggle-btn" title="Activar/Silenciar micrófono">🎙️</button>
-        <button id="ble-connect-btn" class="ble-btn" title="Conectar motores Bluetooth">📡</button>
+        <!-- Botones control -->
+        <button id="mic-toggle-btn" class="mic-toggle-btn" title="Micrófono">🎙️</button>
+        <button id="ble-connect-btn" class="ble-btn" title="Bluetooth">📡</button>
 
-        <!-- Burbuja de estado de humor -->
+        <!-- Burbuja humor -->
         <div id="mood-bubble" class="hidden"></div>
 
-        <!-- Cámara oculta -->
         <video id="webcam" autoplay playsinline muted style="display:none;"></video>
 
         <!-- Modal API Key -->
         <div id="api-modal" class="api-modal hidden">
             <div class="modal-content">
                 <h2>🧠 Configurar Cerebro</h2>
-                <p>Introduce tu API Key de Groq para activar la inteligencia de Ron:</p>
+                <p>Introduce tu API Key de Groq:</p>
                 <input type="password" id="groq-key-input" placeholder="gsk_...">
                 <button id="save-api-key">¡Activar cerebro!</button>
             </div>
         </div>
 
-        <!-- Overlay de glitch -->
         <div id="glitch-overlay" class="glitch-overlay"></div>
 
         <!-- CARA DE RON -->
         <div class="face-wrapper">
+
+            <!-- Barra de estado discreta dentro de la cara -->
+            <div class="status-bar">
+                <div id="status-dot" class="status-dot active"></div>
+                <div class="battery-bar">
+                    <div id="battery-fill" class="battery-fill high" style="width:100%"></div>
+                </div>
+            </div>
+
             <div class="face-container">
                 <!-- Ojos -->
                 <div class="eyes-layer">
@@ -86,7 +87,7 @@
             <div id="game-text"></div>
         </div>
 
-        <!-- Panel de historia (nuevo) -->
+        <!-- Panel historia -->
         <div id="story-panel" class="hidden">
             <div class="story-bubble" id="story-text"></div>
         </div>
@@ -98,10 +99,9 @@
             </div>
         </div>
 
-        <!-- Log de debug (oculto) -->
         <div id="debug-info" class="hidden"></div>
 
     </div>
-    <script type="module" src="app.js?v=24.0"></script>
+    <script type="module" src="app.js?v=25.1"></script>
 </body>
 </html>
