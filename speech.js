@@ -1,5 +1,5 @@
 import { RonState, log, changeState } from './core.js';
-import { setExpression, updateMouth, shiftEyes } from './ui.js';
+import { setExpression, triggerSafetyGlitch, updateMouth, shiftEyes } from './ui.js';
 import { handleInput } from './ai.js';
 import * as Sounds from './sounds.js';
 
@@ -142,12 +142,12 @@ export function speak(text) {
         if (RonState.ui.mouth) RonState.ui.mouth.classList.add('is-speaking');
 
         const mouthShapes = [
-            'M 35 8 A 15 15 0 1 1 65 8 A 15 15 0 1 1 35 8 Z',
-            'M 28 6 L 72 6 L 72 36 L 28 36 Z',
-            'M 40 10 A 10 10 0 1 1 60 10 A 10 10 0 1 1 40 10 Z',
-            'M 15 10 Q 50 40 85 10 Z',
-            'M 50 5 L 68 35 L 32 35 Z',
-            'M 20 16 L 80 16 L 80 26 L 20 26 Z'
+            'M 50 10 A 22 22 0 1 1 50 54 A 22 22 0 1 1 50 10 Z',
+            'M 25 15 L 75 15 L 75 55 L 25 55 Z',
+            'M 50 22 A 12 12 0 1 1 50 46 A 12 12 0 1 1 50 22 Z',
+            'M 15 22 Q 50 62 85 22 Z',
+            'M 50 12 L 72 48 L 28 48 Z',
+            'M 18 28 L 82 28 L 82 40 L 18 40 Z'
         ];
         let idx = 0;
         mouthInterval = setInterval(() => {
@@ -174,14 +174,9 @@ export function speak(text) {
 
         setTimeout(() => {
             const u = new SpeechSynthesisUtterance(text);
-
-            // Android a veces devuelve [] la primera vez — intentar de nuevo
-            let voices = window.speechSynthesis.getVoices();
-            if (voices.length === 0) voices = window.speechSynthesis.getVoices();
-
+            const voices = window.speechSynthesis.getVoices();
             const best = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural')))
-                      || voices.find(v => v.lang.startsWith('es'))
-                      || voices[0]; // último recurso: primera voz disponible
+                      || voices.find(v => v.lang.startsWith('es'));
             if (best) u.voice = best;
 
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -199,7 +194,6 @@ export function speak(text) {
                 stopMouthAnimation();
                 stopKeepAlive();
                 setExpression('neutral');
-                // Tras hablar, Ron escucha sin wake word durante 15 segundos
                 RonState.isWaitingForWakeWord = false;
                 changeState('IDLE');
                 if (convTimeout) clearTimeout(convTimeout);

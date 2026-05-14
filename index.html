@@ -4,98 +4,104 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Ron B*Bot</title>
+
+    <!-- Service Worker: registrar (no matar) para que el PWA funcione offline -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(r => console.log('SW:', r.scope))
+                    .then(r => console.log('SW registrado:', r.scope))
                     .catch(e => console.warn('SW error:', e));
             });
         }
     </script>
+
+    <!-- Face-API (detección facial) -->
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
-    <link rel="stylesheet" href="styles.css?v=25.3">
+
+    <link rel="stylesheet" href="styles.css?v=24.0">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#c4e8f8">
+    <meta name="theme-color" content="#eaf6ff">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Ron B-Bot">
 </head>
 <body>
-<div id="ron-app" class="ron-container">
+    <div id="ron-app" class="ron-container">
 
-    <div id="camera-flash" class="camera-flash"></div>
+        <!-- Flash de cámara -->
+        <div id="camera-flash" class="camera-flash"></div>
 
-    <!-- Pantalla arranque -->
-    <div id="boot-screen" class="boot-screen">
-        <div class="boot-logo">B<span>*</span>BOT</div>
-        <button id="power-btn">¡ENCENDER A RON!</button>
-    </div>
-
-    <!-- Botones control (esquina superior) -->
-    <button id="mic-toggle-btn" class="mic-toggle-btn" title="Micrófono">🎙️</button>
-    <button id="ble-connect-btn" class="ble-btn" title="Bluetooth">📡</button>
-
-    <!-- Burbuja humor -->
-    <div id="mood-bubble" class="hidden"></div>
-
-    <video id="webcam" autoplay playsinline muted style="display:none;"></video>
-
-    <!-- Modal API -->
-    <div id="api-modal" class="api-modal hidden">
-        <div class="modal-content">
-            <h2>🧠 Configurar Cerebro</h2>
-            <p>Introduce tu API Key de Groq:</p>
-            <input type="password" id="groq-key-input" placeholder="gsk_...">
-            <button id="save-api-key">¡Activar cerebro!</button>
-        </div>
-    </div>
-
-    <div id="glitch-overlay" class="glitch-overlay"></div>
-
-    <!-- CARA DE RON: ojos y boca flotan directamente sobre el fondo azul
-         El móvil físico hace de cuerpo — no hay contenedor aquí -->
-    <div class="face-container" id="face-wrapper">
-
-        <!-- Ojos -->
-        <div class="eyes-layer">
-            <div id="eye-left"  class="eye"></div>
-            <div id="eye-right" class="eye"></div>
+        <!-- Pantalla de arranque -->
+        <div id="boot-screen" class="boot-screen">
+            <div class="boot-logo">B<span>*</span>BOT</div>
+            <button id="power-btn">¡ENCENDER A RON!</button>
         </div>
 
-        <!-- Boca -->
-        <div class="mouth-layer">
-            <svg class="mouth-svg" viewBox="0 0 100 45" xmlns="http://www.w3.org/2000/svg">
-                <path id="mouth-path" d="M 22 18 Q 50 32 78 18"/>
-            </svg>
+        <!-- Botones de control -->
+        <button id="mic-toggle-btn" class="mic-toggle-btn" title="Activar/Silenciar micrófono">🎙️</button>
+        <button id="ble-connect-btn" class="ble-btn" title="Conectar motores Bluetooth">📡</button>
+
+        <!-- Burbuja de estado de humor -->
+        <div id="mood-bubble" class="hidden"></div>
+
+        <!-- Cámara oculta -->
+        <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+
+        <!-- Modal API Key -->
+        <div id="api-modal" class="api-modal hidden">
+            <div class="modal-content">
+                <h2>🧠 Configurar Cerebro</h2>
+                <p>Introduce tu API Key de Groq para activar la inteligencia de Ron:</p>
+                <input type="password" id="groq-key-input" placeholder="gsk_...">
+                <button id="save-api-key">¡Activar cerebro!</button>
+            </div>
         </div>
 
-        <!-- Icono pecho (pequeño y discreto, como en la película) -->
-        <div id="chest-icon-container" class="chest-icon-container"></div>
+        <!-- Overlay de glitch -->
+        <div id="glitch-overlay" class="glitch-overlay"></div>
 
-    </div>
-
-    <!-- Panel juegos -->
-    <div id="game-panel" class="game-panel hidden">
-        <button class="close-game-btn" id="close-game-btn">❌</button>
-        <div id="game-text"></div>
-    </div>
-
-    <!-- Panel historia -->
-    <div id="story-panel" class="hidden">
-        <div class="story-bubble" id="story-text"></div>
-    </div>
-
-    <!-- Selfie -->
-    <div id="photo-panel" class="hidden">
-        <div class="polaroid">
-            <img id="photo-img" src="" alt="Foto de Ron y tú">
+        <!-- CARA DE RON -->
+        <div class="face-wrapper">
+            <div class="face-container">
+                <!-- Ojos -->
+                <div class="eyes-layer">
+                    <div id="eye-left"  class="eye"></div>
+                    <div id="eye-right" class="eye"></div>
+                </div>
+                <!-- Boca -->
+                <div class="mouth-layer">
+                    <svg class="mouth-svg" viewBox="0 0 100 55" xmlns="http://www.w3.org/2000/svg">
+                        <path id="mouth-path" d="M 20 28 Q 50 44 80 28"/>
+                    </svg>
+                </div>
+                <!-- Pecho -->
+                <div id="chest-icon-container" class="chest-icon-container"></div>
+            </div>
         </div>
+
+        <!-- Panel de juegos / pizarra -->
+        <div id="game-panel" class="game-panel hidden">
+            <button class="close-game-btn" id="close-game-btn">❌</button>
+            <div id="game-text"></div>
+        </div>
+
+        <!-- Panel de historia (nuevo) -->
+        <div id="story-panel" class="hidden">
+            <div class="story-bubble" id="story-text"></div>
+        </div>
+
+        <!-- Selfie Polaroid -->
+        <div id="photo-panel" class="hidden">
+            <div class="polaroid">
+                <img id="photo-img" src="" alt="Foto de Ron y tú">
+            </div>
+        </div>
+
+        <!-- Log de debug (oculto) -->
+        <div id="debug-info" class="hidden"></div>
+
     </div>
-
-    <div id="debug-info" class="hidden"></div>
-
-</div>
-<script type="module" src="app.js?v=25.3"></script>
+    <script type="module" src="app.js?v=24.0"></script>
 </body>
 </html>

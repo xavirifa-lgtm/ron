@@ -3,11 +3,13 @@ import * as Sounds from './sounds.js';
 
 let glitchInterval  = null;
 let moodBubbleTimer = null;
-let danceInterval   = null;
 
 export function initUI() {
     RonState.ui = {
-        eyes: { left: document.getElementById('eye-left'), right: document.getElementById('eye-right') },
+        eyes: {
+            left:  document.getElementById('eye-left'),
+            right: document.getElementById('eye-right')
+        },
         mouth:          document.getElementById('mouth-path'),
         mouthContainer: document.querySelector('.mouth-svg'),
         mouthLayer:     document.querySelector('.mouth-layer'),
@@ -31,13 +33,14 @@ export function initUI() {
         storyPanel:     document.getElementById('story-panel'),
         storyText:      document.getElementById('story-text'),
         moodBubble:     document.getElementById('mood-bubble'),
-        faceWrapper:    document.getElementById('face-wrapper'),
+        faceWrapper:    document.querySelector('.face-wrapper'),
         closeGameBtn:   document.getElementById('close-game-btn'),
-        // status-dot y battery-fill eliminados — sin barra de estado visible
     };
 
     if (RonState.ui.closeGameBtn) {
-        RonState.ui.closeGameBtn.onclick = () => RonState.ui.gamePanel.classList.add('hidden');
+        RonState.ui.closeGameBtn.onclick = () => {
+            RonState.ui.gamePanel.classList.add('hidden');
+        };
     }
 
     initBattery();
@@ -50,11 +53,12 @@ async function initBattery() {
         const update = () => {
             const level = Math.round(b.level * 100);
             RonState.batteryLevel = level;
+            log(`Batería: ${level}%`);
             if (level <= 15 && !b.charging && RonState.activityState === 'IDLE') {
                 import('./speech.js').then(s =>
-                    s.speak("¡Bip! Batería crítica. Por favor enchúfame antes de que me duerma para siempre.")
+                    s.speak("¡Bip! Batería crítica. Por favor enchúfame antes de que me duerma para siempre... bueno, hasta que me cargues.")
                 );
-                setChestIcon('battery', level);
+                setChestIcon('warning');
             }
         };
         b.addEventListener('levelchange', update);
@@ -65,15 +69,10 @@ async function initBattery() {
 
 export function handleStateChange(newState) {
     const isNight = document.body.classList.contains('night-mode');
-
     switch (newState) {
-        case 'LISTENING': setEyeColor(isNight ? '#ffffff' : '#006699'); break;
-        case 'SLEEPING':  setEyeColor(isNight ? '#223344' : '#558899'); break;
-        default:          setEyeColor(isNight ? '#00d4ff' : '#0d0d0d'); break;
-    }
-
-    if (RonState.ui.micToggleBtn) {
-        RonState.ui.micToggleBtn.classList.toggle('active', newState === 'LISTENING');
+        case 'LISTENING': setEyeColor(isNight ? '#ffffff' : '#0099cc'); break;
+        case 'SLEEPING':  setEyeColor(isNight ? '#003344' : '#888888'); break;
+        default:          setEyeColor(isNight ? '#00d4ff' : '#111111'); break;
     }
 }
 
@@ -86,204 +85,129 @@ export function updateMouth(d) {
 }
 
 export function shiftEyes(errX = null, errY = null) {
-    const max = 10;
+    const maxShift = 12;
     if (errX !== null && errY !== null) {
-        const mx = Math.max(-max, Math.min(max, errX * -70));
-        const my = Math.max(-max, Math.min(max, errY * -40));
+        const mx = Math.max(-maxShift, Math.min(maxShift, errX * -90));
+        const my = Math.max(-maxShift, Math.min(maxShift, errY * -50));
         [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
             if (el) el.style.transform = `translate(${mx}px,${my}px)`;
         });
     } else {
-        const offset = (Math.random() - 0.5) * 12;
+        const offset = (Math.random() - 0.5) * 16;
         [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
             if (el) el.style.transform = `translateX(${offset}px)`;
         });
-        if (Math.random() > 0.85) {
-            import('./sounds.js').then(s => s.playBeep(2800, 'square', 0.004, 0.008));
+        if (Math.random() > 0.82) {
+            import('./sounds.js').then(s => s.playBeep(2800, 'square', 0.006, 0.01));
         }
     }
 }
 
-export function setChestIcon(type, value = null) {
+export function setChestIcon(type) {
     const icon = RonState.ui.chestIcon;
     if (!icon) return;
     icon.innerHTML = '';
     icon.className = 'chest-icon-container';
 
-    switch (type) {
-        case 'heart':
-            icon.innerHTML = `<svg viewBox="0 0 100 92" aria-hidden="true">
-                <path fill="#ff3366" d="M50 86 C50 86 9 55 9 27 C9 10 25 4 39 14 C43 17 47 21 50 26 C53 21 57 17 61 14 C75 4 91 10 91 27 C91 55 50 86 50 86Z"/>
-            </svg>`;
-            icon.classList.add('heart-beat');
-            break;
-
-        case 'wifi':
-            icon.innerHTML = `<svg viewBox="0 0 100 78" aria-hidden="true">
-                <circle cx="50" cy="69" r="6" fill="#0d0d0d"/>
-                <path class="wifi-ring" d="M29 50 A30 30 0 0 1 71 50" stroke="#0d0d0d" stroke-width="6" stroke-linecap="round" fill="none"/>
-                <path class="wifi-ring" d="M15 35 A49 49 0 0 1 85 35" stroke="#0d0d0d" stroke-width="6" stroke-linecap="round" fill="none"/>
-                <path class="wifi-ring" d="M3  20 A67 67 0 0 1 97 20" stroke="#0d0d0d" stroke-width="6" stroke-linecap="round" fill="none"/>
-            </svg>`;
-            icon.classList.add('wifi-animate');
-            break;
-
-        case 'search':
-            icon.innerHTML = `<svg viewBox="0 0 100 100" fill="none" aria-hidden="true">
-                <g class="search-spin">
-                    <circle cx="40" cy="40" r="24" stroke="#0d0d0d" stroke-width="6"/>
-                    <line x1="58" y1="58" x2="84" y2="84" stroke="#0d0d0d" stroke-width="6" stroke-linecap="round"/>
-                </g>
-            </svg>`;
-            break;
-
-        case 'warning':
-            icon.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true">
-                <path fill="#ff3b3b" d="M50 10 L94 88 L6 88 Z"/>
-                <rect x="46" y="36" width="8" height="26" rx="4" fill="white"/>
-                <circle cx="50" cy="74" r="5" fill="white"/>
-            </svg>`;
-            break;
-
-        case 'battery': {
-            const pct = value !== null ? Math.max(0, Math.min(100, value)) : (RonState.batteryLevel || 100);
-            const col = pct > 40 ? '#22c55e' : pct > 15 ? '#f59e0b' : '#ef4444';
-            icon.innerHTML = `<svg viewBox="0 0 100 58" aria-hidden="true">
-                <rect x="2" y="7" width="84" height="44" rx="8" fill="none" stroke="#0d0d0d" stroke-width="5"/>
-                <rect x="86" y="21" width="12" height="16" rx="4" fill="#0d0d0d"/>
-                <rect x="8" y="13" width="${Math.round(72 * pct / 100)}" height="32" rx="4" fill="${col}"/>
-            </svg>`;
-            break;
-        }
-
-        case 'zz':
-            icon.innerHTML = `<svg viewBox="0 0 100 78" aria-hidden="true">
-                <text class="zz-float" x="8"  y="56" fill="#4488aa" font-size="32" font-weight="900" font-family="sans-serif">z</text>
-                <text class="zz-float" x="36" y="42" fill="#5599bb" font-size="24" font-weight="900" font-family="sans-serif">z</text>
-                <text class="zz-float" x="60" y="30" fill="#66aacc" font-size="17" font-weight="900" font-family="sans-serif">z</text>
-            </svg>`;
-            break;
-
-        case 'face':
-            icon.innerHTML = `<svg viewBox="0 0 100 100" fill="none" aria-hidden="true">
-                <rect x="12" y="12" width="76" height="76" rx="16" stroke="#00cc66" stroke-width="5.5"/>
-                <rect x="28" y="36" width="16" height="16" rx="4" fill="#00cc66"/>
-                <rect x="56" y="36" width="16" height="16" rx="4" fill="#00cc66"/>
-                <path d="M30 64 Q50 78 70 64" stroke="#00cc66" stroke-width="5" stroke-linecap="round"/>
-            </svg>`;
-            icon.querySelector('svg').classList.add('face-recognised');
-            break;
-
-        case 'music':
-            icon.innerHTML = `<svg viewBox="0 0 100 100" fill="none" aria-hidden="true">
-                <path d="M38 22 L78 14 L78 42 L38 50 Z" fill="#0d0d0d"/>
-                <circle cx="26" cy="66" r="13" fill="#0d0d0d"/>
-                <circle cx="66" cy="58" r="13" fill="#0d0d0d"/>
-                <line x1="38" y1="50" x2="38" y2="66" stroke="#0d0d0d" stroke-width="5"/>
-                <line x1="78" y1="42" x2="78" y2="58" stroke="#0d0d0d" stroke-width="5"/>
-            </svg>`;
-            break;
-
-        case 'star':
-            icon.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true">
-                <path fill="#ffcc00" d="M50 8 L61 37 L92 37 L67 56 L77 85 L50 67 L23 85 L33 56 L8 37 L39 37 Z"/>
-            </svg>`;
-            break;
+    if (type === 'heart') {
+        icon.innerHTML = `<svg viewBox="0 0 100 90">
+            <path fill="#ff4466" d="M50 85 C50 85 10 55 10 28 C10 10 28 5 40 15 C44 18 48 22 50 26 C52 22 56 18 60 15 C72 5 90 10 90 28 C90 55 50 85 50 85Z"/>
+        </svg>`;
+        icon.classList.add('heart-beat');
+    } else if (type === 'warning') {
+        icon.innerHTML = `<svg viewBox="0 0 100 100">
+            <path fill="#ff3b3b" d="M50 12 L92 88 L8 88 Z"/>
+            <text x="50" y="78" fill="white" text-anchor="middle" font-weight="900" font-size="42">!</text>
+        </svg>`;
+    } else if (type === 'wifi') {
+        icon.innerHTML = `<svg viewBox="0 0 100 80" fill="none">
+            <circle cx="50" cy="68" r="7" fill="#111"/>
+            <path d="M28 48 A31 31 0 0 1 72 48" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+            <path d="M14 33 A50 50 0 0 1 86 33" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+            <path d="M2 18 A68 68 0 0 1 98 18"  stroke="#111" stroke-width="7" stroke-linecap="round"/>
+        </svg>`;
+    } else if (type === 'search') {
+        icon.innerHTML = `<svg viewBox="0 0 100 100" fill="none">
+            <circle cx="40" cy="40" r="26" stroke="#111" stroke-width="7"/>
+            <line x1="60" y1="60" x2="88" y2="88" stroke="#111" stroke-width="7" stroke-linecap="round"/>
+        </svg>`;
+    } else if (type === 'zz') {
+        icon.innerHTML = `<svg viewBox="0 0 100 80">
+            <text x="8"  y="58" fill="#888" font-size="38" font-weight="900" font-family="sans-serif">z</text>
+            <text x="40" y="42" fill="#aaa" font-size="28" font-weight="900" font-family="sans-serif">z</text>
+            <text x="65" y="30" fill="#ccc" font-size="20" font-weight="900" font-family="sans-serif">z</text>
+        </svg>`;
     }
 }
 
-// ── Expresiones ───────────────────────────────────────────────────────────────
 export function setExpression(exp) {
     RonState.expressionState = exp;
     const { left, right } = RonState.ui.eyes;
     if (!left || !right) return;
+
     [left, right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
 
     switch (exp) {
         case 'happy':
-            updateMouth('M 20 18 Q 50 34 80 18');
+            updateMouth('M 15 32 Q 50 52 85 32');
             [left, right].forEach(el => el.classList.add('happy'));
             setChestIcon('heart');
             break;
+
         case 'neutral':
         default:
-            updateMouth('M 24 18 Q 50 28 76 18');
+            updateMouth('M 22 30 Q 50 44 78 30');
             setChestIcon('wifi');
             break;
+
         case 'thinking':
-            updateMouth('M 34 20 Q 50 22 66 20');
+            updateMouth('M 32 34 Q 50 36 68 34');
             [left, right].forEach(el => el.classList.add('thinking'));
             setChestIcon('search');
             break;
+
         case 'sad':
-            updateMouth('M 26 26 Q 50 15 74 26');
+            updateMouth('M 25 38 Q 50 24 75 38');
             setChestIcon('wifi');
             break;
+
         case 'star':
-            updateMouth('M 16 16 Q 50 38 84 16');
+            updateMouth('M 15 28 Q 50 56 85 28');
             [left, right].forEach(el => el.classList.add('star'));
-            setChestIcon('star');
+            setChestIcon('heart');
             break;
+
         case 'surprise':
-            updateMouth('M 38 12 Q 50 6 62 12 Q 68 20 62 30 Q 50 36 38 30 Q 32 20 38 12 Z');
+            // BUG FIX: elipse simple como boca "O" abierta — válido en todos los navegadores
+            // Usamos path de elipse manual en vez de encadenar arcos A que fallan
+            updateMouth('M 38 18 Q 50 10 62 18 Q 72 28 62 42 Q 50 52 38 42 Q 28 28 38 18 Z');
             [left, right].forEach(el => el.classList.add('surprise'));
             setChestIcon('wifi');
             break;
+
         case 'glitch':
-            updateMouth('M 18 20 L 82 20');
+            updateMouth('M 15 33 L 85 33');
             [left, right].forEach(el => el.classList.add('glitch'));
             break;
+
         case 'fear':
-            updateMouth('M 30 26 Q 50 16 70 26');
+            updateMouth('M 30 40 Q 50 28 70 40');
             [left, right].forEach(el => el.classList.add('fear'));
             setChestIcon('warning');
             break;
+
         case 'flat':
-            updateMouth('M 36 20 L 64 20');
+            updateMouth('M 35 33 L 65 33');
             [left, right].forEach(el => el.classList.add('flat'));
             setChestIcon('zz');
-            break;
-        case 'recognised':
-            updateMouth('M 20 18 Q 50 34 80 18');
-            [left, right].forEach(el => el.classList.add('happy'));
-            setChestIcon('face');
             break;
     }
 }
 
-export function startDanceMode() {
-    if (danceInterval) return false; // ya bailando
-    document.body.classList.add('dance-mode');
-    setChestIcon('music');
-    setExpression('star');
-    const mouths = ['M 16 16 Q 50 38 84 16', 'M 20 26 Q 50 12 80 26', 'M 14 18 Q 50 42 86 18'];
-    let mi = 0;
-    danceInterval = setInterval(() => {
-        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
-            if (el) el.className = 'eye dance';
-        });
-        updateMouth(mouths[mi % mouths.length]);
-        mi++;
-        if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.add('mouth-dance');
-    }, 400);
-}
-
-export function stopDanceMode() {
-    if (danceInterval) { clearInterval(danceInterval); danceInterval = null; }
-    document.body.classList.remove('dance-mode');
-    if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.remove('mouth-dance');
-    setExpression('happy');
-}
-
-export function celebrateFaceRecognition() {
-    setExpression('recognised');
-    setTimeout(() => setExpression('happy'), 1800);
-}
-
 export function startBlinkCycle() {
     const blink = () => {
-        const skip = RonState.activityState === 'SPEAKING' ||
-                     ['surprise','flat','dance'].includes(RonState.expressionState);
+        const skip = ['SPEAKING','surprise','flat'].includes(RonState.activityState) ||
+                     ['surprise','flat'].includes(RonState.expressionState);
         if (!skip) {
             [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => {
                 if (e) e.classList.add('blink');
@@ -292,14 +216,18 @@ export function startBlinkCycle() {
                 [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(e => {
                     if (e) e.classList.remove('blink');
                 });
-            }, 105);
-            if (Math.random() > 0.75) import('./sounds.js').then(s => s.playBeep(3200, 'sine', 0.003, 0.01));
-            if (Math.random() > 0.9) {
+            }, 130);
+            if (Math.random() > 0.72) import('./sounds.js').then(s => s.playBeep(3200, 'sine', 0.005, 0.012));
+            // Tic de glitch aleatorio en un solo ojo
+            if (Math.random() > 0.88) {
                 const eye = Math.random() > 0.5 ? RonState.ui.eyes.left : RonState.ui.eyes.right;
-                if (eye) { eye.classList.add('glitch'); setTimeout(() => eye.classList.remove('glitch'), 65 + Math.random() * 95); }
+                if (eye) {
+                    eye.classList.add('glitch');
+                    setTimeout(() => eye.classList.remove('glitch'), 80 + Math.random() * 120);
+                }
             }
         }
-        setTimeout(blink, Math.random() * 5000 + 2500);
+        setTimeout(blink, Math.random() * 4500 + 2000);
     };
     blink();
 }
@@ -309,9 +237,12 @@ export function startGlitchEffect() {
     glitchInterval = setInterval(() => {
         const b = document.createElement('div');
         b.className = 'glitch-block';
-        b.style.cssText = `width:${Math.random()*100+14}px;height:${Math.random()*32+5}px;left:${Math.random()*100}vw;top:${Math.random()*100}vh`;
-        if (RonState.ui.glitchOverlay) { RonState.ui.glitchOverlay.appendChild(b); setTimeout(() => b.remove(), 155); }
-    }, 125);
+        b.style.cssText = `width:${Math.random()*120+20}px;height:${Math.random()*40+8}px;left:${Math.random()*100}vw;top:${Math.random()*100}vh`;
+        if (RonState.ui.glitchOverlay) {
+            RonState.ui.glitchOverlay.appendChild(b);
+            setTimeout(() => b.remove(), 180);
+        }
+    }, 140);
 }
 
 export function stopGlitchEffect() {
@@ -326,12 +257,14 @@ export function triggerSafetyGlitch(reason) {
     if (RonState.ui.mainApp) RonState.ui.mainApp.classList.add('glitch-vibration');
     Sounds.playGlitchSound();
     startGlitchEffect();
+
     if (RonState.ui.gamePanel && RonState.ui.gameText) {
         RonState.ui.gamePanel.classList.remove('hidden');
         RonState.ui.gameText.style.color    = 'red';
-        RonState.ui.gameText.style.fontSize = '16px';
-        RonState.ui.gameText.innerText      = '⚠️ ERROR: ' + reason.substring(0, 55);
+        RonState.ui.gameText.style.fontSize = '18px';
+        RonState.ui.gameText.innerText      = '⚠️ ERROR: ' + reason.substring(0, 60);
     }
+
     setTimeout(() => {
         stopGlitchEffect();
         if (RonState.ui.mainApp) RonState.ui.mainApp.classList.remove('glitch-vibration');
@@ -346,7 +279,7 @@ export function flash() {
     Sounds.playPhotoSound();
     if (RonState.ui.flash) {
         RonState.ui.flash.classList.add('flash-active');
-        setTimeout(() => RonState.ui.flash.classList.remove('flash-active'), 420);
+        setTimeout(() => RonState.ui.flash.classList.remove('flash-active'), 500);
     }
 }
 
@@ -376,19 +309,24 @@ export function checkNightMode() {
         setEyeColor('#00d4ff');
     } else {
         document.body.classList.remove('night-mode');
-        setEyeColor('#0d0d0d');
+        setEyeColor('#111111');
     }
 }
 
 export function showMoodBubble(emotion) {
     if (!RonState.ui.moodBubble) return;
-    const map = { feliz:'😊 Feliz', triste:'😢 Triste', sorprendido:'😮 Sorprendida', enfadado:'😤 Enfadada', miedo:'😨 Asustada', neutral:null };
-    const label = map[emotion];
+    const moodMap = {
+        feliz: '😊 Feliz', triste: '😢 Triste', sorprendido: '😮 Sorprendida',
+        enfadado: '😤 Enfadada', miedo: '😨 Asustada', neutral: null
+    };
+    const label = moodMap[emotion];
     if (!label) { RonState.ui.moodBubble.classList.add('hidden'); return; }
     RonState.ui.moodBubble.textContent = label;
     RonState.ui.moodBubble.classList.remove('hidden');
     if (moodBubbleTimer) clearTimeout(moodBubbleTimer);
-    moodBubbleTimer = setTimeout(() => { if (RonState.ui.moodBubble) RonState.ui.moodBubble.classList.add('hidden'); }, 5000);
+    moodBubbleTimer = setTimeout(() => {
+        if (RonState.ui.moodBubble) RonState.ui.moodBubble.classList.add('hidden');
+    }, 5000);
 }
 
 export function showStoryPanel(text) {

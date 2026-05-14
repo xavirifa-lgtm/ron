@@ -4,7 +4,7 @@
 // Este módulo gestiona esas reglas, cómo se enseñan y cómo Ron las aplica.
 
 import { RonState, log } from './core.js';
-import { setExpression } from './ui.js';
+import { setExpression, showStoryPanel, hideStoryPanel } from './ui.js';
 import { speak } from './speech.js';
 
 const STORAGE_KEY  = 'ron_friendship_rules';
