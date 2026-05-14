@@ -11,7 +11,7 @@ let storyChapters  = [];
 const userName = () => RonState.currentUser || 'amiga';
 
 // ── SUMAS Y RESTAS ────────────────────────────────────────────────────────────
-export function startMathGame() {
+export async function startMathGame() {
     const isSum = Math.random() > 0.3;
     let n1 = Math.floor(Math.random() * 10) + 1;
     let n2 = Math.floor(Math.random() * 10) + 1;
@@ -31,10 +31,12 @@ export function startMathGame() {
         `${n1} ${isSum ? '+' : '−'} ${n2} = ?<br>` +
         `<span style="font-size:clamp(16px,4.5vw,26px);line-height:1.9">` +
         `${e.repeat(Math.min(n1, 12))} ${isSum ? '+' : '−'} ${e.repeat(Math.min(n2, 12))}</span>`;
-    speak(`¡Bip! Reto matemático: ¿Cuánto es ${n1} ${isSum ? 'más' : 'menos'} ${n2}?`);
+    await speak(`¡Bip! Reto matemático: ¿Cuánto es ${n1} ${isSum ? 'más' : 'menos'} ${n2}?`);
+    // Restaurar estado MATH_GAME tras el speak (que lo pone IDLE)
+    if (RonState.activityState === 'IDLE') changeState('MATH_GAME');
 }
 
-export function handleMathAnswer(text) {
+export async function handleMathAnswer(text) {
     if (/salir|para(r)?|stop/i.test(text)) {
         RonState.ui.gamePanel.classList.add('hidden');
         changeState('IDLE');
@@ -55,16 +57,17 @@ export function handleMathAnswer(text) {
             `¡${currentAnswer}! ¡Exacto! ¡Tu cerebro funciona a máxima velocidad!`,
             "¡BIEN! ¡Mi detector de respuestas correctas al 100%!"
         ];
-        speak(cheers[Math.floor(Math.random() * cheers.length)]);
-        setTimeout(() => startMathGame(), 4000);
+        await speak(cheers[Math.floor(Math.random() * cheers.length)]);
+        startMathGame();
     } else if (!isNaN(num)) {
         setExpression('sad');
-        speak(`Mmm... no creo que sea ${num}. ¡Inténtalo otra vez, ${userName()}!`);
+        await speak(`Mmm... no creo que sea ${num}. ¡Inténtalo otra vez, ${userName()}!`);
+        if (RonState.activityState === 'IDLE') changeState('MATH_GAME');
     }
 }
 
 // ── LECTURA ───────────────────────────────────────────────────────────────────
-export function startReadingGame() {
+export async function startReadingGame() {
     const phrases = [
         "RON ES MI AMIGO","EL GATO COME PEZ","EL ROBOT ES FELIZ",
         "ME GUSTA JUGAR","VAMOS AL PARQUE","LA LUNA BRILLA",
@@ -74,10 +77,12 @@ export function startReadingGame() {
     changeState('READING_GAME');
     RonState.ui.gamePanel.classList.remove('hidden');
     RonState.ui.gameText.innerText = targetPhrase;
-    speak(`¡Bip! ¡A leer! ¿Qué pone aquí, ${userName()}?`);
+    await speak(`¡Bip! ¡A leer! ¿Qué pone aquí, ${userName()}?`);
+    // Restaurar estado READING_GAME tras el speak
+    if (RonState.activityState === 'IDLE') changeState('READING_GAME');
 }
 
-export function handleReadingAnswer(text) {
+export async function handleReadingAnswer(text) {
     if (/salir|para(r)?|stop/i.test(text)) {
         RonState.ui.gamePanel.classList.add('hidden');
         changeState('IDLE');
@@ -91,10 +96,11 @@ export function handleReadingAnswer(text) {
     targetWords.forEach(w => { if (inputWords.includes(w)) matches++; });
     if (matches >= targetWords.length - 1) {
         setExpression('happy');
-        speak(`¡PERFECTO! ¡Lees genial, ${userName()}! ¡Bip!`);
-        setTimeout(() => startReadingGame(), 4000);
+        await speak(`¡PERFECTO! ¡Lees genial, ${userName()}! ¡Bip!`);
+        startReadingGame();
     } else {
-        speak("Mmm... casi. Lee despacito, letra a letra. ¡Tú puedes!");
+        await speak("Mmm... casi. Lee despacito, letra a letra. ¡Tú puedes!");
+        if (RonState.activityState === 'IDLE') changeState('READING_GAME');
     }
 }
 
@@ -166,7 +172,7 @@ export async function startPersonalizedStory() {
         log('Error historia: ' + e.message);
         resetStory();
         changeState('IDLE');
-        speak("¡Bip! Mi módulo de historias tiene un error. ¡Inténtalo en un momento!");
+        await speak("¡Bip! Mi módulo de historias tiene un error. ¡Inténtalo en un momento!");
     }
 }
 

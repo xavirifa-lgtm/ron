@@ -1,5 +1,5 @@
 import { RonState, log, changeState } from './core.js';
-import { setExpression, triggerSafetyGlitch, updateMouth, shiftEyes } from './ui.js';
+import { setExpression, updateMouth, shiftEyes } from './ui.js';
 import { handleInput } from './ai.js';
 import * as Sounds from './sounds.js';
 

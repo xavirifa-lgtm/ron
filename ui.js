@@ -252,7 +252,7 @@ export function setExpression(exp) {
 }
 
 export function startDanceMode() {
-    if (danceInterval) return;
+    if (danceInterval) return false; // ya bailando
     document.body.classList.add('dance-mode');
     setChestIcon('music');
     setExpression('star');

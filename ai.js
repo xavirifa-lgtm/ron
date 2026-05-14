@@ -119,7 +119,14 @@ MEMORIA DE ${userKey}: ${mem || `Aún aprendiendo sobre ${userKey}. Hazle una pr
 export async function handleInput(userText, isInternal = false) {
     if (RonState.activityState === 'MATH_GAME')    return (await import('./games.js')).handleMathAnswer(userText);
     if (RonState.activityState === 'READING_GAME') return (await import('./games.js')).handleReadingAnswer(userText);
-    if (RonState.activityState === 'STORY') { const cont = await continueStory(); if (cont) return; }
+    if (RonState.activityState === 'STORY') {
+        const cont = await continueStory();
+        if (cont) return;
+        // El niño habló fuera de turno — Ron responde brevemente sin salir del modo historia
+        await speak("¡Bip! Espera, estoy narrando. ¿Continuamos el cuento?");
+        RonState.storyPendingNextChapter = true;
+        return;
+    }
     if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING') return;
 
     const t = userText.toLowerCase();
@@ -132,24 +139,10 @@ export async function handleInput(userText, isInternal = false) {
     if (t.match(/veo veo|jugar?.*(veo)/))
         return triggerSpontaneous("Propón jugar al Veo Veo. Das pistas de algo que ves en la habitación.");
 
-    // Baile
-    if (t.match(/baila|bailar|modo baile|a bailar/)) {
-        startDanceMode();
-        await speak("¡Bip! ¡Ejecutando protocolo de baile! ¡Chuc-chuc-bzzzt!");
-        setTimeout(() => stopDanceMode(), 15000);
-        return;
-    }
-
-    // Cerrar pizarra
-    if (t.match(/para el juego|salir del juego|adiós ron|cierra la pizarra/)) {
-        RonState.ui.gamePanel.classList.add('hidden');
-        changeState('IDLE');
-        return speak("¡Bip! Pizarra cerrada.");
-    }
-
-    // Música
+    // Música — evaluada ANTES que baile para que "pon música para bailar" vaya aquí
     const musicKw = ['música','musica','canción','cancion','reproduce','ponme','escuchar','ritmo','baile','bailar'];
-    if (musicKw.some(kw => t.includes(kw)) && t.match(/pon|reproduce|busca|quiero|ponme/)) {
+    const esMusicaPeticion = musicKw.some(kw => t.includes(kw)) && t.match(/pon|reproduce|busca|quiero|ponme/);
+    if (esMusicaPeticion) {
         const search = t.replace(/pon música de|pon musica de|ponme la canción de|reproduce|pon la lista de|pon |busca |quiero escuchar /gi, '').trim();
         if (search && search.length > 2) {
             setExpression('star');
@@ -160,6 +153,23 @@ export async function handleInput(userText, isInternal = false) {
         }
     }
     if (t.match(/para la música|para la musica/)) return speak("¡Bip! Música fuera.");
+
+    // Baile — solo si NO fue detectado como petición de música
+    if (!esMusicaPeticion && t.match(/\bbaila\b|\bbailar\b|modo baile|a bailar/)) {
+        const arrancado = startDanceMode();
+        if (arrancado !== false) {
+            await speak("¡Bip! ¡Ejecutando protocolo de baile! ¡Chuc-chuc-bzzzt!");
+            setTimeout(() => stopDanceMode(), 15000);
+        }
+        return;
+    }
+
+    // Cerrar pizarra
+    if (t.match(/para el juego|salir del juego|adiós ron|cierra la pizarra/)) {
+        RonState.ui.gamePanel.classList.add('hidden');
+        changeState('IDLE');
+        return speak("¡Bip! Pizarra cerrada.");
+    }
 
     log(`Procesando: "${userText}"`);
 

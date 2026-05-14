@@ -96,10 +96,11 @@ function checkMorningGreeting() {
     const lastGreeting = localStorage.getItem('ron_last_morning') || '';
     const hour = new Date().getHours();
     if (hour >= 7 && hour < 11 && lastGreeting !== today && RonState.currentUser) {
-        localStorage.setItem('ron_last_morning', today);
         setTimeout(() => {
             if (RonState.activityState === 'IDLE') {
-                import('./ai.js').then(ai => ai.morningGreeting());
+                // Guardamos la fecha solo cuando realmente vamos a saludar
+                localStorage.setItem('ron_last_morning', today);
+                import('./ai.js').then(ai => ai.morningGreeting()).catch(() => {});
             }
         }, 3000);
     }
