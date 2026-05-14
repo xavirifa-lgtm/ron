@@ -32,8 +32,8 @@ async function preInit() {
 
     RonState.ui.bleBtn.onclick = () => connectBLE();
 
-    // Cosquillas al tocar la cara
-    const faceEl = document.querySelector('.face-wrapper');
+    // Toda la pantalla es Ron — click en cualquier lado = cosquillas
+    const faceEl = document.querySelector('.ron-container');
     if (faceEl) {
         faceEl.addEventListener('click', () => {
             if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {

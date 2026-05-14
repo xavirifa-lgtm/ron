@@ -1,13 +1,6 @@
 :root {
-    --ron-white: #ffffff;
-    --ron-blue-light: #eaf6ff;
-    --ron-blue-deep: #c5e8ff;
-    --ron-dark: #111111;
-    --ron-eye-color: #111111;
-    --ron-mouth-color: #111111;
+    --ron-eye-color: #0d0d0d;
     --glitch-cyan: #00d4ff;
-    --ron-body-bg: #f0f8ff;
-    --eye-squish: 1;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -15,15 +8,24 @@
 body, html {
     width: 100%; height: 100%;
     overflow: hidden;
-    background-color: #000;
+    background: #000;
     font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* ── FONDO ───────────────────────────────────────────────────────── */
+/* ── TODA LA PANTALLA ES RON ─────────────────────────────────────────────────
+   Fondo azul hielo que llena el 100% — el móvil físico hace de cuerpo.
+   Gradiente sutil de arriba (más claro) a abajo (más oscuro/saturado).
+   Igual que en la foto: #c8e8f5 aprox, con luz difusa blanca arriba.
+*/
 .ron-container {
-    width: 100vw; height: 100vh;
+    width: 100vw;
+    height: 100vh;
     position: relative;
-    background: radial-gradient(ellipse at 50% 40%, #ffffff 0%, #ddf0ff 55%, #b8e0f7 100%);
+    background: linear-gradient(180deg,
+        #dff4ff 0%,
+        #c4e8f8 30%,
+        #aeddee 65%,
+        #9dd0e8 100%);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -32,491 +34,391 @@ body, html {
     transition: background 1.2s ease;
 }
 
-body.night-mode .ron-container {
-    background: radial-gradient(ellipse at 50% 40%, #0d1b2a 0%, #050e18 100%);
+/* Reflejo de luz difusa en la parte superior — como plástico translúcido */
+.ron-container::before {
+    content: '';
+    position: absolute;
+    top: -10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120%;
+    height: 55%;
+    background: radial-gradient(ellipse at 50% 0%,
+        rgba(255,255,255,0.45) 0%,
+        rgba(255,255,255,0.1) 50%,
+        transparent 80%);
+    pointer-events: none;
+    z-index: 0;
 }
+
+/* Modo noche */
+body.night-mode .ron-container {
+    background: linear-gradient(180deg, #0a1a2e 0%, #060f1c 100%);
+}
+body.night-mode .ron-container::before { opacity: 0.1; }
 body.night-mode #mouth-path { stroke: #00d4ff !important; }
 body.night-mode #mouth-path.is-speaking { fill: #00d4ff !important; stroke: none !important; }
-body.night-mode .eye { background-color: #00d4ff; box-shadow: 0 0 30px #00d4ff, 0 0 60px rgba(0,212,255,0.3); }
+body.night-mode .eye { background-color: #00d4ff; box-shadow: 0 0 24px rgba(0,212,255,0.5); }
 
-/* Modo baile — fondo pulsante colorido */
+/* Modo baile */
 body.dance-mode .ron-container {
-    animation: dance-bg 0.5s ease-in-out infinite alternate;
+    animation: dance-bg 0.45s ease-in-out infinite alternate;
 }
 @keyframes dance-bg {
-    0%   { background: radial-gradient(ellipse at 50% 40%, #fff0ff 0%, #ffd6ff 60%, #e0b0ff 100%); }
-    100% { background: radial-gradient(ellipse at 50% 40%, #f0ffff 0%, #b0f0ff 60%, #80d0ff 100%); }
+    0%   { background: linear-gradient(180deg, #f0e4ff 0%, #d4b0f0 60%, #b890d8 100%); }
+    100% { background: linear-gradient(180deg, #e0f6ff 0%, #aadef5 60%, #80c8ee 100%); }
 }
 
-/* ── ESCÁNER ─────────────────────────────────────────────────────── */
-.scanning-mode { animation: scan-pulse 1.2s ease-in-out infinite; }
+/* Modo escáner */
+.scanning-mode {
+    animation: scan-pulse 1.2s ease-in-out infinite;
+}
 @keyframes scan-pulse {
-    0%,100% { box-shadow: inset 0 0 60px rgba(0,255,100,0.05); }
-    50%      { box-shadow: inset 0 0 200px rgba(0,255,100,0.35); }
+    0%,100% { background: linear-gradient(180deg, #dff4ff 0%, #c4e8f8 30%, #aeddee 65%, #9dd0e8 100%); }
+    50%      { background: linear-gradient(180deg, #e0ffe8 0%, #a0f0b0 30%, #70e090 65%, #50d080 100%); }
 }
 
-/* ── PANTALLA ARRANQUE ───────────────────────────────────────────── */
+/* ── PANTALLA ARRANQUE ────────────────────────────────────────────────────── */
 .boot-screen {
     position: absolute; top:0; left:0; width:100%; height:100%;
-    background: #111;
+    background: #071420;
     display: flex; flex-direction: column;
-    justify-content: center; align-items: center; gap: 20px;
+    justify-content: center; align-items: center; gap: 28px;
     z-index: 9999;
 }
 .boot-logo {
-    font-size: 48px; font-weight: 900; letter-spacing: 6px;
-    color: #fff; opacity: 0.9;
+    font-size: 54px; font-weight: 900; letter-spacing: 8px;
+    color: #c4e8f8;
 }
 .boot-logo span { color: #00d4ff; }
 #power-btn {
-    padding: 20px 50px; font-size: 18px;
-    background: #00d4ff; color: #111;
-    border: none; border-radius: 50px;
+    padding: 18px 52px; font-size: 17px;
+    background: linear-gradient(135deg, #00c6ff, #0072ff);
+    color: #fff; border: none; border-radius: 50px;
     font-weight: 700; cursor: pointer;
-    box-shadow: 0 0 40px rgba(0,212,255,0.6);
-    transition: transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 0 28px rgba(0,180,255,0.35);
+    transition: transform 0.12s;
     display: block !important;
 }
-#power-btn:active { transform: scale(0.97); }
+#power-btn:active { transform: scale(0.96); }
 .hidden { display: none !important; }
 
-/* ── CARA DE RON ─────────────────────────────────────────────────── */
-.face-wrapper {
+/* ── CARA: ojos y boca flotan sobre el fondo ─────────────────────────────── */
+/* No hay face-wrapper — los elementos flotan directamente */
+.face-container {
     position: relative;
-    width: min(85vw, 380px);
-    height: min(85vw, 380px);
-    background: #ffffff;
-    border-radius: 28% 28% 30% 30% / 22% 22% 28% 28%;
-    box-shadow:
-        0 8px 40px rgba(0,100,200,0.12),
-        0 2px 8px rgba(0,0,0,0.08),
-        inset 0 -4px 20px rgba(180,220,255,0.4);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
-    /* Respiración sutil permanente */
-    animation: face-breathe 4s ease-in-out infinite;
-}
-@keyframes face-breathe {
-    0%,100% { transform: scale(1);    box-shadow: 0 8px 40px rgba(0,100,200,0.12), 0 2px 8px rgba(0,0,0,0.08), inset 0 -4px 20px rgba(180,220,255,0.4); }
-    50%      { transform: scale(1.008); box-shadow: 0 12px 50px rgba(0,100,200,0.16), 0 4px 12px rgba(0,0,0,0.1),  inset 0 -4px 28px rgba(180,220,255,0.5); }
-}
-/* Pausa respiración en estados activos */
-.face-wrapper.active-state { animation-play-state: paused; }
-
-/* Reflejo de luz */
-.face-wrapper::before {
-    content: '';
-    position: absolute;
-    top: 8%; left: 18%; width: 64%; height: 22%;
-    background: radial-gradient(ellipse, rgba(255,255,255,0.7) 0%, transparent 70%);
-    border-radius: 50%;
-    pointer-events: none;
+    z-index: 5;
+    /* Centrado ligeramente por encima del centro — como en la foto */
+    margin-top: -8vh;
 }
 
-/* ── BARRA DE ESTADO (fina, discreta, en la parte superior del cuerpo) ── */
-.status-bar {
-    position: absolute;
-    top: 8%;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    z-index: 20;
-    pointer-events: none;
-}
-.status-dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: rgba(0,0,0,0.15);
-    transition: background 0.4s, box-shadow 0.4s;
-}
-.status-dot.active   { background: #00cc66; box-shadow: 0 0 6px #00cc66; }
-.status-dot.speaking { background: #0099ff; box-shadow: 0 0 6px #0099ff; animation: pulse-dot 0.6s ease-in-out infinite alternate; }
-.status-dot.thinking { background: #ffaa00; box-shadow: 0 0 6px #ffaa00; animation: pulse-dot 0.4s ease-in-out infinite alternate; }
-.status-dot.sleeping { background: #888; }
-.status-dot.error    { background: #ff3b3b; box-shadow: 0 0 6px #ff3b3b; animation: pulse-dot 0.3s ease-in-out infinite alternate; }
-@keyframes pulse-dot { from{opacity:0.6} to{opacity:1} }
-
-/* Barra de batería inline */
-.battery-bar {
-    width: 22px; height: 10px;
-    border: 1.5px solid rgba(0,0,0,0.2);
-    border-radius: 2px;
-    position: relative;
-    overflow: visible;
-}
-.battery-bar::after {
-    content: '';
-    position: absolute;
-    right: -4px; top: 50%;
-    transform: translateY(-50%);
-    width: 3px; height: 5px;
-    background: rgba(0,0,0,0.2);
-    border-radius: 0 1px 1px 0;
-}
-.battery-fill {
-    height: 100%;
-    border-radius: 1px;
-    transition: width 1s ease, background 0.5s;
-}
-.battery-fill.high   { background: #22c55e; }
-.battery-fill.medium { background: #f59e0b; }
-.battery-fill.low    { background: #ef4444; animation: pulse-dot 0.8s infinite alternate; }
-
-.face-container {
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    width: 100%; gap: 0;
-    padding-top: 5%;
-}
-
-/* ── OJOS ────────────────────────────────────────────────────────── */
+/* ── OJOS ──────────────────────────────────────────────────────────────────
+   De la foto real:
+   - Rectángulos negros con esquinas muy redondeadas (casi cuadrados)
+   - Pequeños relativo a la cara
+   - Muy juntos, casi tocándose
+   - Sin brillo interior — mate
+   - Posición: centrados verticalmente en la pantalla, ligeramente arriba
+*/
 .eyes-layer {
-    display: flex; justify-content: center; align-items: center;
-    gap: clamp(30px, 10vw, 55px);
-    margin-bottom: 0; z-index: 2;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: clamp(6px, 2vw, 12px);
+    z-index: 6;
 }
 
 .eye {
-    width: clamp(52px, 14vw, 72px);
-    height: clamp(80px, 22vw, 108px);
+    width: clamp(38px, 10vw, 58px);
+    height: clamp(42px, 11vw, 64px);
     background-color: var(--ron-eye-color);
-    border-radius: 50%;
-    /* Transición suave entre TODAS las propiedades — el "squish" al cambiar */
+    border-radius: 36%;
     transition:
-        width 0.22s cubic-bezier(0.34,1.56,0.64,1),
-        height 0.22s cubic-bezier(0.34,1.56,0.64,1),
-        border-radius 0.22s cubic-bezier(0.34,1.56,0.64,1),
+        width 0.2s cubic-bezier(0.34,1.56,0.64,1),
+        height 0.2s cubic-bezier(0.34,1.56,0.64,1),
+        border-radius 0.2s cubic-bezier(0.34,1.56,0.64,1),
         clip-path 0.18s ease,
         background-color 0.4s ease,
-        box-shadow 0.3s ease,
         transform 0.15s ease,
         opacity 0.3s ease;
     position: relative;
-    box-shadow: inset -1px 3px 6px rgba(255,255,255,0.08);
-    will-change: transform, width, height;
+    will-change: transform;
 }
 
-/* Brillo en el ojo */
-.eye::after {
-    content: '';
-    position: absolute;
-    top: 14%; right: 18%;
-    width: 28%; height: 22%;
-    background: rgba(255,255,255,0.55);
-    border-radius: 50%;
-    pointer-events: none;
-    transition: opacity 0.2s;
-}
+/* Sin brillo — los ojos de Ron son completamente mate */
+.eye::after { display: none; }
 
-/* ── EXPRESIONES ─────────────────────────────────────────────────── */
+/* ── EXPRESIONES ──────────────────────────────────────────────────────────── */
 .eye.happy {
-    height: clamp(44px, 12vw, 60px);
-    border-radius: 50% 50% 0% 0% / 100% 100% 0% 0%;
+    height: clamp(20px, 5vw, 30px);
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
 }
-.eye.happy::after { display: none; }
 
 .eye.star {
     clip-path: polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
-    width: clamp(64px, 17vw, 86px);
-    height: clamp(64px, 17vw, 86px);
+    width: clamp(46px, 12vw, 70px);
+    height: clamp(46px, 12vw, 70px);
     border-radius: 0;
     animation: eye-pulse 0.5s ease-in-out infinite alternate;
 }
-.eye.star::after { display: none; }
 
 .eye.surprise {
-    width: clamp(72px, 19vw, 96px);
-    height: clamp(72px, 19vw, 96px);
+    width: clamp(44px, 11.5vw, 68px);
+    height: clamp(44px, 11.5vw, 68px);
     border-radius: 50%;
 }
 
 .eye.thinking {
-    height: clamp(64px, 17vw, 86px);
-    border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
-    /* Ojo que "mira hacia arriba" pensando */
+    border-radius: 36% 36% 36% 36% / 20% 20% 50% 50%;
     animation: thinking-look 2s ease-in-out infinite;
 }
-@keyframes thinking-look {
-    0%,100% { transform: translateY(0); }
-    50%      { transform: translateY(-4px); }
-}
+@keyframes thinking-look { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
 
 .eye.fear {
-    width: clamp(28px, 8vw, 40px);
-    height: clamp(28px, 8vw, 40px);
+    width: clamp(22px, 5.5vw, 34px);
+    height: clamp(22px, 5.5vw, 34px);
     border-radius: 50%;
     animation: eye-shake 0.08s linear infinite;
 }
-.eye.fear::after { display: none; }
 
 .eye.flat {
-    height: clamp(8px, 2vw, 12px);
-    border-radius: 6px;
-    width: clamp(48px, 13vw, 68px);
-    clip-path: none;
-    opacity: 0.7;
+    height: clamp(7px, 1.8vw, 11px);
+    border-radius: 4px;
+    width: clamp(36px, 9vw, 54px);
+    opacity: 0.55;
 }
-.eye.flat::after { display: none; }
 
 .eye.glitch {
-    border-radius: 4px;
-    width: clamp(52px, 14vw, 72px);
-    height: clamp(52px, 14vw, 72px);
+    border-radius: 5px;
     background: #00d4ff !important;
     animation: glitch-eye 0.15s steps(1) infinite;
 }
 
-/* Modo baile — ojos que botan */
 .eye.dance {
-    animation: eye-dance 0.4s ease-in-out infinite alternate;
+    animation: eye-dance 0.35s ease-in-out infinite alternate;
 }
 @keyframes eye-dance {
-    from { transform: translateY(0) scaleX(1);   border-radius: 50%; }
-    to   { transform: translateY(-8px) scaleX(0.9); border-radius: 40% 40% 60% 60%; }
+    from { transform: translateY(0) scaleX(1); border-radius: 36%; }
+    to   { transform: translateY(-8px) scaleX(0.82); border-radius: 50% 50% 28% 28%; }
 }
 
-@keyframes eye-pulse   { from{transform:scale(1)} to{transform:scale(1.12)} }
-@keyframes eye-shake   { 0%,100%{transform:translate(0,0)} 25%{transform:translate(2px,2px)} 75%{transform:translate(-2px,-2px)} }
-@keyframes glitch-eye  { 0%{opacity:1;transform:translate(0)} 33%{opacity:0.7;transform:translate(2px,-1px)} 66%{opacity:0.9;transform:translate(-2px,1px)} }
-@keyframes blink-anim  { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.02)} }
-.eye.blink { animation: blink-anim 0.12s ease-in-out; }
+@keyframes eye-pulse  { from{transform:scale(1)} to{transform:scale(1.15)} }
+@keyframes eye-shake  { 0%,100%{transform:translate(0,0)} 25%{transform:translate(2px,1px)} 75%{transform:translate(-2px,-1px)} }
+@keyframes glitch-eye { 0%{opacity:1;transform:translate(0)} 33%{opacity:0.7;transform:translate(2px,-1px)} 66%{opacity:0.9;transform:translate(-2px,1px)} }
+@keyframes blink-anim { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.02)} }
+.eye.blink { animation: blink-anim 0.1s ease-in-out; }
 
-/* ── BOCA ─────────────────────────────────────────────────────────── */
+/* ── BOCA ─────────────────────────────────────────────────────────────────
+   De la foto: pequeña, sutil, muy pegada a los ojos, trazo fino
+*/
 .mouth-layer {
-    width: clamp(90px, 25vw, 130px);
-    height: clamp(44px, 12vw, 60px);
-    margin-top: clamp(12px, 4vw, 22px);
-    z-index: 10; flex-shrink: 0;
+    width: clamp(52px, 14vw, 80px);
+    height: clamp(22px, 6vw, 36px);
+    margin-top: clamp(5px, 1.4vw, 10px);
+    z-index: 6;
+    flex-shrink: 0;
 }
-.mouth-svg { width: 100%; height: 100%; display: block !important; overflow: visible; }
+.mouth-svg  { width: 100%; height: 100%; display: block !important; overflow: visible; }
 
 #mouth-path {
     fill: none;
-    stroke: #111111 !important;
-    stroke-width: 6.5;
+    stroke: #0d0d0d !important;
+    stroke-width: 5;
     stroke-linecap: round;
     stroke-linejoin: round;
-    transition: d 0.18s cubic-bezier(0.34,1.56,0.64,1), fill 0.2s ease, stroke 0.3s ease;
+    transition: d 0.18s cubic-bezier(0.34,1.56,0.64,1), fill 0.2s ease;
 }
-#mouth-path.is-speaking {
-    fill: #111111 !important;
-    stroke: none !important;
-}
+#mouth-path.is-speaking { fill: #0d0d0d !important; stroke: none !important; }
 .mouth-vibrate { animation: mouth-talk 0.12s ease-in-out infinite alternate; }
-@keyframes mouth-talk { from{transform:scaleY(0.88)} to{transform:scaleY(1.12)} }
+@keyframes mouth-talk  { from{transform:scaleY(0.85)} to{transform:scaleY(1.15)} }
+.mouth-dance   { animation: mouth-dance-anim 0.3s ease-in-out infinite alternate; }
+@keyframes mouth-dance-anim { from{transform:scale(0.9) rotate(-4deg)} to{transform:scale(1.1) rotate(4deg)} }
 
-/* Boca modo baile */
-.mouth-dance { animation: mouth-dance-anim 0.3s ease-in-out infinite alternate; }
-@keyframes mouth-dance-anim { from{transform:scale(0.9) rotate(-5deg)} to{transform:scale(1.1) rotate(5deg)} }
-
-/* ── PECHO / ICONOS ──────────────────────────────────────────────── */
+/* ── PECHO / ICONO ────────────────────────────────────────────────────────
+   Pequeño y discreto, centrado debajo de la boca
+   En el móvil físico esto estará abajo, justo donde iría el pecho de Ron
+*/
 .chest-icon-container {
-    width: clamp(50px, 14vw, 70px);
-    height: clamp(50px, 14vw, 70px);
-    margin-top: clamp(6px, 2vw, 12px);
+    width: clamp(36px, 9vw, 52px);
+    height: clamp(36px, 9vw, 52px);
+    margin-top: clamp(14px, 4vw, 24px);
     display: flex; justify-content: center; align-items: center;
-    z-index: 5; flex-shrink: 0;
-    position: relative;
+    z-index: 6; flex-shrink: 0;
+    opacity: 0.75;
 }
 .chest-icon-container svg { width: 100%; height: 100%; }
 
-/* Corazón latiendo con doble pulso realista */
+/* Animaciones iconos pecho */
 .heart-beat { animation: heart-beat 1.1s ease-in-out infinite; }
 @keyframes heart-beat {
-    0%    { transform: scale(1); }
-    14%   { transform: scale(1.28); }
-    28%   { transform: scale(1.05); }
-    42%   { transform: scale(1.18); }
-    70%   { transform: scale(1); }
-    100%  { transform: scale(1); }
+    0%  { transform: scale(1); }
+    14% { transform: scale(1.28); }
+    28% { transform: scale(1.05); }
+    42% { transform: scale(1.18); }
+    70% { transform: scale(1); }
 }
-
-/* Wifi con ondas que se propagan */
 .wifi-animate .wifi-ring { animation: wifi-fade 1.4s ease-out infinite; opacity: 0; }
 .wifi-animate .wifi-ring:nth-child(1) { animation-delay: 0s; }
 .wifi-animate .wifi-ring:nth-child(2) { animation-delay: 0.35s; }
 .wifi-animate .wifi-ring:nth-child(3) { animation-delay: 0.7s; }
-@keyframes wifi-fade { 0%{opacity:0} 20%{opacity:1} 100%{opacity:0} }
-
-/* Spinner de búsqueda */
+@keyframes wifi-fade { 0%{opacity:0} 20%{opacity:0.85} 100%{opacity:0} }
 .search-spin { animation: search-spin-anim 1.2s linear infinite; transform-origin: 40px 40px; }
 @keyframes search-spin-anim { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-
-/* Batería parpadeando cuando baja */
-.battery-warn { animation: batt-warn 0.8s ease-in-out infinite alternate; }
-@keyframes batt-warn { from{opacity:1} to{opacity:0.3} }
-
-/* Zzzs flotando */
 .zz-float { animation: zz-float-anim 2s ease-in-out infinite; }
 .zz-float:nth-child(2) { animation-delay: 0.6s; }
 .zz-float:nth-child(3) { animation-delay: 1.2s; }
-@keyframes zz-float-anim {
-    0%   { opacity: 0; transform: translateY(0) scale(0.8); }
-    30%  { opacity: 1; }
-    100% { opacity: 0; transform: translateY(-20px) scale(1.1); }
-}
-
-/* Reconocimiento facial — destello */
+@keyframes zz-float-anim { 0%{opacity:0;transform:translateY(0) scale(0.8)} 30%{opacity:1} 100%{opacity:0;transform:translateY(-18px) scale(1.1)} }
 .face-recognised { animation: face-rec 0.6s ease-out; }
-@keyframes face-rec {
-    0%  { transform: scale(1.4); opacity: 1; }
-    100%{ transform: scale(1);   opacity: 1; }
-}
+@keyframes face-rec { 0%{transform:scale(1.4);opacity:1} 100%{transform:scale(1);opacity:1} }
 
-/* ── BOTONES UI ───────────────────────────────────────────────────── */
+/* ── BOTONES CONTROL ──────────────────────────────────────────────────────── */
 .mic-toggle-btn, .ble-btn {
     position: absolute; top: 18px;
-    width: 46px; height: 46px;
+    width: 44px; height: 44px;
     border: none; border-radius: 50%;
-    font-size: 20px;
+    font-size: 19px;
     display: flex; justify-content: center; align-items: center;
     cursor: pointer; z-index: 10000;
-    background: rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.28);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     transition: all 0.2s ease;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0,60,120,0.12);
 }
-.mic-toggle-btn { right: 18px; }
-.ble-btn        { right: 72px; }
-.mic-toggle-btn.off    { background: rgba(220,50,50,0.45); }
-.ble-btn.active        { background: rgba(0,212,255,0.6); box-shadow: 0 0 15px #00d4ff; }
-.mic-toggle-btn.active { background: rgba(0,204,102,0.5); box-shadow: 0 0 12px #00cc66; animation: mic-pulse 1s ease-in-out infinite alternate; }
-@keyframes mic-pulse { from{box-shadow:0 0 8px #00cc66} to{box-shadow:0 0 20px #00cc66} }
+.mic-toggle-btn { right: 16px; }
+.ble-btn        { right: 68px; }
+.mic-toggle-btn.off    { background: rgba(220,50,50,0.4); }
+.ble-btn.active        { background: rgba(0,212,255,0.5); box-shadow: 0 0 12px #00d4ff; }
+.mic-toggle-btn.active { background: rgba(0,200,100,0.4); box-shadow: 0 0 10px #00cc66; animation: mic-pulse 1s ease-in-out infinite alternate; }
+@keyframes mic-pulse { from{box-shadow:0 0 5px #00cc66} to{box-shadow:0 0 16px #00cc66} }
 
-/* ── SELFIE ───────────────────────────────────────────────────────── */
-#photo-panel {
-    position: absolute; bottom: 18px; right: 18px;
-    z-index: 1000; animation: slide-up 0.5s cubic-bezier(0.34,1.56,0.64,1);
+/* Burbuja humor */
+#mood-bubble {
+    position: absolute; top: 70px; left: 14px;
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(8px);
+    border-radius: 16px; padding: 5px 11px;
+    font-size: 12px; font-weight: 600; color: #333;
+    z-index: 200; transition: opacity 0.5s ease;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,60,120,0.1);
+    animation: mood-slide 0.3s cubic-bezier(0.34,1.56,0.64,1);
 }
-#photo-panel.hidden { display: none; }
-.polaroid {
-    background: white;
-    padding: 10px 10px 28px;
-    box-shadow: 0 12px 30px rgba(0,0,0,0.45);
-    border-radius: 3px;
-    transform: rotate(4deg);
-    transition: transform 0.3s ease;
-}
-.polaroid:hover { transform: scale(1.05) rotate(1.5deg); }
-#photo-img { width: 180px; height: auto; background: #eee; display: block; }
-@keyframes slide-up {
-    from { transform: translateY(120px) rotate(12deg); opacity: 0; }
-    to   { transform: translateY(0) rotate(4deg); opacity: 1; }
-}
+@keyframes mood-slide { from{transform:translateX(-14px);opacity:0} to{transform:translateX(0);opacity:1} }
+#mood-bubble.hidden { opacity: 0; }
 
-/* ── PANEL JUEGOS ─────────────────────────────────────────────────── */
-.game-panel {
-    position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
-    background: rgba(255,255,255,0.93);
-    padding: 18px 36px 22px;
-    border-radius: 22px;
-    box-shadow: 0 8px 40px rgba(0,120,220,0.18);
-    z-index: 1000; min-width: 260px; text-align: center;
-    border: 3px solid rgba(180,220,255,0.6);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    animation: panel-enter 0.3s cubic-bezier(0.34,1.56,0.64,1);
-}
-.game-panel.hidden { display: none; }
-@keyframes panel-enter { from{transform:translateX(-50%) scale(0.8);opacity:0} to{transform:translateX(-50%) scale(1);opacity:1} }
-.close-game-btn {
-    position: absolute; top: 10px; right: 12px;
-    background: none; border: none; font-size: 22px;
-    cursor: pointer; opacity: 0.6; transition: opacity 0.2s; line-height: 1;
-}
-.close-game-btn:hover { opacity: 1; }
-#game-text {
-    font-size: clamp(32px, 9vw, 48px);
-    font-weight: 900; color: #111;
-    letter-spacing: 2px; line-height: 1.2;
-}
-
-/* ── MODAL API ────────────────────────────────────────────────────── */
+/* ── MODAL API ─────────────────────────────────────────────────────────────── */
 .api-modal {
     position: absolute; top:0; left:0; width:100%; height:100%;
-    background: rgba(0,0,0,0.88);
+    background: rgba(0,10,25,0.88);
     display: flex; justify-content: center; align-items: center;
     z-index: 5000;
 }
 .modal-content {
-    background: #fff; color: #111; padding: 28px 32px;
-    border-radius: 20px; text-align: center; max-width: 320px; width: 90%;
+    background: #fff; color: #111; padding: 26px 28px;
+    border-radius: 20px; text-align: center; max-width: 300px; width: 90%;
 }
-.modal-content h2 { font-size: 20px; margin-bottom: 10px; }
-.modal-content p  { font-size: 14px; color: #555; margin-bottom: 14px; }
+.modal-content h2 { font-size: 18px; margin-bottom: 8px; }
+.modal-content p  { font-size: 13px; color: #555; margin-bottom: 12px; }
 .modal-content input {
-    width: 100%; padding: 10px 14px; font-size: 15px;
-    border: 1.5px solid #ccc; border-radius: 10px; margin-bottom: 12px; outline: none;
+    width: 100%; padding: 10px 12px; font-size: 14px;
+    border: 1.5px solid #ccc; border-radius: 10px; margin-bottom: 10px; outline: none;
 }
-.modal-content input:focus { border-color: #00d4ff; }
+.modal-content input:focus { border-color: #00a8d4; }
 .modal-content button {
-    width: 100%; padding: 11px; font-size: 15px; font-weight: 700;
-    background: #00d4ff; color: #111; border: none; border-radius: 10px;
+    width: 100%; padding: 10px; font-size: 15px; font-weight: 700;
+    background: linear-gradient(135deg, #00c6ff, #0072ff);
+    color: #fff; border: none; border-radius: 10px;
     cursor: pointer; transition: opacity 0.2s;
 }
-.modal-content button:hover { opacity: 0.85; }
+.modal-content button:hover { opacity: 0.88; }
 
-/* ── GLITCH ───────────────────────────────────────────────────────── */
-.glitch-overlay { position: absolute; width:100%; height:100%; pointer-events:none; z-index:5; }
-.glitch-block { position:absolute; background:#00d4ff; opacity:0.25; }
-.glitch-vibration { animation: glitchVib 0.18s steps(2) infinite; filter: hue-rotate(90deg) saturate(1.5); }
-@keyframes glitchVib {
-    0%  { transform: translate(0,0); }
-    25% { transform: translate(3px,-2px); }
-    50% { transform: translate(-3px,2px); }
-    75% { transform: translate(2px,3px); }
+/* ── PANEL JUEGOS ──────────────────────────────────────────────────────────── */
+.game-panel {
+    position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.92);
+    padding: 14px 28px 18px;
+    border-radius: 20px;
+    box-shadow: 0 6px 28px rgba(0,80,160,0.14);
+    z-index: 1000; min-width: 220px; text-align: center;
+    border: 2px solid rgba(140,200,230,0.4);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: panel-enter 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+.game-panel.hidden { display: none; }
+@keyframes panel-enter { from{transform:translateX(-50%) scale(0.82);opacity:0} to{transform:translateX(-50%) scale(1);opacity:1} }
+.close-game-btn {
+    position: absolute; top: 8px; right: 10px;
+    background: none; border: none; font-size: 19px;
+    cursor: pointer; opacity: 0.5; transition: opacity 0.2s;
+}
+.close-game-btn:hover { opacity: 1; }
+#game-text {
+    font-size: clamp(26px, 7.5vw, 42px);
+    font-weight: 900; color: #111;
+    letter-spacing: 2px; line-height: 1.2;
 }
 
-/* ── FLASH ────────────────────────────────────────────────────────── */
+/* ── HISTORIA ───────────────────────────────────────────────────────────────── */
+#story-panel {
+    position: absolute; top:0; left:0; width:100%; height:100%;
+    background: rgba(0,15,35,0.76);
+    display: flex; justify-content: center; align-items: center;
+    z-index: 800; padding: 18px;
+}
+#story-panel.hidden { display: none; }
+.story-bubble {
+    background: #fff; border-radius: 20px;
+    padding: 22px 26px; max-width: 310px; width: 100%;
+    font-size: 19px; font-weight: 700; line-height: 1.45;
+    color: #111; text-align: center;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.25);
+    position: relative;
+    animation: story-pop 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes story-pop { from{transform:scale(0.74);opacity:0} to{transform:scale(1);opacity:1} }
+.story-bubble::after {
+    content:''; position:absolute; bottom:-14px; left:50%; transform:translateX(-50%);
+    border: 8px solid transparent; border-top-color: #fff;
+}
+
+/* ── SELFIE ─────────────────────────────────────────────────────────────────── */
+#photo-panel {
+    position: absolute; bottom: 16px; right: 16px;
+    z-index: 1000; animation: slide-up 0.5s cubic-bezier(0.34,1.56,0.64,1);
+}
+#photo-panel.hidden { display: none; }
+.polaroid {
+    background: white; padding: 8px 8px 24px;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.38);
+    border-radius: 3px; transform: rotate(4deg);
+}
+#photo-img { width: 150px; height: auto; background: #eee; display: block; }
+@keyframes slide-up {
+    from { transform: translateY(90px) rotate(10deg); opacity: 0; }
+    to   { transform: translateY(0) rotate(4deg); opacity: 1; }
+}
+
+/* ── GLITCH ─────────────────────────────────────────────────────────────────── */
+.glitch-overlay { position: absolute; width:100%; height:100%; pointer-events:none; z-index:5; }
+.glitch-block { position:absolute; background:#00d4ff; opacity:0.18; }
+.glitch-vibration { animation: glitchVib 0.18s steps(2) infinite; filter: hue-rotate(90deg) saturate(1.5); }
+@keyframes glitchVib {
+    0% {transform:translate(0,0)} 25%{transform:translate(3px,-2px)}
+    50%{transform:translate(-3px,2px)} 75%{transform:translate(2px,3px)}
+}
+
+/* ── FLASH ──────────────────────────────────────────────────────────────────── */
 .camera-flash {
     position: fixed; top:0; left:0; width:100vw; height:100vh;
     background: white; z-index: 10000; opacity:0; pointer-events:none;
 }
-.flash-active { animation: flashAnim 0.45s ease-out forwards; }
+.flash-active { animation: flashAnim 0.4s ease-out forwards; }
 @keyframes flashAnim { 0%{opacity:1} 100%{opacity:0} }
-
-/* ── HISTORIA ─────────────────────────────────────────────────────── */
-#story-panel {
-    position: absolute; top:0; left:0; width:100%; height:100%;
-    background: rgba(0,0,0,0.75);
-    display: flex; justify-content: center; align-items: center;
-    z-index: 800; padding: 20px;
-}
-#story-panel.hidden { display: none; }
-.story-bubble {
-    background: #fff; border-radius: 24px;
-    padding: 28px 32px; max-width: 340px; width: 100%;
-    font-size: 22px; font-weight: 700; line-height: 1.45;
-    color: #111; text-align: center;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-    position: relative;
-    animation: story-pop 0.4s cubic-bezier(0.34,1.56,0.64,1);
-}
-@keyframes story-pop { from{transform:scale(0.7);opacity:0} to{transform:scale(1);opacity:1} }
-.story-bubble::after {
-    content: '';
-    position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
-    border: 10px solid transparent;
-    border-top-color: #fff;
-}
-
-/* ── MOOD BUBBLE ──────────────────────────────────────────────────── */
-#mood-bubble {
-    position: absolute; top: 70px; left: 18px;
-    background: rgba(255,255,255,0.88); backdrop-filter: blur(8px);
-    border-radius: 20px; padding: 6px 14px;
-    font-size: 13px; font-weight: 600; color: #333;
-    z-index: 200; transition: opacity 0.5s ease;
-    pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    animation: mood-slide 0.3s cubic-bezier(0.34,1.56,0.64,1);
-}
-@keyframes mood-slide { from{transform:translateX(-20px);opacity:0} to{transform:translateX(0);opacity:1} }
-#mood-bubble.hidden { opacity: 0; }
 
 #debug-info { display: none !important; }
