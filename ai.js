@@ -98,7 +98,6 @@ COMANDOS:
 [MUSIC: canción] → música  
 [RENAME: nombre] → si te corrigen el nombre
 [LEARNT: cosa] → cuando ${userKey} te enseñe algo nuevo
-[DANCE] → cuando te pidan que bailes
 
 ${rulesSection}
 ${learntSection}
@@ -259,7 +258,6 @@ export async function handleInput(userText, isInternal = false) {
         const showMatch   = resp.match(/\[SHOW:\s*([^\]]+)\]/);
         const renameMatch = resp.match(/\[RENAME:\s*([^\]]+)\]/);
         const learntMatch = resp.match(/\[LEARNT:\s*([^\]]+)\]/);
-        const danceMatch  = resp.includes('[DANCE]');
 
         if (musicMatch) { logMusic(musicMatch[1].trim()); playMusic(musicMatch[1].trim()); }
 
@@ -290,11 +288,6 @@ export async function handleInput(userText, isInternal = false) {
             }
         }
 
-        if (danceMatch) {
-            startDanceMode();
-            setTimeout(() => stopDanceMode(), 15000);
-        }
-
         if (isSelfie) { logSelfie(); setTimeout(() => hidePhoto(), 9000); }
 
         const cleanResp = resp
@@ -302,7 +295,6 @@ export async function handleInput(userText, isInternal = false) {
             .replace(/\[SHOW:[^\]]*\]/g, '')
             .replace(/\[RENAME:[^\]]*\]/g, '')
             .replace(/\[LEARNT:[^\]]*\]/g, '')
-            .replace(/\[DANCE\]/g, '')
             .trim();
 
         await speak(cleanResp);
