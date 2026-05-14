@@ -177,7 +177,7 @@ async function narrateNextChapter() {
         changeState('IDLE');
         setExpression('happy');
         logStory(userName());
-        speak(`¡Fin! ¿Qué te ha parecido, ${userName()}? ¡Bip!`);
+        await speak(`¡Fin! ¿Qué te ha parecido, ${userName()}? ¡Bip!`);
         return;
     }
     const chapter = storyChapters[storyChapter];
@@ -194,7 +194,7 @@ async function narrateNextChapter() {
         changeState('IDLE');
         setExpression('happy');
         logStory(userName());
-        speak(`¡Fin de la historia! ¡Qué aventura, ${userName()}! ¡Bip bip!`);
+        await speak(`¡Fin de la historia! ¡Qué aventura, ${userName()}! ¡Bip bip!`);
     }
 }
 

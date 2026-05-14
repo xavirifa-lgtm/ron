@@ -58,6 +58,7 @@ export function startVisionLoop() {
                     changeState('IDLE');
                     setExpression('happy');
                     RonState.framesWithoutFace = 0;
+                    RonState.lastEmotion = 'neutral'; // reset para evitar reacciones falsas al despertar
                     const wakeUps = [
                         "¡Bip! ¡Uy! ¡Me había quedado frito! ¿Cuánto rato llevas ahí?",
                         "¡Zzzz... bip! ¡Ah! ¡Estaba soñando con palomitas de datos!",

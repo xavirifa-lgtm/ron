@@ -145,7 +145,7 @@ export function setChestIcon(type, value = null) {
             </svg>`;
             break;
 
-        case 'battery':
+        case 'battery': {
             const pct = value !== null ? Math.max(0, Math.min(100, value)) : (RonState.batteryLevel || 100);
             const col = pct > 40 ? '#22c55e' : pct > 15 ? '#f59e0b' : '#ef4444';
             icon.innerHTML = `<svg viewBox="0 0 100 58" aria-hidden="true">
@@ -154,6 +154,7 @@ export function setChestIcon(type, value = null) {
                 <rect x="8" y="13" width="${Math.round(72 * pct / 100)}" height="32" rx="4" fill="${col}"/>
             </svg>`;
             break;
+        }
 
         case 'zz':
             icon.innerHTML = `<svg viewBox="0 0 100 78" aria-hidden="true">
