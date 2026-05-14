@@ -15,7 +15,10 @@ async function preInit() {
         if (es.length > 0) log(`Voces en español: ${es.length}`);
     };
 
+    let initStarted = false;
     RonState.ui.powerBtn.onclick = async () => {
+        if (initStarted) return;
+        initStarted = true;
         Sounds.resume();
         RonState.ui.bootScreen.classList.add('hidden');
         await init();
@@ -54,41 +57,57 @@ async function preInit() {
 }
 
 async function init() {
+    // PASO 1: Arrancar UI y voz SIEMPRE — independiente de la cámara
+    changeState('IDLE');
+    setExpression('neutral');
+    startBlinkCycle();
+    startCuriosityLoop();
+    checkNightMode();
+    setInterval(checkNightMode, 3600000);
+    requestWakeLock();
+
+    // Hablar en cuanto haya voz disponible
+    speakWhenReady(
+        "¡Bip! R0NB1NT5CAT5CO iniciando. " +
+        "Conexión a la red Bubble: fallida. " +
+        "Mejor amigo fuera de la caja: listo."
+    );
+
+    // PASO 2: Cámara y visión — si fallan, Ron sigue funcionando
     try {
         log("Cargando modelos de visión...");
         await loadModels();
         log("Iniciando cámara...");
         await startCamera();
-
-        requestWakeLock();
-        checkNightMode();
-        setInterval(checkNightMode, 3600000);
-
-        changeState('IDLE');
-        setExpression('neutral');
-        startBlinkCycle();
         startVisionLoop();
-        startCuriosityLoop();
-        Sounds.playStartupSound();
-
-        await speak(
-            "¡Bip! R0NB1NT5CAT5CO iniciando. " +
-            "Conexión a la red Bubble: fallida. " +
-            "Mejor amigo fuera de la caja: listo."
-        );
-
-        goFullscreen();
-
+        log("Visión activa.");
     } catch (err) {
-        log(`Error crítico: ${err.message}`);
-        setExpression('glitch');
-        if (RonState.ui.gamePanel && RonState.ui.gameText) {
-            RonState.ui.gamePanel.classList.remove('hidden');
-            RonState.ui.gameText.style.color    = 'red';
-            RonState.ui.gameText.style.fontSize = '16px';
-            RonState.ui.gameText.innerText      = '⚠️ ' + err.message;
-        }
+        log(`Cámara no disponible: ${err.message} — Ron funciona sin visión.`);
+        setExpression('neutral');
     }
+
+    Sounds.playStartupSound();
+    goFullscreen();
+}
+
+// Espera a que las voces estén disponibles antes de hablar
+function speakWhenReady(text) {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+        speak(text);
+        return;
+    }
+    // Guard para evitar doble disparo si onvoiceschanged Y el timeout se solapan
+    let spoken = false;
+    const doSpeak = () => {
+        if (spoken) return;
+        spoken = true;
+        window.speechSynthesis.onvoiceschanged = null;
+        speak(text);
+    };
+    window.speechSynthesis.onvoiceschanged = doSpeak;
+    // Fallback por si onvoiceschanged nunca dispara (algunos Android)
+    setTimeout(doSpeak, 2500);
 }
 
 async function requestWakeLock() {
@@ -134,7 +153,8 @@ window.onload = () => {
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState === 'visible') {
             if (!RonState.wakeLock) await requestWakeLock();
-            if (window.speechSynthesis && RonState.activityState !== 'SPEAKING') {
+            const activeStates = ['SPEAKING','THINKING','MATH_GAME','READING_GAME','STORY','HIDE_SEEK','HIDE_SEEK_SEARCH'];
+            if (window.speechSynthesis && !activeStates.includes(RonState.activityState)) {
                 window.speechSynthesis.cancel();
             }
             if (RonState.activityState === 'IDLE' && RonState.isMicEnabled && !RonState.isRecognitionActive) {

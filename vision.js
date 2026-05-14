@@ -209,6 +209,8 @@ function updateEmotion(detection) {
 }
 
 export function captureOptimizedFrame() {
+    // Guard: si la cámara no está disponible, devolver null
+    if (!RonState.ui.video || !RonState.ui.video.videoWidth) return null;
     const MAX = 1024;
     const canvas = document.createElement('canvas');
     let w = RonState.ui.video.videoWidth  || 640;

@@ -58,7 +58,7 @@ export async function handleMathAnswer(text) {
             "¡BIEN! ¡Mi detector de respuestas correctas al 100%!"
         ];
         await speak(cheers[Math.floor(Math.random() * cheers.length)]);
-        startMathGame();
+        await startMathGame();
     } else if (!isNaN(num)) {
         setExpression('sad');
         await speak(`Mmm... no creo que sea ${num}. ¡Inténtalo otra vez, ${userName()}!`);
@@ -97,7 +97,7 @@ export async function handleReadingAnswer(text) {
     if (matches >= targetWords.length - 1) {
         setExpression('happy');
         await speak(`¡PERFECTO! ¡Lees genial, ${userName()}! ¡Bip!`);
-        startReadingGame();
+        await startReadingGame();
     } else {
         await speak("Mmm... casi. Lee despacito, letra a letra. ¡Tú puedes!");
         if (RonState.activityState === 'IDLE') changeState('READING_GAME');
@@ -166,6 +166,8 @@ export async function startPersonalizedStory() {
 
         storyChapter = 0;
         await speak(`¡Bip bip! ¡Hora de la historia! "La gran aventura de ${name} y Ron". ¡Empezamos!`);
+        // Restaurar STORY tras el speak de intro (que lo pone IDLE)
+        if (RonState.activityState === 'IDLE') changeState('STORY');
         await narrateNextChapter();
 
     } catch (e) {
@@ -190,9 +192,13 @@ async function narrateNextChapter() {
     showStoryPanel(chapter);
     storyChapter++;
     await speak(chapter);
+    // Restaurar STORY tras el speak (que lo pone IDLE)
+    if (RonState.activityState === 'IDLE') changeState('STORY');
 
     if (storyChapter < storyChapters.length) {
         await speak("¿Continuamos con el siguiente capítulo?");
+        // Restaurar STORY de nuevo para que handleInput lo detecte correctamente
+        if (RonState.activityState === 'IDLE') changeState('STORY');
         RonState.storyPendingNextChapter = true;
     } else {
         hideStoryPanel();

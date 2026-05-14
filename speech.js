@@ -174,9 +174,14 @@ export function speak(text) {
 
         setTimeout(() => {
             const u = new SpeechSynthesisUtterance(text);
-            const voices = window.speechSynthesis.getVoices();
+
+            // Android a veces devuelve [] la primera vez — intentar de nuevo
+            let voices = window.speechSynthesis.getVoices();
+            if (voices.length === 0) voices = window.speechSynthesis.getVoices();
+
             const best = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural')))
-                      || voices.find(v => v.lang.startsWith('es'));
+                      || voices.find(v => v.lang.startsWith('es'))
+                      || voices[0]; // último recurso: primera voz disponible
             if (best) u.voice = best;
 
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -194,6 +199,7 @@ export function speak(text) {
                 stopMouthAnimation();
                 stopKeepAlive();
                 setExpression('neutral');
+                // Tras hablar, Ron escucha sin wake word durante 15 segundos
                 RonState.isWaitingForWakeWord = false;
                 changeState('IDLE');
                 if (convTimeout) clearTimeout(convTimeout);

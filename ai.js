@@ -11,7 +11,7 @@ import { logSelfie, logMusic, getDiarySummary } from './diary.js';
 export async function triggerSpontaneous(prompt) {
     if (RonState.activityState !== 'IDLE') return;
     log("Espontáneo: " + prompt.substring(0, 60));
-    handleInput(`[INICIATIVA INTERNA]: ${prompt}`, true);
+    await handleInput(`[INICIATIVA INTERNA]: ${prompt}`, true);
 }
 
 function extractMemoriesAsync(text, userKey) {
@@ -189,7 +189,7 @@ export async function handleInput(userText, isInternal = false) {
     const isV      = isSelfie || visualKw.some(kw => t.includes(kw));
     const userKey  = RonState.currentUser || 'amiga';
 
-    // Guardar memoria
+    // Guardar memoria — solo si es el usuario hablando, no iniciativas internas
     if (RonState.currentUser && !isInternal && !isSelfie) {
         if (!RonState.userStats[RonState.currentUser]) RonState.userStats[RonState.currentUser] = { history: [], likes: [], dislikes: [] };
         const u = RonState.userStats[RonState.currentUser];
@@ -239,14 +239,18 @@ export async function handleInput(userText, isInternal = false) {
 
         if (isV) {
             const img = captureOptimizedFrame();
-            let vSys  = sys + (isSelfie
-                ? `\n[SELFIE]: Comenta la foto en 1 frase graciosamente confusa.`
-                : `\n[VISIÓN]: ${userKey} te enseña algo. Opina con entusiasmo, a veces te equivocas. Máx 25 palabras. Termina con una pregunta.`);
-            if (isSelfie) showPhoto(img);
-            res  = await callGroqAPI(apiKey, { model: visionModel, messages: [{ role: 'user', content: [{ type: 'text', text: `${vSys}\n\n[DICE ${userKey.toUpperCase()}]: ${userText}` }, { type: 'image_url', image_url: { url: img } }] }] });
-            data = await res.json();
-            if (res.ok) success = true;
-            else log(`Error visión: ${data.error?.message}`);
+            if (img) {
+                let vSys = sys + (isSelfie
+                    ? `\n[SELFIE]: Comenta la foto en 1 frase graciosamente confusa.`
+                    : `\n[VISIÓN]: ${userKey} te enseña algo. Opina con entusiasmo, a veces te equivocas. Máx 25 palabras. Termina con una pregunta.`);
+                if (isSelfie) showPhoto(img);
+                res  = await callGroqAPI(apiKey, { model: visionModel, messages: [{ role: 'user', content: [{ type: 'text', text: `${vSys}\n\n[DICE ${userKey.toUpperCase()}]: ${userText}` }, { type: 'image_url', image_url: { url: img } }] }] });
+                data = await res.json();
+                if (res.ok) success = true;
+                else log(`Error visión: ${data.error?.message}`);
+            } else {
+                log("Cámara no disponible, procesando como texto.");
+            }
         }
 
         if (!success) {
