@@ -276,7 +276,7 @@ export async function handleInput(userText, isInternal = false) {
             }
         }
 
-        if (renameMatch && RonState.currentUser && RonState.lastDescriptor) {
+        if (renameMatch && RonState.currentUser && RonState.lastDescriptor && typeof faceapi !== 'undefined') {
             const raw     = renameMatch[1].trim();
             const newName = raw.charAt(0).toUpperCase() + raw.slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ ]/g, '');
             if (newName.length > 1) {
