@@ -237,19 +237,21 @@ export function playGlitchSequence() {
 
 // Pitido de datos procesándose — como buffers cargando
 export function playDataProcess() {
-    const ctx = getCtx();
-    const now = ctx.currentTime;
-    [0, 0.06, 0.12, 0.17, 0.22].forEach((offset, i) => {
-        const osc  = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(400 + i * 180, now + offset);
-        gain.gain.setValueAtTime(0.04, now + offset);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.04);
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.start(now + offset);
-        osc.stop(now + offset + 0.04);
-    });
+    try {
+        const ctx = getCtx();
+        const now = ctx.currentTime;
+        [0, 0.06, 0.12, 0.17, 0.22].forEach((offset, i) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400 + i * 180, now + offset);
+            gain.gain.setValueAtTime(0.04, now + offset);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.04);
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(now + offset);
+            osc.stop(now + offset + 0.04);
+        });
+    } catch(e) {}
 }
 
 // Glitch aleatorio suave — para los momentos idle

@@ -16,7 +16,7 @@ export async function loadModels() {
 
 export async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 3840 }, height: { ideal: 2160 } }
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
     });
     RonState.ui.video.srcObject = stream;
     await RonState.ui.video.play();
@@ -24,7 +24,10 @@ export async function startCamera() {
 }
 
 export function startVisionLoop() {
+    let processing = false;
     setInterval(async () => {
+        if (processing) return;
+        processing = true;
         try {
             const detections = await faceapi
                 .detectAllFaces(RonState.ui.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.40 }))
@@ -217,6 +220,7 @@ export function startVisionLoop() {
                 }
             }
         } catch (e) { console.error("Error visión:", e); }
+        finally { processing = false; }
     }, 800);
 }
 

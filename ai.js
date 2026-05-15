@@ -4,7 +4,7 @@ import { speak } from './speech.js';
 import * as Sounds from './sounds.js';
 import { startMathGame, startReadingGame, startHideAndSeek } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
-import { logSelfie, logMusic } from './diary.js';
+import { logSelfie, logMusic, getDiarySummary } from './diary.js';
 import { detectFriendshipLesson, ronReceivesRule, getRules } from './friendship.js';
 import { detectLearningMoment, ronLearns, getRecentFacts } from './learning.js';
 import { playYTMusic, stopYTMusic } from './music.js';
@@ -118,24 +118,25 @@ export async function handleInput(userText, isInternal = false) {
         // Aprendizaje: Ron aprende un dato nuevo
         const learntFact = detectLearningMoment(userText);
         if (learntFact) return ronLearns(learntFact);
-    }
 
-    const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
-    if (musicKeywords.some(kw => t.includes(kw)) && (t.includes("pon") || t.includes("reproduce") || t.includes("busca"))) {
-        let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon |busca |quiero escuchar /gi, "").trim();
-        if (search && search.length > 2) {
-            setExpression('star');
-            speak(`¡Bip! Buscando ritmo de ${search}.`);
-            playYTMusic(search);
-            logMusic(search);
-            return;
+        // Música: comandos directos de voz (fuera del flujo de IA)
+        const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
+        if (musicKeywords.some(kw => t.includes(kw)) && (t.includes("pon") || t.includes("reproduce") || t.includes("busca"))) {
+            let search = t.replace(/ponme música de |ponme musica de |pon música de |pon musica de |ponme la canción de |ponme la cancion de |reproduce |pon la lista de |pon |busca |quiero escuchar /gi, "").trim();
+            if (search && search.length > 2) {
+                setExpression('star');
+                speak(`¡Bip! Buscando ritmo de ${search}.`);
+                playYTMusic(search);
+                logMusic(search);
+                return;
+            }
         }
-    }
 
-    if (t.includes("para la música") || t.includes("para la musica") || t.includes("para ron")) {
-        stopYTMusic();
-        log("Música parada.");
-        return speak("¡Bip! Música fuera.");
+        if (t.includes("para la música") || t.includes("para la musica") || t.includes("para ron")) {
+            stopYTMusic();
+            log("Música parada.");
+            return speak("¡Bip! Música fuera.");
+        }
     }
 
     // ── MODO ACOMPAÑANTE (película / videojuego / tablet) ─────────────────────
@@ -233,6 +234,8 @@ REGLAS ESTRICTAS DE COMPORTAMIENTO:
 4. ACCIONES: Para escribir en la pizarra usa [SHOW: texto]. Para poner música usa [MUSIC: canción]. Si te corrigen tu nombre, usa [RENAME: NuevoNombre] al final de tu frase.
 5. MEMORIA DE NOMBRES (¡CRÍTICO!): Si el usuario dice su nombre por primera vez ("soy X", "me llamo X", "soy yo X"), SIEMPRE añade [RENAME: X] al final de tu respuesta para guardarlo en tu memoria. Sin esto lo olvidarás para siempre.
 6. JUEGOS DISPONIBLES: Si alguien dice "jugar" sin especificar, menciona las opciones en español: sumas, escondite, veo veo, o leer juntos.
+7. CREADOR: Si alguien te pregunta quién te hizo, quién te programó, quién es tu creador o quién te construyó, responde siempre: "¡Bip! Mi creador es Xavi, el señor de los chuchumecos. ¡El mejor programador del universo conocido!"
+8. TU NOMBRE: Tu nombre completo de fábrica es "B-Bot Unidad Ron, identificador 5-IND". Si alguien te pregunta cómo te llamas POR PRIMERA VEZ, di tu nombre largo completo y añade "...pero me puedes llamar Ron". En todas las demás ocasiones di simplemente que te llamas Ron. Nunca uses el nombre largo más de una vez por conversación.
 
 MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, tu misión es conocerle y protegerle.`}`;
 
@@ -243,6 +246,10 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
         const learntFacts = getRecentFacts(6);
         if (learntFacts.length > 0) {
             sys += `\n\nCOSAS QUE TE HA ENSEÑADO ${userKey.toUpperCase()}: ${learntFacts.join('. ')}.`;
+        }
+        const diarySummary = getDiarySummary(4);
+        if (diarySummary) {
+            sys += `\n\n${diarySummary}`;
         }
 
         const hour = new Date().getHours();

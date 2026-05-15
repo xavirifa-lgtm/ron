@@ -3,10 +3,14 @@ import { setExpression, triggerSafetyGlitch, updateMouth, shiftEyes } from './ui
 import { handleInput } from './ai.js';
 import * as Sounds from './sounds.js';
 
-let convTimeout = null;
+let convTimeout      = null;
+let activeMouthInterval = null;
+
+// Estados donde el micrófono puede estar activo esperando entrada
+const MIC_ALLOWED_STATES = ['IDLE', 'STORY', 'MATH_GAME', 'READING_GAME'];
 
 export function startListening() {
-    if (RonState.activityState !== 'IDLE' || !RonState.isMicEnabled) return;
+    if (!MIC_ALLOWED_STATES.includes(RonState.activityState) || !RonState.isMicEnabled) return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { log("SpeechRecognition no disponible."); return; }
     if (RonState.isRecognitionActive) return; 
@@ -16,9 +20,10 @@ export function startListening() {
     RonState.recognition.continuous = false;      // false es más estable en Android Chrome
     RonState.recognition.interimResults = false;  // Solo resultados finales = menos ruido
 
-    RonState.recognition.onstart = () => { 
+    RonState.recognition.onstart = () => {
         RonState.isRecognitionActive = true;
-        changeState('LISTENING');
+        if (RonState.activityState === 'IDLE') changeState('LISTENING');
+        // En STORY/MATH_GAME/READING_GAME mantenemos el estado para que handleInput lo detecte
         log("🎙️ Escuchando...");
     };
 
@@ -33,20 +38,22 @@ export function startListening() {
         
         log(`Oído: ${text}`);
 
-        if (RonState.isWaitingForWakeWord) {
+        // En juegos/cuento saltamos el filtro de wake word — el niño está respondiendo al juego
+        const inGame = ['MATH_GAME', 'READING_GAME'].includes(RonState.activityState);
+        const inStory = RonState.activityState === 'STORY' && RonState.storyPendingNextChapter;
+
+        if (RonState.isWaitingForWakeWord && !inStory && !inGame) {
             if (t.includes("ron")) {
                 RonState.isWaitingForWakeWord = false;
-                // Si solo dijo "ron" (sin más), saludar y esperar
                 const words = t.replace(/ron/g,'').trim();
                 if (!words || words.length < 2) {
                     speak(`¡Bip! ¿Qué pasa, ${RonState.currentUser || 'humano'}?`);
                     return;
                 }
-                // Si dijo "ron [algo]", procesar directamente
             } else {
-                return; 
+                return;
             }
-        } else {
+        } else if (!inStory && !inGame) {
             if (convTimeout) clearTimeout(convTimeout);
         }
 
@@ -59,18 +66,18 @@ export function startListening() {
         RonState.isRecognitionActive = false;
         // 'no-speech' y 'aborted' son normales, reiniciar silenciosamente
         if (e.error === 'no-speech' || e.error === 'aborted') {
-            if (RonState.activityState === 'IDLE' && RonState.isMicEnabled) {
+            if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled) {
                 setTimeout(() => startListening(), 800);
             }
         }
     };
 
-    RonState.recognition.onend = () => { 
+    RonState.recognition.onend = () => {
         RonState.isRecognitionActive = false;
-        if (RonState.activityState === 'LISTENING') changeState('IDLE'); 
-        
-        // Auto-reinicio en Android/PC (no iOS)
-        if (RonState.activityState === 'IDLE' && RonState.isMicEnabled) {
+        if (RonState.activityState === 'LISTENING') changeState('IDLE');
+
+        // Auto-reinicio en Android/PC (no iOS) — también en juegos/cuento para escuchar respuestas
+        if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled) {
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             if (!isIOS) {
@@ -88,8 +95,8 @@ export function startListening() {
     } catch(e) { 
         log("Fallo al iniciar mic: " + e.message);
         RonState.isRecognitionActive = false;
-        setTimeout(() => { 
-            if (RonState.activityState === 'IDLE' && RonState.isMicEnabled) startListening(); 
+        setTimeout(() => {
+            if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled) startListening();
         }, 2000);
     }
 }
@@ -152,31 +159,34 @@ export function speak(text) {
             changeState('IDLE');
             return resolve();
         }
-        if (RonState.recognition) try { RonState.recognition.abort(); } catch(e) {} 
+        if (RonState.recognition) try { RonState.recognition.abort(); } catch(e) {}
+        // Cancelar intervalo anterior para evitar dos loops de boca en paralelo
+        if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
         changeState('SPEAKING');
-        setExpression('neutral'); // <-- BUG FIX: Elimina los ojos rectangulares de "Thinking"
-        
-        RonState.ui.mouth.classList.add('is-speaking'); 
+        setExpression('neutral');
+
+        if (RonState.ui.mouth) RonState.ui.mouth.classList.add('is-speaking');
 
         const mouthShapes = [
-            'M 50 15 A 20 20 0 0 1 50 55 A 20 20 0 0 1 50 15 Z', // Círculo grande
-            'M 30 15 L 70 15 L 70 55 L 30 55 Z',                 // Cuadrado
-            'M 50 25 A 10 10 0 0 1 50 45 A 10 10 0 0 1 50 25 Z', // Círculo pequeño
-            'M 20 25 Q 50 65 80 25 Z',                           // Media luna
-            'M 50 15 L 70 50 L 30 50 Z',                         // Triángulo
-            'M 20 30 L 80 30 L 80 40 L 20 40 Z'                  // Rectángulo ancho
+            'M 50 15 A 20 20 0 0 1 50 55 A 20 20 0 0 1 50 15 Z',
+            'M 30 15 L 70 15 L 70 55 L 30 55 Z',
+            'M 50 25 A 10 10 0 0 1 50 45 A 10 10 0 0 1 50 25 Z',
+            'M 20 25 Q 50 65 80 25 Z',
+            'M 50 15 L 70 50 L 30 50 Z',
+            'M 20 30 L 80 30 L 80 40 L 20 40 Z'
         ];
-        
+
         let shapeIdx = 0;
-        const mouthInterval = setInterval(() => {
+        activeMouthInterval = setInterval(() => {
             if (RonState.activityState === 'SPEAKING') {
                 updateMouth(mouthShapes[shapeIdx % mouthShapes.length]);
-                shiftEyes(); 
+                shiftEyes();
                 shapeIdx++;
             } else {
-                clearInterval(mouthInterval);
-                RonState.ui.mouth.classList.remove('is-speaking'); 
-                setExpression('neutral'); 
+                clearInterval(activeMouthInterval);
+                activeMouthInterval = null;
+                if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
+                setExpression('neutral');
             }
         }, 200); // <-- Ralentizado de 110ms a 200ms para más fluidez
 
@@ -202,14 +212,16 @@ export function speak(text) {
             Sounds.playBeep(880, 'square', 0.08, 0.05); // Bip inicial
             RonState.ui.mouthContainer.classList.add('mouth-vibrate');
         };
-        u.onend = () => { 
-            RonState.ui.mouthContainer.classList.remove('mouth-vibrate'); 
+        u.onend = () => {
+            if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
+            if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
+            if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.remove('mouth-vibrate');
             RonState.isWaitingForWakeWord = false; // Abrir ventana de conversación libre
             changeState('IDLE');
             
-            // Reiniciar escucha explícitamente tras hablar (Android necesita esto)
+            // Reiniciar escucha explícitamente tras hablar — también en juegos y cuento
             setTimeout(() => {
-                if (RonState.activityState === 'IDLE' && RonState.isMicEnabled && !RonState.isRecognitionActive) {
+                if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled && !RonState.isRecognitionActive) {
                     startListening();
                 }
             }, 500);
@@ -221,7 +233,11 @@ export function speak(text) {
             }, 30000); // 30 segundos de ventana libre tras cada respuesta
             resolve();
         };
-        u.onerror = (e) => { log(`Error síntesis: ${e?.error}`); changeState('IDLE'); resolve(); };
+        u.onerror = (e) => {
+            if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
+            if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
+            log(`Error síntesis: ${e?.error}`); changeState('IDLE'); resolve();
+        };
         window.speechSynthesis.speak(u);
     });
 }

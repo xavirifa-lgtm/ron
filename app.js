@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v25.3...");
+    log("Iniciando Ron v25.21...");
     initUI();
     setChestIcon('wifi');
 
@@ -70,7 +70,8 @@ async function init() {
     // Esperar voces Y hablar dentro del mismo async chain del click (requisito autoplay)
     await waitForVoices();
     speak(
-        "¡Bip! R0NB1NT5CAT5CO iniciando. " +
+        "¡Bip! B-Bot Unidad Ron, identificador 5-IND iniciando. " +
+        "Pero me puedes llamar Ron. " +
         "Conexión a la red Bubble: fallida. " +
         "Mejor amigo fuera de la caja: listo."
     );
@@ -97,8 +98,8 @@ function waitForVoices() {
     return new Promise(resolve => {
         if (window.speechSynthesis.getVoices().length > 0) return resolve();
         let resolved = false;
-        const done = () => { if (!resolved) { resolved = true; window.speechSynthesis.onvoiceschanged = null; resolve(); } };
-        window.speechSynthesis.onvoiceschanged = done;
+        const done = () => { if (!resolved) { resolved = true; window.speechSynthesis.removeEventListener('voiceschanged', done); resolve(); } };
+        window.speechSynthesis.addEventListener('voiceschanged', done);
         setTimeout(done, 3000);
     });
 }

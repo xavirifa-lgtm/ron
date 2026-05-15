@@ -98,10 +98,9 @@ function checkMorningGreeting() {
     const lastGreeting = localStorage.getItem('ron_last_morning') || '';
     const hour = new Date().getHours();
     if (hour >= 7 && hour < 11 && lastGreeting !== today && RonState.currentUser) {
+        localStorage.setItem('ron_last_morning', today); // guardar YA para evitar doble saludo si IDLE se repite rápido
         setTimeout(() => {
             if (RonState.activityState === 'IDLE') {
-                // Guardamos la fecha solo cuando realmente vamos a saludar
-                localStorage.setItem('ron_last_morning', today);
                 import('./ai.js').then(ai => ai.morningGreeting()).catch(() => {});
             }
         }, 3000);
