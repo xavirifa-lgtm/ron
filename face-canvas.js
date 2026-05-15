@@ -141,30 +141,7 @@ function drawEye(cx, cy, ew, eh, night, dance) {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function eyeGradient(rx, ry, night) {
-    const g = ctx.createRadialGradient(-rx*0.22, -ry*0.30, rx*0.04, 0, 0, Math.max(rx, ry)*1.05);
-    if (night) {
-        g.addColorStop(0,   'rgb(50,175,220)');
-        g.addColorStop(0.6, 'rgb(10,130,180)');
-        g.addColorStop(1,   'rgb(0,80,125)');
-    } else {
-        g.addColorStop(0,   `rgb(${ec.r+32},${ec.g+32},${ec.b+32})`);
-        g.addColorStop(0.6, `rgb(${ec.r+8},${ec.g+8},${ec.b+8})`);
-        g.addColorStop(1,   `rgb(${Math.max(0,ec.r-4)},${Math.max(0,ec.g-4)},${Math.max(0,ec.b-4)})`);
-    }
-    return g;
-}
-
-function highlight(rx, ry) {
-    if (blinkP > 0.75) return;
-    const hx = rx*0.28, hy = -ry*0.34, hr = rx*0.19;
-    const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-    hg.addColorStop(0,    'rgba(255,255,255,0.95)');
-    hg.addColorStop(0.5,  'rgba(255,255,255,0.25)');
-    hg.addColorStop(1,    'rgba(255,255,255,0)');
-    ctx.beginPath();
-    ctx.ellipse(hx, hy, hr, hr * 0.7, 0, 0, Math.PI * 2);
-    ctx.fillStyle = hg;
-    ctx.fill();
+    return night ? 'rgb(0,160,210)' : `rgb(${ec.r},${ec.g},${ec.b})`;
 }
 
 // Rounded-rect centrado en 0,0 — para la forma pill de los ojos de Ron
@@ -196,7 +173,6 @@ function drawNormalEye(rx, ry, night) {
     ctx.lineWidth = Math.max(1.5, rx * 0.06);
     ctx.stroke();
     ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-    highlight(rx, ery);
 }
 
 function drawHappyEye(rx, ry, night) {
@@ -211,7 +187,6 @@ function drawHappyEye(rx, ry, night) {
     ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
     ctx.lineWidth = Math.max(1.5, rx * 0.06);
     ctx.stroke();
-    highlight(rx, ery);
 }
 
 function drawStarEye(rx, night, dance) {
@@ -266,7 +241,6 @@ function drawSquintEye(rx, ry, night) {
     ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
     ctx.lineWidth = Math.max(1.5, rx * 0.06);
     ctx.stroke();
-    highlight(rx, ery);
 }
 
 function drawSadEye(rx, ry, night) {
@@ -278,7 +252,6 @@ function drawSadEye(rx, ry, night) {
     ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
     ctx.lineWidth = Math.max(1.5, rx * 0.06);
     ctx.stroke();
-    highlight(rx, ery);
     ctx.beginPath();
     ctx.moveTo(-rx, -ery * 0.1);
     ctx.lineTo(-rx * 0.2, -ery * 0.78);
