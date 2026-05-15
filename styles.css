@@ -101,7 +101,16 @@ body.dance-mode .ron-container {
 #power-btn:active { transform: scale(0.96); }
 .hidden { display: none !important; }
 
-/* ── CARA: panel blanco central + ojos y boca ────────────────────────────── */
+/* ── CANVAS — cara procedural de Ron ─────────────────────────────────────── */
+#ron-face {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* ── CARA: solo mantiene el icono de pecho visible, ojos/boca ocultados ───── */
 .face-container {
     position: relative;
     display: flex;
@@ -110,13 +119,12 @@ body.dance-mode .ron-container {
     justify-content: center;
     z-index: 5;
     margin-top: -6vh;
-    /* Panel de cara — plástico blanco brillante como Ron */
-    background: radial-gradient(ellipse at 48% 38%,
-        rgba(255,255,255,0.82) 0%,
-        rgba(220,242,255,0.55) 55%,
-        transparent 80%);
-    border-radius: 50%;
-    padding: clamp(32px, 10vw, 65px) clamp(28px, 9vw, 58px) clamp(24px, 7vw, 48px);
+}
+
+/* Ojos y boca HTML reemplazados por canvas — ocultar sin eliminar del DOM */
+.eyes-layer, .mouth-layer {
+    opacity: 0;
+    pointer-events: none;
 }
 
 /* ── OJOS ──────────────────────────────────────────────────────────────────
@@ -341,29 +349,54 @@ body.dance-mode .ron-container {
 
 /* ── PANEL JUEGOS ──────────────────────────────────────────────────────────── */
 .game-panel {
-    position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);
-    background: rgba(255,255,255,0.92);
-    padding: 14px 28px 18px;
-    border-radius: 20px;
-    box-shadow: 0 6px 28px rgba(0,80,160,0.14);
-    z-index: 1000; min-width: 220px; text-align: center;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.95);
+    border-radius: 22px;
+    box-shadow: 0 8px 32px rgba(0,80,160,0.18);
+    z-index: 1000;
+    width: min(92vw, 420px);
+    max-height: 78vh;
+    display: flex; flex-direction: column;
     border: 2px solid rgba(140,200,230,0.4);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     animation: panel-enter 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    overflow: hidden;
 }
 .game-panel.hidden { display: none; }
-@keyframes panel-enter { from{transform:translateX(-50%) scale(0.82);opacity:0} to{transform:translateX(-50%) scale(1);opacity:1} }
-.close-game-btn {
-    position: absolute; top: 8px; right: 10px;
-    background: none; border: none; font-size: 19px;
-    cursor: pointer; opacity: 0.5; transition: opacity 0.2s;
+@keyframes panel-enter { from{transform:translate(-50%,-50%) scale(0.82);opacity:0} to{transform:translate(-50%,-50%) scale(1);opacity:1} }
+
+/* Cabecera con la X — siempre visible */
+.game-panel-header {
+    flex-shrink: 0;
+    display: flex; justify-content: flex-end; align-items: center;
+    padding: 10px 12px 4px;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
 }
-.close-game-btn:hover { opacity: 1; }
+.close-game-btn {
+    background: rgba(0,0,0,0.07); border: none;
+    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s; flex-shrink: 0;
+}
+.close-game-btn:hover { background: rgba(0,0,0,0.15); }
+
+/* Contenido scrollable */
+.game-panel-body {
+    overflow-y: auto;
+    padding: 14px 20px 20px;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+}
+
 #game-text {
-    font-size: clamp(26px, 7.5vw, 42px);
-    font-weight: 900; color: #111;
-    letter-spacing: 2px; line-height: 1.2;
+    font-size: clamp(17px, 4.5vw, 26px);
+    font-weight: 700; color: #111;
+    line-height: 1.5; text-align: center;
+    word-break: break-word;
 }
 
 /* ── HISTORIA ───────────────────────────────────────────────────────────────── */

@@ -1,5 +1,9 @@
 import { RonState, log, changeState } from './core.js';
 import * as Sounds from './sounds.js';
+import {
+    initCanvas, canvasSetExpression, canvasSetEyeColor,
+    canvasShiftEyes, canvasTriggerBlink, canvasAddGlitch
+} from './face-canvas.js';
 
 let glitchInterval  = null;
 let moodBubbleTimer = null;
@@ -40,6 +44,7 @@ export function initUI() {
         RonState.ui.closeGameBtn.onclick = () => RonState.ui.gamePanel.classList.add('hidden');
     }
 
+    initCanvas();
     initBattery();
 }
 
@@ -79,6 +84,7 @@ export function handleStateChange(newState) {
 
 export function setEyeColor(color) {
     document.documentElement.style.setProperty('--ron-eye-color', color);
+    canvasSetEyeColor(color);
 }
 
 export function updateMouth(d) {
@@ -86,6 +92,7 @@ export function updateMouth(d) {
 }
 
 export function shiftEyes(errX = null, errY = null) {
+    canvasShiftEyes(errX, errY);
     const max = 10;
     if (errX !== null && errY !== null) {
         const mx = Math.max(-max, Math.min(max, errX * -70));
@@ -94,10 +101,6 @@ export function shiftEyes(errX = null, errY = null) {
             if (el) el.style.transform = `translate(${mx}px,${my}px)`;
         });
     } else {
-        const offset = (Math.random() - 0.5) * 12;
-        [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
-            if (el) el.style.transform = `translateX(${offset}px)`;
-        });
         if (Math.random() > 0.85) {
             import('./sounds.js').then(s => s.playBeep(2800, 'square', 0.004, 0.008));
         }
@@ -195,6 +198,7 @@ export function setChestIcon(type, value = null) {
 // ── Expresiones ───────────────────────────────────────────────────────────────
 export function setExpression(exp) {
     RonState.expressionState = exp;
+    canvasSetExpression(exp);
     const { left, right } = RonState.ui.eyes;
     if (!left || !right) return;
     [left, right].forEach(el => { el.className = 'eye'; el.style.transform = ''; });
@@ -293,15 +297,68 @@ export function startBlinkCycle() {
                     if (e) e.classList.remove('blink');
                 });
             }, 105);
-            if (Math.random() > 0.75) import('./sounds.js').then(s => s.playBeep(3200, 'sine', 0.003, 0.01));
-            if (Math.random() > 0.9) {
-                const eye = Math.random() > 0.5 ? RonState.ui.eyes.left : RonState.ui.eyes.right;
-                if (eye) { eye.classList.add('glitch'); setTimeout(() => eye.classList.remove('glitch'), 65 + Math.random() * 95); }
-            }
+            canvasTriggerBlink();
+            if (Math.random() > 0.75) import('./sounds.js').then(s => s.playClick(0.04));
         }
         setTimeout(blink, Math.random() * 5000 + 2500);
     };
     blink();
+}
+
+// Glitches visuales+sonoros aleatorios durante IDLE — como Ron fallando
+export function startIdleGlitchLoop() {
+    const tick = () => {
+        const delay = 8000 + Math.random() * 22000; // cada 8–30 s
+        setTimeout(() => {
+            if (!['IDLE','LISTENING'].includes(RonState.activityState)) { tick(); return; }
+            const r = Math.random();
+
+            if (r < 0.30) {
+                // Parpadeo rápido doble — ojo glitch en canvas
+                canvasTriggerBlink();
+                setTimeout(() => canvasTriggerBlink(), 90);
+                import('./sounds.js').then(s => s.playIdleGlitch());
+
+            } else if (r < 0.55) {
+                // Micro-estática: scanlines en canvas + overlay HTML
+                canvasAddGlitch(5, 0.10);
+                if (RonState.ui.glitchOverlay) {
+                    for (let i = 0; i < 3; i++) {
+                        const b = document.createElement('div');
+                        b.className = 'glitch-block';
+                        b.style.cssText = `width:${20+Math.random()*80}px;height:${2+Math.random()*8}px;` +
+                            `left:${Math.random()*100}vw;top:${Math.random()*100}vh;opacity:0.18`;
+                        RonState.ui.glitchOverlay.appendChild(b);
+                        setTimeout(() => b.remove(), 80 + Math.random() * 100);
+                    }
+                }
+                import('./sounds.js').then(s => s.playStatic(0.07, 0.05));
+
+            } else if (r < 0.72) {
+                // Temblor de ojos en canvas
+                canvasShiftEyes((Math.random()-0.5)*0.4, 0);
+                setTimeout(() => canvasShiftEyes(0, 0), 100);
+                import('./sounds.js').then(s => s.playBuzzGlitch(0.09));
+
+            } else if (r < 0.85) {
+                // Glitch completo: cara + scanlines + vibración
+                canvasAddGlitch(6, 0.18);
+                import('./sounds.js').then(s => s.playGlitchSequence());
+                if (RonState.ui.mainApp) {
+                    RonState.ui.mainApp.classList.add('glitch-vibration');
+                    setTimeout(() => RonState.ui.mainApp.classList.remove('glitch-vibration'), 350);
+                }
+
+            } else {
+                // Procesando datos: expresión pensando breve en canvas
+                canvasSetExpression('thinking');
+                setTimeout(() => canvasSetExpression(RonState.expressionState), 700);
+                import('./sounds.js').then(s => s.playDataProcess());
+            }
+            tick();
+        }, delay);
+    };
+    tick();
 }
 
 export function startGlitchEffect() {
@@ -323,6 +380,7 @@ export function triggerSafetyGlitch(reason) {
     log(`⚠️ GLITCH: ${reason}`);
     changeState('GLITCH');
     setExpression('glitch');
+    canvasAddGlitch(10, 0.5);
     if (RonState.ui.mainApp) RonState.ui.mainApp.classList.add('glitch-vibration');
     Sounds.playGlitchSound();
     startGlitchEffect();

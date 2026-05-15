@@ -22,6 +22,8 @@ export const RonState = {
     spontaneousTimer: null,
     isCheeringUp:  false,
     isSilentMode:  false,
+    companionMode:  false,   // true cuando está viendo/jugando contigo
+    companionTopic: '',      // qué están viendo/jugando
     unknownStabilityCounter: 0,
     emotionCooldownUntil: 0,
     lastSpontaneousTime:  0,

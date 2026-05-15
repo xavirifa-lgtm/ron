@@ -27,7 +27,7 @@ export function startVisionLoop() {
     setInterval(async () => {
         try {
             const detections = await faceapi
-                .detectAllFaces(RonState.ui.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 160 }))
+                .detectAllFaces(RonState.ui.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
                 .withFaceLandmarks()
                 .withFaceExpressions()
                 .withFaceDescriptors();
@@ -198,14 +198,29 @@ export function startVisionLoop() {
     }, 800);
 }
 
+const emotionBuffer = [];
+const EMOTION_MIN_CONFIDENCE = 0.38; // umbral mínimo para reportar emoción no-neutral
+
 function updateEmotion(detection) {
-    const exp  = detection.expressions;
-    let maxE   = 'neutral', maxS = 0;
+    const exp = detection.expressions;
+    let maxE = 'neutral', maxS = 0;
     for (const [e, s] of Object.entries(exp)) {
         if (s > maxS) { maxS = s; maxE = e; }
     }
+    // Si la emoción dominante no supera el umbral, neutral
+    if (maxE !== 'neutral' && maxS < EMOTION_MIN_CONFIDENCE) maxE = 'neutral';
+
     const dict = { happy:'feliz', sad:'triste', angry:'enfadado', surprised:'sorprendido', fearful:'miedo', neutral:'neutral', disgusted:'neutral' };
-    RonState.currentEmotion = dict[maxE] || 'neutral';
+    const emotion = dict[maxE] || 'neutral';
+
+    // Suavizado: acumula últimos 3 frames, reporta la emoción mayoritaria
+    emotionBuffer.push(emotion);
+    if (emotionBuffer.length > 3) emotionBuffer.shift();
+
+    const counts = {};
+    emotionBuffer.forEach(e => counts[e] = (counts[e] || 0) + 1);
+    const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+    RonState.currentEmotion = dominant;
 }
 
 export function captureOptimizedFrame() {

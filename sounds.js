@@ -139,3 +139,124 @@ export function playDanceBeat() {
     setTimeout(() => playBeep(240, 'square', 0.03, 0.1), 200);
     setTimeout(() => playBeep(180, 'square', 0.04, 0.12), 400);
 }
+
+// ── SONIDOS DE FALLO / GLITCH REALES ─────────────────────────────────────────
+
+// Ruido blanco corto — estática de radio
+export function playStatic(duration = 0.12, vol = 0.07) {
+    try {
+        const ctx        = getCtx();
+        const sampleRate = ctx.sampleRate;
+        const length     = Math.floor(sampleRate * duration);
+        const buffer     = ctx.createBuffer(1, length, sampleRate);
+        const data       = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1);
+
+        const src  = ctx.createBufferSource();
+        src.buffer = buffer;
+
+        // Filtro paso-banda para sonar a estática de electrónica, no ruido de ducha
+        const filter = ctx.createBiquadFilter();
+        filter.type            = 'bandpass';
+        filter.frequency.value = 2200;
+        filter.Q.value         = 0.8;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        src.start();
+        src.stop(ctx.currentTime + duration);
+    } catch(e) {}
+}
+
+// Clic mecánico corto — como relé o botón interno
+export function playClick(vol = 0.12) {
+    try {
+        const ctx    = getCtx();
+        const length = Math.floor(ctx.sampleRate * 0.018);
+        const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+        const data   = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (length * 0.3));
+        }
+        const src  = ctx.createBufferSource();
+        src.buffer = buffer;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start();
+    } catch(e) {}
+}
+
+// Zumbido de fallo eléctrico — interferencia
+export function playBuzzGlitch(duration = 0.18) {
+    try {
+        const ctx  = getCtx();
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sawtooth';
+        // Frecuencia que sube y baja caóticamente
+        osc.frequency.setValueAtTime(60,  ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(340, ctx.currentTime + 0.04);
+        osc.frequency.linearRampToValueAtTime(80,  ctx.currentTime + 0.09);
+        osc.frequency.linearRampToValueAtTime(520, ctx.currentTime + 0.13);
+        osc.frequency.linearRampToValueAtTime(40,  ctx.currentTime + duration);
+
+        gain.gain.setValueAtTime(0.09, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+    } catch(e) {}
+}
+
+// Secuencia de micro-glitches encadenados — como Ron procesando mal datos
+export function playGlitchSequence() {
+    const steps = [
+        () => playStatic(0.06, 0.09),
+        () => playClick(0.15),
+        () => playBeep(1800, 'square', 0.04, 0.06),
+        () => playBuzzGlitch(0.12),
+        () => playStatic(0.08, 0.06),
+        () => playBeep(220, 'sawtooth', 0.08, 0.05),
+    ];
+    let t = 0;
+    steps.forEach(fn => {
+        setTimeout(fn, t);
+        t += Math.random() * 90 + 40;
+    });
+}
+
+// Pitido de datos procesándose — como buffers cargando
+export function playDataProcess() {
+    const ctx = getCtx();
+    const now = ctx.currentTime;
+    [0, 0.06, 0.12, 0.17, 0.22].forEach((offset, i) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400 + i * 180, now + offset);
+        gain.gain.setValueAtTime(0.04, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.04);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.04);
+    });
+}
+
+// Glitch aleatorio suave — para los momentos idle
+export function playIdleGlitch() {
+    const r = Math.random();
+    if (r < 0.35)      playStatic(0.05 + Math.random() * 0.08, 0.04);
+    else if (r < 0.6)  playClick(0.08);
+    else if (r < 0.8)  { playBeep(Math.random() * 1500 + 300, 'square', 0.03, 0.03); }
+    else               playBuzzGlitch(0.08);
+}

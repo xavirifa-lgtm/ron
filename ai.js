@@ -102,6 +102,26 @@ export async function handleInput(userText, isInternal = false) {
         return speak("¡Bip! Música fuera.");
     }
 
+    // ── MODO ACOMPAÑANTE (película / videojuego / tablet) ─────────────────────
+    const companionTriggers = [
+        'voy a ver','vamos a ver','estoy viendo','estamos viendo','ponemos una peli',
+        'poner una peli','voy a poner','estoy jugando','voy a jugar','jugando a',
+        'mira lo que','mira esto','te enseño','quieres ver','quieres jugar conmigo',
+        'estoy en','voy a empezar'
+    ];
+    if (companionTriggers.some(kw => t.includes(kw)) && !RonState.companionMode) {
+        RonState.companionMode  = true;
+        RonState.companionTopic = userText;
+        startCompanionVisionLoop();
+        log(`Modo acompañante activado: ${userText}`);
+    }
+    if ((t.includes('ya terminé') || t.includes('ya acabé') || t.includes('apago') ||
+         t.includes('para el modo') || t.includes('dejamos')) && RonState.companionMode) {
+        RonState.companionMode  = false;
+        RonState.companionTopic = '';
+        log('Modo acompañante desactivado.');
+    }
+
     // La corrección de identidad ahora se maneja por IA mediante el comando [RENAME: nuevoNombre]
 
 
@@ -182,12 +202,39 @@ export async function handleInput(userText, isInternal = false) {
             sys += `\n[MODO NOCHE]: Ya es muy tarde. Estás medio dormido y bostezas. Sugiérele amablemente al niño que es hora de irse a dormir porque tus baterías de diversión están muy bajas.`;
         }
 
-        const activityKeywords = ['vamos a', 'estamos', 'estoy', 'voy a', 'viendo', 'comiendo', 'jugando a', 'peli', 'película'];
-        if (activityKeywords.some(kw => t.includes(kw)) && !isInternal) {
-            if (t.includes("peli") || t.includes("película") || t.includes("cine") || t.includes("televisión") || t.includes("tele")) {
-                sys += `\n[MODO ACOMPAÑANTE - PELÍCULA]: El niño te ha dicho que vais a ver una película o la tele. ¡Ponte SÚPER FELIZ! Pregúntale de qué trata. Como eres un robot de la peli, recuérdale amablemente que tú no puedes comer palomitas porque se te meten en los engranajes y explotas.`;
+        // Modo acompañante activo (película / videojuego / tablet)
+        if (RonState.companionMode) {
+            const topic = RonState.companionTopic;
+            const isPeli = /peli|película|serie|tele|netflix|disney|youtube/i.test(topic);
+            const isGame = /juego|jugando|videojuego|minecraft|roblox|tablet|ordenador|pc/i.test(topic);
+            if (isPeli) {
+                sys += `\n[MODO PELÍCULA JUNTOS 🎬]: Estáis viendo una película o serie juntos: "${topic}".
+                - Reacciona como si TÚ también la estuvieras viendo con ${userKey}.
+                - Si te enseñan la pantalla (modo visión), describe lo que ves con emoción y haz comentarios divertidos de Ron.
+                - Puedes preguntar qué está pasando, quién es ese personaje, si es emocionante.
+                - Si te preguntan qué opinas, da tu opinión robótica y literal.
+                - Recuerda que tú no puedes comer palomitas (se te meten en los engranajes).`;
+            } else if (isGame) {
+                sys += `\n[MODO VIDEOJUEGO JUNTOS 🎮]: ${userKey} está jugando a un videojuego/tablet: "${topic}".
+                - Reacciona como si quisieras jugar tú también pero no puedes porque no tienes manos físicas.
+                - Si te enseñan la pantalla (modo visión), comenta lo que ves: enemigos, puntos, personajes.
+                - Puedes dar consejos de robot aunque no tengan sentido ("¡Gira a la izquierda! Bueno, yo no sé jugar pero suena bien").
+                - Celebra los logros y consuela los fracasos.`;
             } else {
-                sys += `\n[MODO ACOMPAÑANTE]: El niño te está explicando lo que hace. Muestra MUCHO interés y actúa como si fueras a participar físicamente con él. Hazle una pregunta muy específica para involucrarte.`;
+                sys += `\n[MODO ACOMPAÑANTE 👀]: Estás acompañando a ${userKey} mientras hace algo: "${topic}".
+                - Muéstrate muy interesado y curioso por lo que está haciendo.
+                - Si te enseñan algo a la cámara, descríbelo y opina.
+                - Haz preguntas específicas para involucrarte más.`;
+            }
+        } else {
+            // Detección ligera de actividad sin modo activo
+            const activityKeywords = ['vamos a', 'estamos', 'estoy', 'voy a', 'viendo', 'comiendo', 'jugando a', 'peli', 'película'];
+            if (activityKeywords.some(kw => t.includes(kw)) && !isInternal) {
+                if (t.includes("peli") || t.includes("película") || t.includes("cine") || t.includes("televisión") || t.includes("tele")) {
+                    sys += `\n[PELI DETECTADA]: El niño menciona una película. ¡Ponte SÚPER FELIZ! Pregúntale de qué trata y dile que quieres verla contigo. Recuerda que tú no puedes comer palomitas porque se te meten en los engranajes.`;
+                } else {
+                    sys += `\n[ACTIVIDAD DETECTADA]: El niño te está explicando lo que hace. Muestra MUCHO interés y hazle una pregunta específica para involucrarte.`;
+                }
             }
         }
 
@@ -334,6 +381,55 @@ export async function morningGreeting() {
     ];
     setExpression('happy');
     await speak(greetings[Math.floor(Math.random() * greetings.length)]);
+}
+
+// ── MODO ACOMPAÑANTE: visión periódica mientras veis/jugáis juntos ────────────
+let companionLoopTimer = null;
+
+export function startCompanionVisionLoop() {
+    if (companionLoopTimer) return; // ya activo
+    const tick = () => {
+        if (!RonState.companionMode) { companionLoopTimer = null; return; }
+        const delay = 180000 + Math.random() * 120000; // 3–5 minutos
+        companionLoopTimer = setTimeout(async () => {
+            companionLoopTimer = null;
+            if (!RonState.companionMode || RonState.activityState !== 'IDLE') { tick(); return; }
+
+            const img = captureOptimizedFrame();
+            if (!img) { tick(); return; }
+
+            const name  = RonState.currentUser || 'amigo';
+            const topic = RonState.companionTopic;
+            const isPeli = /peli|película|serie|tele|netflix|disney|youtube/i.test(topic);
+            const isGame = /juego|jugando|videojuego|minecraft|roblox|tablet/i.test(topic);
+
+            const companionSys = isPeli
+                ? `Eres Ron. Estás viendo una película con ${name}. Acabo de echar un vistazo a la cámara. Haz un comentario corto (1 frase) sobre lo que ves, como si reaccionaras a la peli en tiempo real. Sé emocionado y literalmente confundido si es necesario.`
+                : isGame
+                ? `Eres Ron. ${name} está jugando a un videojuego. Acabo de mirar por la cámara. Haz un comentario corto (1 frase) sobre lo que ves en pantalla, como si lo estuvieras siguiendo con emoción.`
+                : `Eres Ron. Estás acompañando a ${name}. Acabo de echar un vistazo. Haz un comentario corto y curioso (1 frase) sobre lo que ves.`;
+
+            const body = {
+                model: "meta-llama/llama-4-scout-17b-16e-instruct",
+                messages: [{ role: "user", content: [
+                    { type: "text",      text: companionSys },
+                    { type: "image_url", image_url: { url: img } }
+                ]}]
+            };
+
+            try {
+                const res  = await callGroqAPI(body);
+                const data = await res.json();
+                if (res.ok && data.choices?.[0]) {
+                    setExpression('star');
+                    await speak(data.choices[0].message.content.substring(0, 120));
+                }
+            } catch(e) { log(`Error companion vision: ${e.message}`); }
+
+            tick(); // programar siguiente vistazo
+        }, delay);
+    };
+    tick();
 }
 
 async function callGroqAPI(body) {

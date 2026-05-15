@@ -6,21 +6,21 @@
     <title>Ron B*Bot</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script>
-        // Limpiar SW viejo y registrar el nuevo (v23.0)
+        // Limpiar SW viejo y registrar el nuevo (v25.5)
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(registrations => {
                 const unregisterAll = registrations.map(r => r.unregister());
                 Promise.all(unregisterAll).then(() => {
                     // Registrar el SW nuevo tras limpiar el viejo
-                    navigator.serviceWorker.register('./sw.js').then(reg => {
-                        console.log('SW v23.0 registrado:', reg.scope);
+                    navigator.serviceWorker.register('./sw.js?v=25.5').then(reg => {
+                        console.log('SW v25.5 registrado:', reg.scope);
                     }).catch(e => console.warn('SW no disponible:', e.message));
                 });
             });
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=23.0">
+    <link rel="stylesheet" href="styles.css?v=25.5">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,6 +31,8 @@
 <body>
     <div id="ron-app" class="ron-container">
         <div id="camera-flash" class="camera-flash"></div>
+        <!-- Canvas procedural de la cara — reemplaza el CSS face -->
+        <canvas id="ron-face"></canvas>
         <!-- Pantalla de Inicio -->
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
@@ -80,10 +82,14 @@
             <div id="chest-icon-container" class="chest-icon-container"></div>
         </div>
 
-        <!-- UI de Juegos (v19.0) -->
+        <!-- UI de Juegos -->
         <div id="game-panel" class="game-panel hidden">
-            <button id="close-game-btn" class="close-game-btn" onclick="document.getElementById('game-panel').classList.add('hidden');">❌</button>
-            <div id="game-text"></div>
+            <div class="game-panel-header">
+                <button id="close-game-btn" class="close-game-btn">✕</button>
+            </div>
+            <div class="game-panel-body">
+                <div id="game-text"></div>
+            </div>
         </div>
         
         <!-- UI de Control (Invisible por defecto) -->
@@ -108,7 +114,7 @@
         <!-- Wrapper de cara (para efectos) -->
         <div id="face-wrapper"></div>
     </div>
-    <script>const CACHE_NAME = 'ron-bot-v23.0';</script>
-    <script type="module" src="app.js?v=23.0"></script>
+    <script>const CACHE_NAME = 'ron-bot-v25.5';</script>
+    <script type="module" src="app.js?v=25.5"></script>
 </body>
 </html>

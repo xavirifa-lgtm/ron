@@ -1,5 +1,5 @@
 import { RonState, log, changeState } from './core.js';
-import { initUI, setChestIcon, setExpression, startBlinkCycle, checkNightMode, startDanceMode, stopDanceMode } from './ui.js';
+import { initUI, setChestIcon, setExpression, startBlinkCycle, checkNightMode, startDanceMode, stopDanceMode, startIdleGlitchLoop } from './ui.js';
 import { loadModels, startCamera, startVisionLoop, connectBLE } from './vision.js';
 import { startListening, speak } from './speech.js';
 import { startCuriosityLoop } from './curiosity.js';
@@ -61,6 +61,7 @@ async function init() {
     changeState('IDLE');
     setExpression('neutral');
     startBlinkCycle();
+    startIdleGlitchLoop();
     startCuriosityLoop();
     checkNightMode();
     setInterval(checkNightMode, 3600000);
