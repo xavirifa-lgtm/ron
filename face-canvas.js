@@ -74,13 +74,12 @@ function tick(dt) {
 
 // ── Layout ────────────────────────────────────────────────────────────────
 function getLayout() {
-    // Ojos pequeños y ovales como Ron de la película, agrupados en el centro
-    const eyeW  = Math.min(W * 0.115, 72);   // ojos pequeños
-    const eyeH  = eyeW * 1.55;               // óvalo vertical
-    const gap   = Math.min(W * 0.265, 164);  // separación entre centros
+    const eyeW  = Math.min(W * 0.108, 66);   // ojos pill verticales como Ron
+    const eyeH  = eyeW * 1.62;               // más altos que anchos (pill)
+    const gap   = Math.min(W * 0.265, 164);
     const eyeCY = H * 0.40;
-    const mouthY = eyeCY + eyeH * 0.5 + H * 0.12;
-    const mouthW = Math.min(W * 0.50, 310);
+    const mouthY = eyeCY + eyeH * 0.5 + 10;  // pegada justo bajo los ojos
+    const mouthW = Math.min(W * 0.22, 105);   // boca pequeña como en la película
     return {
         lx: W/2 - gap/2,
         rx: W/2 + gap/2,
@@ -168,12 +167,28 @@ function highlight(rx, ry) {
     ctx.fill();
 }
 
-// ── Tipos de ojos — todos óvalos (como en la película) ───────────────────
+// Rounded-rect centrado en 0,0 — para la forma pill de los ojos de Ron
+function rrect(rx, ry, cr) {
+    cr = Math.min(cr, rx, ry);
+    ctx.beginPath();
+    ctx.moveTo(-rx + cr, -ry);
+    ctx.lineTo( rx - cr, -ry);
+    ctx.arcTo( rx, -ry,  rx, -ry + cr, cr);
+    ctx.lineTo( rx,  ry - cr);
+    ctx.arcTo( rx,  ry,  rx - cr,  ry, cr);
+    ctx.lineTo(-rx + cr,  ry);
+    ctx.arcTo(-rx,  ry, -rx,  ry - cr, cr);
+    ctx.lineTo(-rx, -ry + cr);
+    ctx.arcTo(-rx, -ry, -rx + cr, -ry, cr);
+    ctx.closePath();
+}
+
+// ── Tipos de ojos ─────────────────────────────────────────────────────────
 
 function drawNormalEye(rx, ry, night) {
     const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx, ery, 0, 0, Math.PI * 2);
+    // Pill/rounded-rect — lados casi planos, esquinas muy redondeadas
+    rrect(rx, ery, rx * 0.82);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
     if (night) { ctx.shadowColor = 'rgba(0,212,255,0.5)'; ctx.shadowBlur = 10; }
@@ -278,7 +293,7 @@ function drawMouth(cx, cy, w, night, dance) {
     const hw = w / 2;
     const speaking = RonState.activityState === 'SPEAKING';
     // Apertura: 0=cerrado, 1=abierto. Solo parte positiva del seno.
-    const openness = speaking ? Math.max(0, Math.sin(speakT)) : 0;
+    const openness = speaking ? Math.abs(Math.sin(speakT)) : 0;
     const col = night ? '#00d4ff' : '#1a1a1a';
     const sw  = Math.max(4.5, hw * 0.062);
 
@@ -357,37 +372,74 @@ function drawMouth(cx, cy, w, night, dance) {
     ctx.restore();
 }
 
-// Sonrisa que abre la boca al hablar — labio superior fijo, inferior baja
+// Boca expresiva con 5 estados según openness (0=cerrada → 1=triángulo exclamación)
 function openMouth(cx, cy, hw, curveDown, maxDrop, openness, night) {
-    const drop = openness * maxDrop;
-    const interior = night ? '#003355' : '#1a1a1a';
+    const interior = night ? '#002244' : '#0d0d0d';
 
-    // Interior oscuro cuando la boca está abierta
-    if (drop > maxDrop * 0.08) {
+    if (openness < 0.08) {
+        // ① CERRADA — sonrisita fina
         ctx.beginPath();
         ctx.moveTo(cx - hw, cy);
         ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
-        // Bajar al labio inferior
-        ctx.lineTo(cx + hw * 0.90, cy + curveDown * 0.52);
-        ctx.quadraticCurveTo(cx, cy + curveDown + drop + curveDown * 0.12,
-                              cx - hw * 0.90, cy + curveDown * 0.52);
+        ctx.stroke();
+
+    } else if (openness < 0.38) {
+        // ② CUARTO LUNA — apertura pequeña
+        const drop = openness * maxDrop * 2.4;
+        // relleno interior
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown * 0.3 + drop, cx - hw, cy);
+        ctx.fillStyle = interior;
+        ctx.fill();
+        // labio superior
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
+        ctx.stroke();
+        // labio inferior
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown * 0.3 + drop, cx + hw, cy);
+        ctx.stroke();
+
+    } else if (openness < 0.62) {
+        // ③ D / MEDIA LUNA — medio abierta
+        const drop = openness * maxDrop * 2.0;
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown * 0.7, cx + hw, cy);
+        ctx.bezierCurveTo(cx + hw * 0.85, cy + drop * 0.55,
+                          cx + hw * 0.45, cy + drop,
+                          cx,             cy + drop * 1.05);
+        ctx.bezierCurveTo(cx - hw * 0.45, cy + drop,
+                          cx - hw * 0.85, cy + drop * 0.55,
+                          cx - hw,        cy);
+        ctx.fillStyle = interior;
+        ctx.fill();
+        ctx.stroke();
+
+    } else if (openness < 0.83) {
+        // ④ CÍRCULO / ÓVALO — boca redonda abierta
+        const rW = hw * 0.72;
+        const rH = maxDrop * 1.2 + openness * maxDrop * 0.9;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + curveDown * 0.4 + rH * 0.15, rW, rH, 0, 0, Math.PI * 2);
+        ctx.fillStyle = interior;
+        ctx.fill();
+        ctx.stroke();
+
+    } else {
+        // ⑤ TRIÁNGULO INVERTIDO — exclamación / mucho énfasis
+        const h = maxDrop * 2.8;
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown * 0.2, cx + hw, cy);
+        ctx.lineTo(cx, cy + h);
         ctx.closePath();
         ctx.fillStyle = interior;
         ctx.fill();
-    }
-
-    // Labio superior (siempre visible)
-    ctx.beginPath();
-    ctx.moveTo(cx - hw, cy);
-    ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
-    ctx.stroke();
-
-    // Labio inferior (solo cuando abierta)
-    if (drop > maxDrop * 0.08) {
-        ctx.beginPath();
-        ctx.moveTo(cx - hw * 0.90, cy + curveDown * 0.52);
-        ctx.quadraticCurveTo(cx, cy + curveDown + drop + curveDown * 0.10,
-                              cx + hw * 0.90, cy + curveDown * 0.52);
         ctx.stroke();
     }
 }
