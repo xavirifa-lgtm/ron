@@ -119,21 +119,12 @@ body.dance-mode .ron-container {
     pointer-events: none;
 }
 
-/* Ojos y boca HTML: canvas los reemplaza — fuera del flujo */
-.eyes-layer, .mouth-layer {
-    display: none;
-}
-
-/* ── OJOS ──────────────────────────────────────────────────────────────────
-   Ron de la película: óvalos negros altos, bien separados, mate.
-   Ratio ancho:alto ≈ 1:1.6
-*/
-.eyes-layer {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: clamp(14px, 4.5vw, 28px);
-    z-index: 6;
+/* Ojos y boca HTML: canvas los reemplaza — FORZAR ocultación total */
+.eyes-layer, .mouth-layer,
+.eyes-layer *, .mouth-layer * {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
 }
 
 .eye {

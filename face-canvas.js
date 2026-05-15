@@ -74,13 +74,13 @@ function tick(dt) {
 
 // ── Layout ────────────────────────────────────────────────────────────────
 function getLayout() {
-    // Proporciones de Ron de la película: ojos y boca agrupados en el centro
-    const eyeW  = Math.min(W * 0.205, 126);  // ojos medianos-grandes
-    const eyeH  = eyeW * 1.18;               // casi cuadrados, ligeramente más altos
-    const gap   = Math.min(W * 0.325, 200);  // separación centro-a-centro
-    const eyeCY = H * 0.40;                  // ojos en el centro-arriba de pantalla
-    const mouthY = eyeCY + eyeH * 0.5 + H * 0.145; // boca ~15% bajo los ojos
-    const mouthW = Math.min(W * 0.54, 336);
+    // Ojos pequeños y ovales como Ron de la película, agrupados en el centro
+    const eyeW  = Math.min(W * 0.115, 72);   // ojos pequeños
+    const eyeH  = eyeW * 1.55;               // óvalo vertical
+    const gap   = Math.min(W * 0.265, 164);  // separación entre centros
+    const eyeCY = H * 0.40;
+    const mouthY = eyeCY + eyeH * 0.5 + H * 0.12;
+    const mouthW = Math.min(W * 0.50, 310);
     return {
         lx: W/2 - gap/2,
         rx: W/2 + gap/2,
@@ -125,204 +125,151 @@ function drawEye(cx, cy, ew, eh, night, dance) {
     const ry = eh / 2;
     switch (e) {
         case 'happy':
-        case 'recognised':  drawHappyEye(rx, ry, night);             break;
-        case 'star':        drawStarEye(rx, night, dance);            break;
-        case 'flat':        drawFlatEye(rx, night);                   break;
-        case 'glitch':      drawGlitchEye(rx, eh * 0.52, night);     break;
-        case 'surprise':    drawNormalEye(rx * 1.25, ry * 1.28, night); break;
-        case 'fear':        drawNormalEye(rx * 0.78, ry * 0.80, night); break;
-        case 'thinking':    drawSquintEye(rx, ry, night);             break;
-        case 'sad':         drawSadEye(rx, ry, night);                break;
+        case 'recognised':  drawHappyEye(rx, ry, night);                   break;
+        case 'star':        drawStarEye(rx, night, dance);                  break;
+        case 'flat':        drawFlatEye(rx, night);                         break;
+        case 'glitch':      drawGlitchEye(rx, eh, night);                   break;
+        case 'surprise':    drawNormalEye(rx * 1.22, ry * 1.25, night);     break;
+        case 'fear':        drawNormalEye(rx * 0.76, ry * 0.78, night);     break;
+        case 'thinking':    drawSquintEye(rx, ry, night);                   break;
+        case 'sad':         drawSadEye(rx, ry, night);                      break;
         default:            drawNormalEye(rx, ry, night);
     }
 
     ctx.restore();
 }
 
-// ── Helpers de dibujo ─────────────────────────────────────────────────────
-
-// Rectángulo redondeado centrado en (0,0) — forma base de los ojos de Ron
-function rrectPath(rx, ry, cr) {
-    const r = Math.min(cr, rx, ry);
-    ctx.beginPath();
-    ctx.moveTo(-rx + r, -ry);
-    ctx.lineTo( rx - r, -ry);
-    ctx.quadraticCurveTo( rx, -ry,  rx, -ry + r);
-    ctx.lineTo( rx,  ry - r);
-    ctx.quadraticCurveTo( rx,  ry,  rx - r,  ry);
-    ctx.lineTo(-rx + r,  ry);
-    ctx.quadraticCurveTo(-rx,  ry, -rx,  ry - r);
-    ctx.lineTo(-rx, -ry + r);
-    ctx.quadraticCurveTo(-rx, -ry, -rx + r, -ry);
-    ctx.closePath();
-}
-
-// Mitad superior del rect redondeado (ojos felices — plano abajo)
-function rrectTopPath(rx, ry, cr) {
-    const r = Math.min(cr, rx, ry);
-    ctx.beginPath();
-    ctx.moveTo(-rx,  0);
-    ctx.lineTo(-rx, -ry + r);
-    ctx.quadraticCurveTo(-rx, -ry, -rx + r, -ry);
-    ctx.lineTo( rx - r, -ry);
-    ctx.quadraticCurveTo( rx, -ry,  rx, -ry + r);
-    ctx.lineTo( rx,  0);
-    ctx.closePath();
-}
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 function eyeGradient(rx, ry, night) {
-    const g = ctx.createRadialGradient(-rx*0.22, -ry*0.30, rx*0.03, 0, 0, rx*1.10);
+    const g = ctx.createRadialGradient(-rx*0.22, -ry*0.30, rx*0.04, 0, 0, Math.max(rx, ry)*1.05);
     if (night) {
-        g.addColorStop(0,   'rgb(55,185,228)');
-        g.addColorStop(0.5, 'rgb(15,145,192)');
-        g.addColorStop(1,   'rgb(0,95,140)');
+        g.addColorStop(0,   'rgb(50,175,220)');
+        g.addColorStop(0.6, 'rgb(10,130,180)');
+        g.addColorStop(1,   'rgb(0,80,125)');
     } else {
-        g.addColorStop(0,   `rgb(${ec.r+30},${ec.g+30},${ec.b+30})`);
-        g.addColorStop(0.5, `rgb(${ec.r+9},${ec.g+9},${ec.b+9})`);
-        g.addColorStop(1,   `rgb(${Math.max(0,ec.r-6)},${Math.max(0,ec.g-6)},${Math.max(0,ec.b-6)})`);
+        g.addColorStop(0,   `rgb(${ec.r+32},${ec.g+32},${ec.b+32})`);
+        g.addColorStop(0.6, `rgb(${ec.r+8},${ec.g+8},${ec.b+8})`);
+        g.addColorStop(1,   `rgb(${Math.max(0,ec.r-4)},${Math.max(0,ec.g-4)},${Math.max(0,ec.b-4)})`);
     }
     return g;
 }
 
 function highlight(rx, ry) {
-    if (blinkP > 0.78) return;
-    const hx = rx*0.32, hy = -ry*0.36, hr = rx*0.17;
+    if (blinkP > 0.75) return;
+    const hx = rx*0.28, hy = -ry*0.34, hr = rx*0.19;
     const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-    hg.addColorStop(0,    'rgba(255,255,255,0.94)');
-    hg.addColorStop(0.45, 'rgba(255,255,255,0.28)');
+    hg.addColorStop(0,    'rgba(255,255,255,0.95)');
+    hg.addColorStop(0.5,  'rgba(255,255,255,0.25)');
     hg.addColorStop(1,    'rgba(255,255,255,0)');
     ctx.beginPath();
-    ctx.arc(hx, hy, hr, 0, Math.PI*2);
+    ctx.ellipse(hx, hy, hr, hr * 0.7, 0, 0, Math.PI * 2);
     ctx.fillStyle = hg;
     ctx.fill();
 }
 
-function setGlow(night) {
-    ctx.shadowColor = night ? 'rgba(0,212,255,0.65)' : 'rgba(0,0,0,0.32)';
-    ctx.shadowBlur  = night ? 22 : 12;
-}
-function clearGlow() { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
+// ── Tipos de ojos — todos óvalos (como en la película) ───────────────────
 
-function strokeEye(rx, night) {
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.28)' : 'rgba(0,0,0,0.58)';
-    ctx.lineWidth   = Math.max(2, rx * 0.07);
-    ctx.stroke();
-}
-
-// ── Tipos de ojos (rectángulo redondeado, como B-Bot de la peli) ──────────
-
-// Ojo normal — rect redondeado con parpadeo
 function drawNormalEye(rx, ry, night) {
-    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.8);
-    const cr  = Math.min(rx, ery) * 0.44;
-    setGlow(night);
-    rrectPath(rx, ery, cr);
+    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ery, 0, 0, Math.PI * 2);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    clearGlow();
-    strokeEye(rx, night);
+    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.5)'; ctx.shadowBlur = 10; }
+    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = Math.max(1.5, rx * 0.06);
+    ctx.stroke();
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
     highlight(rx, ery);
 }
 
-// Ojo feliz — mitad superior (plano abajo, redondeado arriba)
 function drawHappyEye(rx, ry, night) {
-    const ery = Math.max(ry * 0.80 * (1 - blinkP * 0.97), 0.8);
-    const cr  = Math.min(rx, ery) * 0.50;
-    setGlow(night);
-    rrectTopPath(rx, ery, cr);
+    // Media luna — plana abajo, curva arriba
+    const ery = Math.max(ry * 0.75 * (1 - blinkP * 0.97), 0.5);
+    ctx.beginPath();
+    ctx.moveTo(-rx, 0);
+    ctx.ellipse(0, 0, rx, ery, 0, Math.PI, 0, false);
+    ctx.closePath();
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    clearGlow();
-    strokeEye(rx, night);
+    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = Math.max(1.5, rx * 0.06);
+    ctx.stroke();
     highlight(rx, ery);
 }
 
-// Ojo estrella — polígono
 function drawStarEye(rx, night, dance) {
-    const r1 = rx * 1.08 * (dance ? 1 + Math.sin(danceT)*0.12 : 1);
-    const r2 = rx * 0.42;
-    setGlow(night);
+    const r1 = rx * 1.1 * (dance ? 1 + Math.sin(danceT) * 0.1 : 1);
+    const r2 = rx * 0.44;
     ctx.beginPath();
     for (let i = 0; i < 10; i++) {
-        const r = i%2===0 ? r1 : r2;
-        const a = (i*Math.PI/5) - Math.PI/2;
-        if (i===0) ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r);
-        else       ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+        const r = i % 2 === 0 ? r1 : r2;
+        const a = (i * Math.PI / 5) - Math.PI / 2;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else         ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
     }
     ctx.closePath();
-    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r+20},${ec.g+20},${ec.b+20})`;
+    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r+22},${ec.g+22},${ec.b+22})`;
     ctx.fill();
-    clearGlow();
 }
 
-// Ojo plano — línea fina (durmiendo)
 function drawFlatEye(rx, night) {
-    const ery = rx * 0.17;
-    const cr  = ery;
-    setGlow(night);
-    ctx.globalAlpha = 0.50;
-    rrectPath(rx * 1.05, ery, cr);
-    ctx.fillStyle = night ? 'rgb(0,180,215)' : `rgb(${ec.r},${ec.g},${ec.b})`;
+    const ery = Math.max(rx * 0.15, 2);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ery, 0, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = night ? 'rgb(0,175,210)' : `rgb(${ec.r},${ec.g},${ec.b})`;
     ctx.fill();
     ctx.globalAlpha = 1;
-    clearGlow();
 }
 
-// Ojo glitch — rect cian sin redondear, con scanlines
 function drawGlitchEye(rx, rh, night) {
-    const ry = rh / 2;
-    ctx.shadowColor = 'rgba(0,212,255,0.85)'; ctx.shadowBlur = 16;
+    const ry = rh * 0.45;
+    ctx.shadowColor = 'rgba(0,212,255,0.8)'; ctx.shadowBlur = 12;
     ctx.fillStyle = '#00d4ff';
-    ctx.fillRect(-rx, -ry, rx*2, ry*2);
-    clearGlow();
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillRect(-rx, -ry, rx * 2, ry * 2);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.lineWidth = 1.5;
-    for (let y = -ry+4; y < ry; y += 5) {
-        if (Math.random() > 0.35) {
+    for (let y = -ry + 3; y < ry; y += 5) {
+        if (Math.random() > 0.4) {
             ctx.beginPath();
             ctx.moveTo(-rx, y);
-            ctx.lineTo(-rx + rx*2*(0.3 + Math.random()*0.7), y);
+            ctx.lineTo(-rx + rx * 2 * (0.3 + Math.random() * 0.7), y);
             ctx.stroke();
         }
     }
 }
 
-// Ojo entrecerrado — rect aplastado (pensando)
 function drawSquintEye(rx, ry, night) {
-    const ery = Math.max(ry * 0.62 * (1 - blinkP * 0.97), 0.8);
-    const cr  = Math.min(rx, ery) * 0.50;
-    const offY = ry * 0.16;
-    setGlow(night);
-    ctx.save(); ctx.translate(0, offY);
-    rrectPath(rx, ery, cr);
+    const ery = Math.max(ry * 0.58 * (1 - blinkP * 0.97), 0.5);
+    ctx.beginPath();
+    ctx.ellipse(0, ry * 0.12, rx, ery, 0, 0, Math.PI * 2);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    ctx.restore();
-    ctx.save(); ctx.translate(0, offY);
-    strokeEye(rx, night);
-    ctx.restore();
+    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = Math.max(1.5, rx * 0.06);
+    ctx.stroke();
     highlight(rx, ery);
 }
 
-// Ojo triste — normal con sombra interior esquina
 function drawSadEye(rx, ry, night) {
-    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.8);
-    const cr  = Math.min(rx, ery) * 0.44;
-    setGlow(night);
-    ctx.save(); ctx.translate(0, -ry*0.05);
-    rrectPath(rx, ery, cr);
+    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
+    ctx.beginPath();
+    ctx.ellipse(0, -ry * 0.05, rx, ery, 0, 0, Math.PI * 2);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    strokeEye(rx, night);
-    ctx.restore();
+    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = Math.max(1.5, rx * 0.06);
+    ctx.stroke();
     highlight(rx, ery);
-    // Triángulo de ceño triste en esquina interior
     ctx.beginPath();
-    ctx.moveTo(-rx, -ery*0.08);
-    ctx.lineTo(-rx*0.22, -ery*0.80);
-    ctx.lineTo(-rx*0.68, -ery*0.22);
+    ctx.moveTo(-rx, -ery * 0.1);
+    ctx.lineTo(-rx * 0.2, -ery * 0.78);
+    ctx.lineTo(-rx * 0.65, -ery * 0.22);
     ctx.closePath();
-    ctx.fillStyle = night ? 'rgba(0,212,255,0.13)' : 'rgba(0,0,0,0.13)';
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
     ctx.fill();
 }
 
