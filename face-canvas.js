@@ -62,8 +62,8 @@ function tick(dt) {
         if (blinkP <= 0) { blinkP = 0; blinkDir = 0; }
     }
 
-    // Oscilador de habla (ritmo irregular para sonar más natural)
-    if (RonState.activityState === 'SPEAKING') speakT += dt * (8 + Math.sin(speakT * 0.7) * 2);
+    // Oscilador de habla — lento para que las formas de boca sean visibles
+    if (RonState.activityState === 'SPEAKING') speakT += dt * (3.2 + Math.sin(speakT * 0.35) * 0.8);
 
     // Fase de baile
     if (document.body.classList.contains('dance-mode')) danceT += dt * 4.5;
@@ -309,20 +309,18 @@ function drawMouth(cx, cy, w, night, dance) {
     switch (e) {
         case 'happy':
         case 'recognised':
-            // Sonrisa amplia con boca que abre al hablar
-            openMouth(cx, cy, hw, hw*0.26, hw*0.34, openness, night);
+            openMouth(cx, cy, hw, hw*0.40, hw*0.36, openness, night);
             break;
 
         case 'star':
-            // Sonrisa enorme, se abre mucho
-            openMouth(cx, cy, hw*1.08, hw*0.42, hw*0.46,
+            openMouth(cx, cy, hw*1.08, hw*0.54, hw*0.50,
                 dance ? 0.75 + Math.abs(Math.sin(danceT))*0.25 : openness, night);
             break;
 
         case 'neutral':
         default:
-            // Leve sonrisa, abre moderado al hablar
-            openMouth(cx, cy, hw*0.72, hw*0.10, hw*0.24, openness, night);
+            // Sonrisa más curvada y boca pequeña como Ron película
+            openMouth(cx, cy, hw*0.72, hw*0.32, hw*0.26, openness, night);
             break;
 
         case 'sad':
