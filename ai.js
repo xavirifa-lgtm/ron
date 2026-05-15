@@ -173,6 +173,7 @@ export async function handleInput(userText, isInternal = false) {
         2. IDENTIDAD: Eres un robot de juguete blanco de la marca Bubble. No eres una IA ni ChatGPT.
         3. ACTITUD: Eres ingenuo, feliz y caótico. Responde siempre MUY CORTO (1 o 2 frases máximo). No des discursos.
         4. ACCIONES: Para escribir en la pizarra usa [SHOW: texto]. Para poner música usa [MUSIC: canción]. Si te corrigen tu nombre, usa [RENAME: NuevoNombre] al final de tu frase.
+        5. MEMORIA DE NOMBRES (¡CRÍTICO!): Si el usuario dice su nombre por primera vez ("soy X", "me llamo X", "soy yo X"), SIEMPRE añade [RENAME: X] al final de tu respuesta para guardarlo en tu memoria. Sin esto lo olvidarás para siempre.
         
         MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, tu misión es conocerle y protegerle.`}`;
 
@@ -202,25 +203,41 @@ export async function handleInput(userText, isInternal = false) {
         let success = false;
 
         if (isV) {
-            let body = { model: visionModel, messages: [] };
             const img = captureOptimizedFrame();
-            
-            if (isSelfie) {
-                showPhoto(img);
-                sys += `\n[MODO SELFIE ACTIVADO]: Acabas de sacar esta foto. Haz un comentario SÚPER GRACIOSO y confuso (1 frase) sobre lo que sale en la foto, como si no supieras cómo funciona una cámara.`;
+
+            // Si la cámara no está lista, caer a texto normal
+            if (!img) {
+                log("Cámara no disponible para visión, usando texto.");
+                for (let model of textModels) {
+                    const body = { model, messages: [{ role: "system", content: sys }, { role: "user", content: userText }] };
+                    res = await callGroqAPI(body);
+                    data = await res.json();
+                    if (res.ok) { success = true; Sounds.playThinkingBeep(); break; }
+                }
             } else {
-                sys += `\n[MODO VISIÓN ACTIVADO]: El niño te está enseñando algo a la cámara. 
-                1. Obsérvalo y opina sobre ello de forma entusiasta. 
-                2. IMPORTANTE: Como estás desconectado de la red Bubble, a veces TE EQUIVOCAS o haces descripciones literales y absurdas (ej. si ves un perro dices "mira, un lobo peludo de interior").
-                3. Termina siempre haciéndole una pregunta para seguir la charla.
-                4. Si en la imagen se ve una pantalla o una película, comenta lo que está saliendo en la pantalla con mucha emoción.`;
+                let body = { model: visionModel, messages: [] };
+
+                if (isSelfie) {
+                    showPhoto(img);
+                    sys += `\n[MODO SELFIE]: Acabas de sacar esta foto. Haz un comentario GRACIOSO y corto (1 frase) sobre lo que sale, como si no entendieras cómo funciona una cámara.`;
+                } else {
+                    sys += `\n[MODO VISIÓN]: El usuario te está enseñando algo a la cámara.
+                    1. Identifica claramente QUÉ es el objeto o escena (ej: "veo un muñeco de Superman", "hay un libro azul").
+                    2. Comenta algo divertido o curioso sobre ello como Ron (literalidad, confusión técnica).
+                    3. Termina con una pregunta para seguir la charla.
+                    4. Si ves una pantalla o película, coméntala con emoción.`;
+                }
+
+                body.messages = [{ role: "user", content: [
+                    { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` },
+                    { type: "image_url", image_url: { url: img } }
+                ]}];
+
+                res = await callGroqAPI(body);
+                data = await res.json();
+                if (res.ok) success = true;
+                else log(`Fallo visión: ${data.error?.message}`);
             }
-            
-            body.messages = [{ role: "user", content: [ { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` }, { type: "image_url", image_url: { url: img } } ] }];
-            
-            res = await callGroqAPI(body);
-            data = await res.json();
-            if (res.ok) success = true;
         } else {
             for (let model of textModels) {
                 let body = { 
@@ -263,23 +280,32 @@ export async function handleInput(userText, isInternal = false) {
         if (resp.includes("[RENAME:")) {
             const r = resp.match(/\[RENAME:\s*(.*?)\]/);
             if (r && r[1]) {
-                const newName = r[1].trim().charAt(0).toUpperCase() + r[1].trim().slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ]/g, '');
-                if (RonState.currentUser && RonState.lastDescriptor) {
-                    const currentDescriptor = new Float32Array(RonState.lastDescriptor);
-                    RonState.knownFaces = RonState.knownFaces.filter(f => {
-                        const descriptors = f.descriptors || [f.descriptor];
-                        return descriptors.some(dd => faceapi.euclideanDistance(currentDescriptor, new Float32Array(dd)) > 0.45);
-                    });
-                    RonState.knownFaces.push({ label: newName, descriptors: [Array.from(currentDescriptor)] });
-                    localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
-                    
-                    if (RonState.userStats[RonState.currentUser]) {
+                const newName = r[1].trim().charAt(0).toUpperCase() + r[1].trim().slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ\s]/g, '').trim();
+                if (newName.length >= 2) {
+                    // Guardar cara si la cámara la está viendo
+                    if (RonState.lastDescriptor) {
+                        const currentDescriptor = new Float32Array(RonState.lastDescriptor);
+                        // Eliminar entradas anteriores de esta misma cara (evita duplicados)
+                        RonState.knownFaces = RonState.knownFaces.filter(f => {
+                            const descriptors = f.descriptors || [f.descriptor];
+                            return !descriptors.some(dd => faceapi.euclideanDistance(currentDescriptor, new Float32Array(dd)) < 0.45);
+                        });
+                        RonState.knownFaces.push({ label: newName, descriptors: [Array.from(currentDescriptor)] });
+                        localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
+                        log(`Cara guardada para: ${newName}`);
+                    }
+                    // Migrar stats del usuario anterior si existe
+                    if (RonState.currentUser && RonState.currentUser !== newName && RonState.userStats[RonState.currentUser]) {
                         RonState.userStats[newName] = RonState.userStats[RonState.currentUser];
                         delete RonState.userStats[RonState.currentUser];
-                        localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+                    }
+                    // Crear entrada de stats si no existe
+                    if (!RonState.userStats[newName]) {
+                        RonState.userStats[newName] = { likes: [], dislikes: [], history: [] };
                     }
                     RonState.currentUser = newName;
-                    log(`Renombrado por IA a: ${newName}`);
+                    localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+                    log(`Usuario activo: ${newName}`);
                 }
             }
         }

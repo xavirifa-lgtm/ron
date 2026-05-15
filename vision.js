@@ -16,7 +16,7 @@ export async function loadModels() {
 
 export async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
     });
     RonState.ui.video.srcObject = stream;
     await RonState.ui.video.play();
@@ -211,7 +211,7 @@ function updateEmotion(detection) {
 export function captureOptimizedFrame() {
     // Guard: si la cámara no está disponible, devolver null
     if (!RonState.ui.video || !RonState.ui.video.videoWidth) return null;
-    const MAX = 1024;
+    const MAX = 1280;
     const canvas = document.createElement('canvas');
     let w = RonState.ui.video.videoWidth  || 640;
     let h = RonState.ui.video.videoHeight || 480;
@@ -220,7 +220,7 @@ export function captureOptimizedFrame() {
     canvas.width  = w;
     canvas.height = h;
     canvas.getContext('2d').drawImage(RonState.ui.video, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.88);
+    return canvas.toDataURL('image/jpeg', 0.92);
 }
 
 export async function connectBLE() {
