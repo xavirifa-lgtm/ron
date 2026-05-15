@@ -40,7 +40,19 @@ export function startVisionLoop() {
             // Actualizar defensor
             updateSadnessTracking(RonState.currentEmotion, detections.length > 0);
 
-            if (busy || RonState.isLearningFace) return;
+            if (busy) return;
+
+            // En modo aprendizaje: seguir acumulando descriptores pero no hacer reconocimiento
+            if (RonState.isLearningFace) {
+                if (detections.length > 0) {
+                    RonState.lastDescriptor = Array.from(detections[0].descriptor);
+                    if (!RonState.learningDescriptors) RonState.learningDescriptors = [];
+                    if (RonState.learningDescriptors.length < 10) {
+                        RonState.learningDescriptors.push(Array.from(detections[0].descriptor));
+                    }
+                }
+                return;
+            }
 
             // Escondite
             if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
@@ -83,7 +95,7 @@ export function startVisionLoop() {
                             descriptors.map(dd => new Float32Array(dd))
                         );
                     });
-                    const matcher = new faceapi.FaceMatcher(labeled, 0.58);
+                    const matcher = new faceapi.FaceMatcher(labeled, 0.68);
                     const best    = matcher.findBestMatch(d.descriptor);
 
                     if (best.label !== 'unknown') {

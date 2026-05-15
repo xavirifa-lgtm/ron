@@ -336,18 +336,27 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
             if (r && r[1]) {
                 const newName = r[1].trim().charAt(0).toUpperCase() + r[1].trim().slice(1).replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ\s]/g, '').trim();
                 if (newName.length >= 2) {
-                    // Guardar cara si la cámara la está viendo
-                    if (RonState.lastDescriptor) {
-                        const currentDescriptor = new Float32Array(RonState.lastDescriptor);
+                    // Usar todos los descriptores acumulados en learning mode (más robusto)
+                    const descriptorsToSave = (RonState.learningDescriptors && RonState.learningDescriptors.length > 0)
+                        ? RonState.learningDescriptors
+                        : (RonState.lastDescriptor ? [RonState.lastDescriptor] : null);
+
+                    if (descriptorsToSave) {
+                        const refDesc = new Float32Array(descriptorsToSave[0]);
                         // Eliminar entradas anteriores de esta misma cara (evita duplicados)
                         RonState.knownFaces = RonState.knownFaces.filter(f => {
-                            const descriptors = f.descriptors || [f.descriptor];
-                            return !descriptors.some(dd => faceapi.euclideanDistance(currentDescriptor, new Float32Array(dd)) < 0.45);
+                            const ds = f.descriptors || [f.descriptor];
+                            return !ds.some(dd => faceapi.euclideanDistance(refDesc, new Float32Array(dd)) < 0.45);
                         });
-                        RonState.knownFaces.push({ label: newName, descriptors: [Array.from(currentDescriptor)] });
+                        RonState.knownFaces.push({ label: newName, descriptors: descriptorsToSave });
                         localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
-                        log(`Cara guardada para: ${newName}`);
+                        log(`Cara guardada para: ${newName} (${descriptorsToSave.length} muestras)`);
                     }
+
+                    // Resetear modo aprendizaje
+                    RonState.isLearningFace = false;
+                    RonState.learningDescriptors = [];
+                    import('./ui.js').then(ui => ui.stopScanningUI());
                     // Migrar stats del usuario anterior si existe
                     if (RonState.currentUser && RonState.currentUser !== newName && RonState.userStats[RonState.currentUser]) {
                         RonState.userStats[newName] = RonState.userStats[RonState.currentUser];
