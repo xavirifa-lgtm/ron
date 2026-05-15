@@ -110,21 +110,18 @@ body.dance-mode .ron-container {
     z-index: 2;
 }
 
-/* ── CARA: solo mantiene el icono de pecho visible, ojos/boca ocultados ───── */
+/* ── CARA: contenedor full-screen, solo mantiene el icono de pecho ────────── */
 .face-container {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     z-index: 5;
-    margin-top: -6vh;
+    pointer-events: none;
 }
 
-/* Ojos y boca HTML reemplazados por canvas — ocultar sin eliminar del DOM */
+/* Ojos y boca HTML: canvas los reemplaza — fuera del flujo */
 .eyes-layer, .mouth-layer {
-    opacity: 0;
-    pointer-events: none;
+    display: none;
 }
 
 /* ── OJOS ──────────────────────────────────────────────────────────────────
@@ -253,12 +250,16 @@ body.dance-mode .ron-container {
    En el móvil físico esto estará abajo, justo donde iría el pecho de Ron
 */
 .chest-icon-container {
+    position: absolute;
+    bottom: 11%;
+    left: 50%;
+    transform: translateX(-50%);
     width: clamp(36px, 9vw, 52px);
     height: clamp(36px, 9vw, 52px);
-    margin-top: clamp(14px, 4vw, 24px);
     display: flex; justify-content: center; align-items: center;
-    z-index: 6; flex-shrink: 0;
-    opacity: 0.75;
+    z-index: 6;
+    opacity: 0.72;
+    pointer-events: none;
 }
 .chest-icon-container svg { width: 100%; height: 100%; }
 

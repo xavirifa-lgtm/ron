@@ -16,7 +16,7 @@ export async function loadModels() {
 
 export async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: "user", width: { ideal: 3840 }, height: { ideal: 2160 } }
     });
     RonState.ui.video.srcObject = stream;
     await RonState.ui.video.play();
@@ -27,7 +27,7 @@ export function startVisionLoop() {
     setInterval(async () => {
         try {
             const detections = await faceapi
-                .detectAllFaces(RonState.ui.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
+                .detectAllFaces(RonState.ui.video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.40 }))
                 .withFaceLandmarks()
                 .withFaceExpressions()
                 .withFaceDescriptors();
@@ -83,18 +83,28 @@ export function startVisionLoop() {
                             descriptors.map(dd => new Float32Array(dd))
                         );
                     });
-                    const matcher = new faceapi.FaceMatcher(labeled, 0.42);
+                    const matcher = new faceapi.FaceMatcher(labeled, 0.58);
                     const best    = matcher.findBestMatch(d.descriptor);
 
                     if (best.label !== 'unknown') {
                         found = best.label;
                         RonState.unknownStabilityCounter = 0;
+                        // Acumular descriptor para mejorar reconocimiento futuro (multi-shot)
+                        const faceEntry = RonState.knownFaces.find(f => f.label === found);
+                        if (faceEntry) {
+                            const ds = faceEntry.descriptors || [faceEntry.descriptor];
+                            if (ds.length < 12) { // máximo 12 muestras — más variedad = mejor reconocimiento
+                                ds.push(Array.from(d.descriptor));
+                                faceEntry.descriptors = ds;
+                                localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
+                            }
+                        }
                         // Deduplicación
                         if (RonState.knownFaces.length > 1) {
                             const others = RonState.knownFaces.filter(f => f.label !== found);
                             const dupe = others.find(f => {
                                 const ds = f.descriptors || [f.descriptor];
-                                return ds.some(dd => faceapi.euclideanDistance(d.descriptor, new Float32Array(dd)) < 0.36);
+                                return ds.some(dd => faceapi.euclideanDistance(d.descriptor, new Float32Array(dd)) < 0.40);
                             });
                             if (dupe) {
                                 log(`Deduplicando: ${dupe.label} → ${found}`);
@@ -103,7 +113,8 @@ export function startVisionLoop() {
                             }
                         }
                     } else {
-                        if (RonState.currentUser && RonState.unknownStabilityCounter < 12) {
+                        // Mantener usuario actual por más tiempo antes de declararlo desconocido
+                        if (RonState.currentUser && RonState.unknownStabilityCounter < 40) {
                             found = RonState.currentUser;
                             RonState.unknownStabilityCounter++;
                         }
@@ -170,7 +181,7 @@ export function startVisionLoop() {
                     }
 
                 } else if (!RonState.isLearningFace) {
-                    if (RonState.unknownStabilityCounter > 15) {
+                    if (RonState.unknownStabilityCounter > 50) {
                         RonState.tempDescriptor        = Array.from(d.descriptor);
                         RonState.isLearningFace        = true;
                         RonState.unknownStabilityCounter = 0;

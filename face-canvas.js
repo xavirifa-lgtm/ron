@@ -62,8 +62,8 @@ function tick(dt) {
         if (blinkP <= 0) { blinkP = 0; blinkDir = 0; }
     }
 
-    // Oscilador de habla
-    if (RonState.activityState === 'SPEAKING') speakT += dt * 7.5;
+    // Oscilador de habla (ritmo irregular para sonar más natural)
+    if (RonState.activityState === 'SPEAKING') speakT += dt * (8 + Math.sin(speakT * 0.7) * 2);
 
     // Fase de baile
     if (document.body.classList.contains('dance-mode')) danceT += dt * 4.5;
@@ -74,13 +74,13 @@ function tick(dt) {
 
 // ── Layout ────────────────────────────────────────────────────────────────
 function getLayout() {
-    const eyeW  = Math.min(W * 0.135, 82);
-    const eyeH  = eyeW * 1.52;
-    const gap   = Math.min(W * 0.26, 160);
-    const faceCY = H * 0.44;                  // centro de cara (~-6vh como el CSS)
-    const eyeCY  = faceCY - eyeH * 0.28;
-    const mouthY = eyeCY  + eyeH * 0.62 + H * 0.085;
-    const mouthW = eyeW   * 3.4;
+    // Proporciones de Ron de la película: ojos y boca agrupados en el centro
+    const eyeW  = Math.min(W * 0.205, 126);  // ojos medianos-grandes
+    const eyeH  = eyeW * 1.18;               // casi cuadrados, ligeramente más altos
+    const gap   = Math.min(W * 0.325, 200);  // separación centro-a-centro
+    const eyeCY = H * 0.40;                  // ojos en el centro-arriba de pantalla
+    const mouthY = eyeCY + eyeH * 0.5 + H * 0.145; // boca ~15% bajo los ojos
+    const mouthW = Math.min(W * 0.54, 336);
     return {
         lx: W/2 - gap/2,
         rx: W/2 + gap/2,
@@ -122,60 +122,73 @@ function drawEye(cx, cy, ew, eh, night, dance) {
     // La expresión 'dance' usa 'star' + rebote en Y (manejado en render)
     const e = dance ? 'star' : expr;
 
+    const ry = eh / 2;
     switch (e) {
         case 'happy':
-        case 'recognised':
-            drawHappyEye(rx, eh / 2, night);
-            break;
-        case 'star':
-            drawStarEye(rx, night, dance);
-            break;
-        case 'flat':
-            drawFlatEye(rx, night);
-            break;
-        case 'glitch':
-            drawGlitchEye(rx, eh * 0.5, night);
-            break;
-        case 'surprise':
-            drawOvalEye(rx * 1.28, rx * 1.32, night, false);
-            break;
-        case 'fear':
-            drawOvalEye(rx * 0.80, rx * 0.82, night, false);
-            break;
-        case 'thinking':
-            drawSquintEye(rx, eh / 2, night);
-            break;
-        case 'sad':
-            drawSadEye(rx, eh / 2, night);
-            break;
-        default:
-            drawOvalEye(rx, eh / 2, night, true);
+        case 'recognised':  drawHappyEye(rx, ry, night);             break;
+        case 'star':        drawStarEye(rx, night, dance);            break;
+        case 'flat':        drawFlatEye(rx, night);                   break;
+        case 'glitch':      drawGlitchEye(rx, eh * 0.52, night);     break;
+        case 'surprise':    drawNormalEye(rx * 1.25, ry * 1.28, night); break;
+        case 'fear':        drawNormalEye(rx * 0.78, ry * 0.80, night); break;
+        case 'thinking':    drawSquintEye(rx, ry, night);             break;
+        case 'sad':         drawSadEye(rx, ry, night);                break;
+        default:            drawNormalEye(rx, ry, night);
     }
 
     ctx.restore();
 }
 
-// ── Gradiente de profundidad plástica ─────────────────────────────────────
+// ── Helpers de dibujo ─────────────────────────────────────────────────────
+
+// Rectángulo redondeado centrado en (0,0) — forma base de los ojos de Ron
+function rrectPath(rx, ry, cr) {
+    const r = Math.min(cr, rx, ry);
+    ctx.beginPath();
+    ctx.moveTo(-rx + r, -ry);
+    ctx.lineTo( rx - r, -ry);
+    ctx.quadraticCurveTo( rx, -ry,  rx, -ry + r);
+    ctx.lineTo( rx,  ry - r);
+    ctx.quadraticCurveTo( rx,  ry,  rx - r,  ry);
+    ctx.lineTo(-rx + r,  ry);
+    ctx.quadraticCurveTo(-rx,  ry, -rx,  ry - r);
+    ctx.lineTo(-rx, -ry + r);
+    ctx.quadraticCurveTo(-rx, -ry, -rx + r, -ry);
+    ctx.closePath();
+}
+
+// Mitad superior del rect redondeado (ojos felices — plano abajo)
+function rrectTopPath(rx, ry, cr) {
+    const r = Math.min(cr, rx, ry);
+    ctx.beginPath();
+    ctx.moveTo(-rx,  0);
+    ctx.lineTo(-rx, -ry + r);
+    ctx.quadraticCurveTo(-rx, -ry, -rx + r, -ry);
+    ctx.lineTo( rx - r, -ry);
+    ctx.quadraticCurveTo( rx, -ry,  rx, -ry + r);
+    ctx.lineTo( rx,  0);
+    ctx.closePath();
+}
+
 function eyeGradient(rx, ry, night) {
-    const g = ctx.createRadialGradient(-rx*0.18, -ry*0.28, rx*0.03, 0, 0, rx*1.12);
+    const g = ctx.createRadialGradient(-rx*0.22, -ry*0.30, rx*0.03, 0, 0, rx*1.10);
     if (night) {
-        g.addColorStop(0,   'rgb(60,190,230)');
-        g.addColorStop(0.5, 'rgb(20,150,195)');
-        g.addColorStop(1,   'rgb(0,100,145)');
+        g.addColorStop(0,   'rgb(55,185,228)');
+        g.addColorStop(0.5, 'rgb(15,145,192)');
+        g.addColorStop(1,   'rgb(0,95,140)');
     } else {
-        g.addColorStop(0,   `rgb(${ec.r+28},${ec.g+28},${ec.b+28})`);
-        g.addColorStop(0.5, `rgb(${ec.r+8},${ec.g+8},${ec.b+8})`);
-        g.addColorStop(1,   `rgb(${Math.max(0,ec.r-5)},${Math.max(0,ec.g-5)},${Math.max(0,ec.b-5)})`);
+        g.addColorStop(0,   `rgb(${ec.r+30},${ec.g+30},${ec.b+30})`);
+        g.addColorStop(0.5, `rgb(${ec.r+9},${ec.g+9},${ec.b+9})`);
+        g.addColorStop(1,   `rgb(${Math.max(0,ec.r-6)},${Math.max(0,ec.g-6)},${Math.max(0,ec.b-6)})`);
     }
     return g;
 }
 
-// Brillo especular (punto de luz plástico)
 function highlight(rx, ry) {
     if (blinkP > 0.78) return;
-    const hx = rx*0.30, hy = -ry*0.38, hr = rx*0.16;
+    const hx = rx*0.32, hy = -ry*0.36, hr = rx*0.17;
     const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-    hg.addColorStop(0,    'rgba(255,255,255,0.92)');
+    hg.addColorStop(0,    'rgba(255,255,255,0.94)');
     hg.addColorStop(0.45, 'rgba(255,255,255,0.28)');
     hg.addColorStop(1,    'rgba(255,255,255,0)');
     ctx.beginPath();
@@ -185,83 +198,84 @@ function highlight(rx, ry) {
 }
 
 function setGlow(night) {
-    ctx.shadowColor = night ? 'rgba(0,212,255,0.60)' : 'rgba(0,0,0,0.28)';
-    ctx.shadowBlur  = night ? 20 : 10;
+    ctx.shadowColor = night ? 'rgba(0,212,255,0.65)' : 'rgba(0,0,0,0.32)';
+    ctx.shadowBlur  = night ? 22 : 12;
 }
 function clearGlow() { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; }
 
-// Ojo normal oval ─────────────────────────────────────────────────────────
-function drawOvalEye(rx, ry, night, allowBlink) {
-    const ery = allowBlink ? ry * (1 - blinkP * 0.97) : ry;
+function strokeEye(rx, night) {
+    ctx.strokeStyle = night ? 'rgba(0,212,255,0.28)' : 'rgba(0,0,0,0.58)';
+    ctx.lineWidth   = Math.max(2, rx * 0.07);
+    ctx.stroke();
+}
+
+// ── Tipos de ojos (rectángulo redondeado, como B-Bot de la peli) ──────────
+
+// Ojo normal — rect redondeado con parpadeo
+function drawNormalEye(rx, ry, night) {
+    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.8);
+    const cr  = Math.min(rx, ery) * 0.44;
     setGlow(night);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx, Math.max(ery, 0.5), 0, 0, Math.PI*2);
+    rrectPath(rx, ery, cr);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
     clearGlow();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.25)' : 'rgba(0,0,0,0.55)';
-    ctx.lineWidth   = Math.max(1.5, rx*0.065);
-    ctx.stroke();
+    strokeEye(rx, night);
     highlight(rx, ery);
 }
 
-// Ojo feliz: media luna (cúpula en parte superior, plano abajo)
+// Ojo feliz — mitad superior (plano abajo, redondeado arriba)
 function drawHappyEye(rx, ry, night) {
-    const ery = Math.max(ry * 0.78 * (1 - blinkP * 0.97), 0.5);
+    const ery = Math.max(ry * 0.80 * (1 - blinkP * 0.97), 0.8);
+    const cr  = Math.min(rx, ery) * 0.50;
     setGlow(night);
-    ctx.beginPath();
-    ctx.moveTo(-rx, 0);
-    ctx.ellipse(0, 0, rx, ery, 0, Math.PI, 0, false); // arco superior
-    ctx.closePath(); // línea recta abajo
+    rrectTopPath(rx, ery, cr);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
     clearGlow();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.25)' : 'rgba(0,0,0,0.55)';
-    ctx.lineWidth   = Math.max(1.5, rx*0.065);
-    ctx.stroke();
+    strokeEye(rx, night);
     highlight(rx, ery);
 }
 
-// Ojo estrella
+// Ojo estrella — polígono
 function drawStarEye(rx, night, dance) {
     const r1 = rx * 1.08 * (dance ? 1 + Math.sin(danceT)*0.12 : 1);
     const r2 = rx * 0.42;
-    const pts = 5;
     setGlow(night);
     ctx.beginPath();
-    for (let i = 0; i < pts*2; i++) {
+    for (let i = 0; i < 10; i++) {
         const r = i%2===0 ? r1 : r2;
-        const a = (i*Math.PI/pts) - Math.PI/2;
+        const a = (i*Math.PI/5) - Math.PI/2;
         if (i===0) ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r);
         else       ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
     }
     ctx.closePath();
-    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r+18},${ec.g+18},${ec.b+18})`;
+    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r+20},${ec.g+20},${ec.b+20})`;
     ctx.fill();
     clearGlow();
 }
 
-// Ojo plano (durmiendo)
+// Ojo plano — línea fina (durmiendo)
 function drawFlatEye(rx, night) {
-    const ry = rx * 0.20;
+    const ery = rx * 0.17;
+    const cr  = ery;
     setGlow(night);
-    ctx.globalAlpha = 0.48;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx*1.05, ry, 0, 0, Math.PI*2);
+    ctx.globalAlpha = 0.50;
+    rrectPath(rx * 1.05, ery, cr);
     ctx.fillStyle = night ? 'rgb(0,180,215)' : `rgb(${ec.r},${ec.g},${ec.b})`;
     ctx.fill();
     ctx.globalAlpha = 1;
     clearGlow();
 }
 
-// Ojo glitch: rectángulo cian con ruido
+// Ojo glitch — rect cian sin redondear, con scanlines
 function drawGlitchEye(rx, rh, night) {
     const ry = rh / 2;
-    ctx.shadowColor = 'rgba(0,212,255,0.8)'; ctx.shadowBlur = 14;
+    ctx.shadowColor = 'rgba(0,212,255,0.85)'; ctx.shadowBlur = 16;
     ctx.fillStyle = '#00d4ff';
     ctx.fillRect(-rx, -ry, rx*2, ry*2);
     clearGlow();
-    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
     ctx.lineWidth = 1.5;
     for (let y = -ry+4; y < ry; y += 5) {
         if (Math.random() > 0.35) {
@@ -273,154 +287,196 @@ function drawGlitchEye(rx, rh, night) {
     }
 }
 
-// Ojo pensando: entrecerrado arriba
+// Ojo entrecerrado — rect aplastado (pensando)
 function drawSquintEye(rx, ry, night) {
-    const ery = ry * 0.70 * (1 - blinkP * 0.97);
-    const cy  = ry * 0.14; // desplazar hacia abajo para efecto de párpado
+    const ery = Math.max(ry * 0.62 * (1 - blinkP * 0.97), 0.8);
+    const cr  = Math.min(rx, ery) * 0.50;
+    const offY = ry * 0.16;
     setGlow(night);
-    ctx.beginPath();
-    ctx.ellipse(0, cy, rx, Math.max(ery, 0.5), 0, 0, Math.PI*2);
+    ctx.save(); ctx.translate(0, offY);
+    rrectPath(rx, ery, cr);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    clearGlow();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.25)' : 'rgba(0,0,0,0.55)';
-    ctx.lineWidth   = Math.max(1.5, rx*0.065);
-    ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.translate(0, offY);
+    strokeEye(rx, night);
+    ctx.restore();
     highlight(rx, ery);
 }
 
-// Ojo triste: normal con sombra en esquina interior
+// Ojo triste — normal con sombra interior esquina
 function drawSadEye(rx, ry, night) {
-    const ery = ry * (1 - blinkP * 0.97);
+    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.8);
+    const cr  = Math.min(rx, ery) * 0.44;
     setGlow(night);
-    ctx.beginPath();
-    ctx.ellipse(0, -ry*0.06, rx, Math.max(ery, 0.5), 0, 0, Math.PI*2);
+    ctx.save(); ctx.translate(0, -ry*0.05);
+    rrectPath(rx, ery, cr);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    clearGlow();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.25)' : 'rgba(0,0,0,0.55)';
-    ctx.lineWidth   = Math.max(1.5, rx*0.065);
-    ctx.stroke();
+    strokeEye(rx, night);
+    ctx.restore();
     highlight(rx, ery);
-    // Sombra interior triangular (ceño triste)
+    // Triángulo de ceño triste en esquina interior
     ctx.beginPath();
-    ctx.moveTo(-rx, -ery*0.1);
-    ctx.lineTo(-rx*0.25, -ery*0.82);
-    ctx.lineTo(-rx*0.7,  -ery*0.25);
+    ctx.moveTo(-rx, -ery*0.08);
+    ctx.lineTo(-rx*0.22, -ery*0.80);
+    ctx.lineTo(-rx*0.68, -ery*0.22);
     ctx.closePath();
-    ctx.fillStyle = night ? 'rgba(0,212,255,0.12)' : 'rgba(0,0,0,0.12)';
+    ctx.fillStyle = night ? 'rgba(0,212,255,0.13)' : 'rgba(0,0,0,0.13)';
     ctx.fill();
 }
 
 // ── Boca ──────────────────────────────────────────────────────────────────
 function drawMouth(cx, cy, w, night, dance) {
-    const hw      = w / 2;
+    const hw = w / 2;
     const speaking = RonState.activityState === 'SPEAKING';
-    const spk     = speaking ? Math.sin(speakT) * hw * 0.10 : 0;
-    const spkA    = speaking ? Math.abs(Math.sin(speakT)) : 0;
-    const sw      = Math.max(3, hw * 0.082);
-    const col     = night ? '#00d4ff' : '#1a1a1a';
+    // Apertura: 0=cerrado, 1=abierto. Solo parte positiva del seno.
+    const openness = speaking ? Math.max(0, Math.sin(speakT)) : 0;
+    const col = night ? '#00d4ff' : '#1a1a1a';
+    const sw  = Math.max(4.5, hw * 0.062);
 
     ctx.save();
     ctx.strokeStyle = col;
     ctx.lineWidth   = sw;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
-    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.5)'; ctx.shadowBlur = 8; }
+    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.55)'; ctx.shadowBlur = 9; }
 
-    if (dance) {
-        ctx.beginPath();
-        ctx.moveTo(cx - hw*1.0, cy - hw*0.08);
-        ctx.quadraticCurveTo(cx, cy + hw*0.38 + Math.abs(Math.sin(danceT))*hw*0.18, cx + hw*1.0, cy - hw*0.08);
-        ctx.stroke();
-        ctx.restore(); return;
-    }
-
-    const e = expr;
-    ctx.beginPath();
+    const e = dance ? 'star' : expr;
 
     switch (e) {
         case 'happy':
         case 'recognised':
-            ctx.moveTo(cx - hw, cy - hw*0.05);
-            ctx.quadraticCurveTo(cx, cy + hw*0.30 + spk, cx + hw, cy - hw*0.05);
-            ctx.stroke();
-            if (speaking && spkA > 0.28) {
-                ctx.beginPath();
-                ctx.moveTo(cx - hw*0.58, cy - hw*0.01);
-                ctx.quadraticCurveTo(cx, cy + hw*0.18 + spk, cx + hw*0.58, cy - hw*0.01);
-                ctx.closePath();
-                ctx.fillStyle = night ? 'rgba(0,212,255,0.28)' : 'rgba(0,0,0,0.10)';
-                ctx.fill();
-            }
+            // Sonrisa amplia con boca que abre al hablar
+            openMouth(cx, cy, hw, hw*0.26, hw*0.34, openness, night);
             break;
 
         case 'star':
-            ctx.moveTo(cx - hw*1.05, cy - hw*0.10);
-            ctx.quadraticCurveTo(cx, cy + hw*0.42 + spk, cx + hw*1.05, cy - hw*0.10);
-            ctx.stroke();
+            // Sonrisa enorme, se abre mucho
+            openMouth(cx, cy, hw*1.08, hw*0.42, hw*0.46,
+                dance ? 0.75 + Math.abs(Math.sin(danceT))*0.25 : openness, night);
+            break;
+
+        case 'neutral':
+        default:
+            // Leve sonrisa, abre moderado al hablar
+            openMouth(cx, cy, hw*0.72, hw*0.10, hw*0.24, openness, night);
             break;
 
         case 'sad':
-            ctx.moveTo(cx - hw*0.82, cy + hw*0.18);
-            ctx.quadraticCurveTo(cx, cy - hw*0.12 + spk, cx + hw*0.82, cy + hw*0.18);
-            ctx.stroke();
+            frownMouth(cx, cy, hw*0.80, hw*0.17, hw*0.13, openness, night);
             break;
 
         case 'fear':
-            ctx.moveTo(cx - hw*0.72, cy + hw*0.14);
-            ctx.quadraticCurveTo(cx, cy - hw*0.08 + spk, cx + hw*0.72, cy + hw*0.14);
-            ctx.stroke();
+            frownMouth(cx, cy, hw*0.70, hw*0.13, hw*0.10, openness, night);
             break;
 
-        case 'surprise':
-            ctx.ellipse(cx, cy, hw*0.22, hw*0.26 + spkA*hw*0.12, 0, 0, Math.PI*2);
-            ctx.stroke();
-            if (spkA > 0.2) {
-                ctx.fillStyle = night ? 'rgba(0,212,255,0.18)' : 'rgba(0,0,0,0.08)';
-                ctx.fill();
-            }
-            break;
-
-        case 'thinking':
-            ctx.moveTo(cx - hw*0.44, cy);
-            ctx.quadraticCurveTo(cx, cy + hw*0.05, cx + hw*0.44, cy);
-            ctx.stroke();
-            break;
-
-        case 'flat':
-            ctx.moveTo(cx - hw*0.38, cy);
-            ctx.lineTo(cx + hw*0.38, cy);
-            ctx.stroke();
-            break;
-
-        case 'glitch': {
-            ctx.moveTo(cx - hw, cy);
-            for (let i = 1; i <= 7; i++) {
-                const px = cx - hw + (i/7)*w;
-                const py = cy + (i%2===0 ? -hw*0.10 : hw*0.10);
-                ctx.lineTo(px, py);
-            }
+        case 'surprise': {
+            // Boca-O que se agranda al hablar
+            const rW = hw*0.22 + openness*hw*0.14;
+            const rH = hw*0.28 + openness*hw*0.20;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, rW, rH, 0, 0, Math.PI*2);
+            ctx.fillStyle = night ? '#003855' : '#1a1a1a';
+            ctx.fill();
             ctx.stroke();
             break;
         }
 
-        default: // neutral
-            ctx.moveTo(cx - hw*0.70, cy - hw*0.03);
-            ctx.quadraticCurveTo(cx, cy + hw*0.12 + spk, cx + hw*0.70, cy - hw*0.03);
+        case 'thinking':
+            ctx.beginPath();
+            ctx.moveTo(cx - hw*0.42, cy);
+            ctx.quadraticCurveTo(cx, cy + hw*0.045, cx + hw*0.42, cy);
             ctx.stroke();
-            if (speaking && spkA > 0.32) {
-                ctx.beginPath();
-                ctx.moveTo(cx - hw*0.48, cy - hw*0.01);
-                ctx.quadraticCurveTo(cx, cy + hw*0.07 + spk*1.4, cx + hw*0.48, cy - hw*0.01);
-                ctx.closePath();
-                ctx.fillStyle = night ? 'rgba(0,212,255,0.20)' : 'rgba(0,0,0,0.07)';
-                ctx.fill();
+            break;
+
+        case 'flat':
+            ctx.beginPath();
+            ctx.moveTo(cx - hw*0.36, cy);
+            ctx.lineTo(cx + hw*0.36, cy);
+            ctx.stroke();
+            break;
+
+        case 'glitch':
+            ctx.beginPath();
+            ctx.moveTo(cx - hw, cy);
+            for (let i = 1; i <= 7; i++) {
+                ctx.lineTo(cx - hw + (i/7)*w, cy + (i%2===0 ? -hw*0.09 : hw*0.09));
             }
+            ctx.stroke();
             break;
     }
 
     ctx.restore();
+}
+
+// Sonrisa que abre la boca al hablar — labio superior fijo, inferior baja
+function openMouth(cx, cy, hw, curveDown, maxDrop, openness, night) {
+    const drop = openness * maxDrop;
+    const interior = night ? '#003355' : '#1a1a1a';
+
+    // Interior oscuro cuando la boca está abierta
+    if (drop > maxDrop * 0.08) {
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy);
+        ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
+        // Bajar al labio inferior
+        ctx.lineTo(cx + hw * 0.90, cy + curveDown * 0.52);
+        ctx.quadraticCurveTo(cx, cy + curveDown + drop + curveDown * 0.12,
+                              cx - hw * 0.90, cy + curveDown * 0.52);
+        ctx.closePath();
+        ctx.fillStyle = interior;
+        ctx.fill();
+    }
+
+    // Labio superior (siempre visible)
+    ctx.beginPath();
+    ctx.moveTo(cx - hw, cy);
+    ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
+    ctx.stroke();
+
+    // Labio inferior (solo cuando abierta)
+    if (drop > maxDrop * 0.08) {
+        ctx.beginPath();
+        ctx.moveTo(cx - hw * 0.90, cy + curveDown * 0.52);
+        ctx.quadraticCurveTo(cx, cy + curveDown + drop + curveDown * 0.10,
+                              cx + hw * 0.90, cy + curveDown * 0.52);
+        ctx.stroke();
+    }
+}
+
+// Mueca/ceño triste — labio superior arqueado arriba, labio inferior cae un poco
+function frownMouth(cx, cy, hw, frown, maxDrop, openness, night) {
+    const drop = openness * maxDrop;
+    const endY = cy + frown;       // extremos bajos (esquinas de la mueca)
+    const ctrlY = cy - frown * 0.55; // punto de control alto
+
+    // Interior cuando abre
+    if (drop > maxDrop * 0.12) {
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, endY);
+        ctx.quadraticCurveTo(cx, ctrlY, cx + hw, endY);
+        ctx.lineTo(cx + hw, endY + drop * 0.6);
+        ctx.quadraticCurveTo(cx, endY + drop + frown * 0.10, cx - hw, endY + drop * 0.6);
+        ctx.closePath();
+        ctx.fillStyle = night ? '#003355' : '#1a1a1a';
+        ctx.fill();
+    }
+
+    // Labio superior (mueca triste)
+    ctx.beginPath();
+    ctx.moveTo(cx - hw, endY);
+    ctx.quadraticCurveTo(cx, ctrlY, cx + hw, endY);
+    ctx.stroke();
+
+    // Labio inferior
+    if (drop > maxDrop * 0.12) {
+        ctx.beginPath();
+        ctx.moveTo(cx - hw * 0.88, endY + drop * 0.2);
+        ctx.quadraticCurveTo(cx, endY + drop + frown * 0.08,
+                              cx + hw * 0.88, endY + drop * 0.2);
+        ctx.stroke();
+    }
 }
 
 // ── API pública ───────────────────────────────────────────────────────────
