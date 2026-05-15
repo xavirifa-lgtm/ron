@@ -40,19 +40,16 @@ export function startVisionLoop() {
             // Actualizar defensor
             updateSadnessTracking(RonState.currentEmotion, detections.length > 0);
 
-            if (busy) return;
-
-            // En modo aprendizaje: seguir acumulando descriptores pero no hacer reconocimiento
-            if (RonState.isLearningFace) {
-                if (detections.length > 0) {
-                    RonState.lastDescriptor = Array.from(detections[0].descriptor);
-                    if (!RonState.learningDescriptors) RonState.learningDescriptors = [];
-                    if (RonState.learningDescriptors.length < 10) {
-                        RonState.learningDescriptors.push(Array.from(detections[0].descriptor));
-                    }
+            // Acumular descriptores SIEMPRE en modo aprendizaje (incluso si Ron está hablando)
+            if (RonState.isLearningFace && detections.length > 0) {
+                RonState.lastDescriptor = Array.from(detections[0].descriptor);
+                if (!RonState.learningDescriptors) RonState.learningDescriptors = [];
+                if (RonState.learningDescriptors.length < 10) {
+                    RonState.learningDescriptors.push(Array.from(detections[0].descriptor));
                 }
-                return;
             }
+
+            if (busy || RonState.isLearningFace) return;
 
             // Escondite
             if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
@@ -97,6 +94,7 @@ export function startVisionLoop() {
                     });
                     const matcher = new faceapi.FaceMatcher(labeled, 0.68);
                     const best    = matcher.findBestMatch(d.descriptor);
+                    log(`Reconocimiento: ${best.label} dist=${best.distance?.toFixed(3)}`);
 
                     if (best.label !== 'unknown') {
                         found = best.label;
@@ -196,6 +194,7 @@ export function startVisionLoop() {
                     if (RonState.unknownStabilityCounter > 50) {
                         RonState.tempDescriptor        = Array.from(d.descriptor);
                         RonState.isLearningFace        = true;
+                        RonState.learningDescriptors   = [];
                         RonState.unknownStabilityCounter = 0;
                         import('./ui.js').then(ui => ui.startScanningUI());
                         speak("¡Bip bip! ¡Nuevo humano detectado! ¿Cómo te llamas? ¡Yo soy Ron!");

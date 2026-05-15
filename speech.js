@@ -99,7 +99,7 @@ export function saveNewUser(text) {
         .replace(/me llamo |mi nombre es |soy |me llaman |me dicen /gi, "")
         .replace(/[.,!¡?¿]/g, "")
         .trim();
-    
+
     name = name.charAt(0).toUpperCase() + name.slice(1);
 
     if (name.length < 2 || name === "Me llamo" || name === "Soy") {
@@ -109,15 +109,40 @@ export function saveNewUser(text) {
         return speak("¡Bip! Ese nombre es muy largo para mi disco duro. Dime solo tu nombre real.");
     }
 
-    RonState.knownFaces.push({ label: name, descriptors: [RonState.tempDescriptor] });
+    // Usar todos los descriptores acumulados (hasta 10 muestras para robustez)
+    const descriptorsToSave = (RonState.learningDescriptors && RonState.learningDescriptors.length > 0)
+        ? RonState.learningDescriptors
+        : (RonState.tempDescriptor ? [RonState.tempDescriptor] : []);
+
+    if (descriptorsToSave.length === 0) {
+        return speak("¡Bip! No pude ver tu cara. ¡Mira a la cámara y dime tu nombre otra vez!");
+    }
+
+    // Eliminar entradas anteriores de la misma cara (evita duplicados entre sesiones)
+    try {
+        const refDesc = new Float32Array(descriptorsToSave[0]);
+        RonState.knownFaces = RonState.knownFaces.filter(f => {
+            const ds = f.descriptors || [f.descriptor];
+            return !ds.some(dd => faceapi.euclideanDistance(refDesc, new Float32Array(dd)) < 0.45);
+        });
+    } catch(e) { log("Dedup error: " + e.message); }
+
+    RonState.knownFaces.push({ label: name, descriptors: descriptorsToSave });
     localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
+    log(`Cara guardada: ${name} (${descriptorsToSave.length} muestras)`);
+
     RonState.currentUser = name;
-    RonState.userStats[name] = { likes: [], dislikes: [], lastSeen: new Date().toISOString() };
+    if (!RonState.userStats[name]) {
+        RonState.userStats[name] = { likes: [], dislikes: [], lastSeen: new Date().toISOString() };
+    }
     localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
-    
+
+    // Resetear todo el estado de aprendizaje
     RonState.isLearningFace = false;
     RonState.tempDescriptor = null;
+    RonState.learningDescriptors = [];
     import('./ui.js').then(ui => ui.stopScanningUI());
+
     speak(`¡Bip! ¡Entendido, ${name}! Ya estás grabado en mi memoria a fuego. ¡Somos mejores amigos!`);
 }
 
@@ -196,7 +221,7 @@ export function speak(text) {
             }, 30000); // 30 segundos de ventana libre tras cada respuesta
             resolve();
         };
-        u.onerror = () => resolve();
+        u.onerror = (e) => { log(`Error síntesis: ${e?.error}`); changeState('IDLE'); resolve(); };
         window.speechSynthesis.speak(u);
     });
 }

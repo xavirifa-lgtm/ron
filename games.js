@@ -136,7 +136,7 @@ function resetStory() {
 }
 
 export async function startPersonalizedStory() {
-    if (RonState.activityState !== 'IDLE') return;
+    if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING') return;
     resetStory();
     changeState('STORY');
     setExpression('star');
@@ -153,15 +153,23 @@ export async function startPersonalizedStory() {
 
     try {
         const apiKey = RonState.apiKey || localStorage.getItem('ron_groq_key');
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: sysPrompt }], temperature: 0.88, max_tokens: 700 })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || 'Error API');
+        const storyModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+        let data, res;
+        for (const model of storyModels) {
+            res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: sysPrompt }], temperature: 0.88, max_tokens: 700 })
+            });
+            data = await res.json();
+            if (res.ok) break;
+            log(`Historia: fallo con ${model}: ${data.error?.message}`);
+        }
+        if (!res.ok) throw new Error(data?.error?.message || 'Error API historia');
 
-        storyChapters = data.choices[0].message.content.split('|||').map(s => s.trim()).filter(Boolean);
+        const storyRaw = data.choices[0].message.content
+            .replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\n]+/, '');
+        storyChapters = storyRaw.split('|||').map(s => s.trim()).filter(Boolean);
         if (storyChapters.length === 0) throw new Error('Historia vacía');
 
         storyChapter = 0;

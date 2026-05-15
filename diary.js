@@ -53,7 +53,7 @@ export async function ronRemembersSomething() {
     const entries = getEntries();
     if (entries.length < 2) return false; // necesita historial mínimo
 
-    const entry = entries[Math.floor(Math.random() * Math.max(0, entries.length - 1))];
+    const entry = entries[Math.floor(Math.random() * entries.length)];
     if (!entry) return false;
 
     const name = RonState.currentUser || 'amiga';

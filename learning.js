@@ -2,6 +2,7 @@
 import { RonState, log } from './core.js';
 import { speak } from './speech.js';
 import { setExpression } from './ui.js';
+import { logLearnt } from './diary.js';
 
 const STORAGE_KEY = 'ron_learnt_facts';
 const MAX_FACTS   = 30;
@@ -50,6 +51,7 @@ export function detectLearningMoment(text) {
 
 export async function ronLearns(fact) {
     const saved = addFact(fact);
+    if (saved) logLearnt(fact);
     const count = getFacts().length;
 
     if (!saved) {

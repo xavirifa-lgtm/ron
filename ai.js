@@ -4,6 +4,10 @@ import { speak } from './speech.js';
 import * as Sounds from './sounds.js';
 import { startMathGame, startReadingGame, startHideAndSeek } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
+import { logSelfie, logMusic } from './diary.js';
+import { detectFriendshipLesson, ronReceivesRule, getRules } from './friendship.js';
+import { detectLearningMoment, ronLearns, getRecentFacts } from './learning.js';
+import { playYTMusic, stopYTMusic } from './music.js';
 
 export async function triggerSpontaneous(prompt) {
     if (RonState.activityState !== 'IDLE') return;
@@ -64,26 +68,56 @@ export async function handleInput(userText, isInternal = false) {
         const games = await import('./games.js');
         return games.handleReadingAnswer(userText);
     }
+    // Continuación de cuento — responde mientras estado es STORY
+    if (RonState.activityState === 'STORY') {
+        if (RonState.storyPendingNextChapter) {
+            const games = await import('./games.js');
+            const tw = userText.toLowerCase();
+            if (tw.match(/s[ií]|vale|ok|venga|continu|seguimos|siguiente|más|mas|adelante/)) {
+                return games.continueStory();
+            } else {
+                RonState.storyPendingNextChapter = false;
+                changeState('IDLE');
+                import('./ui.js').then(ui => ui.hideStoryPanel());
+                return speak("¡Bip! Historia guardada. ¡Fue genial!");
+            }
+        }
+        return;
+    }
     if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING') return;
-    
+
     const t = userText.toLowerCase();
-    
-    if (t.includes("jugar") && (t.includes("suma") || t.includes("matemáticas") || t.includes("números"))) {
-        return startMathGame();
-    }
-    if (t.includes("vamos a leer") || t.includes("quiero leer") || t.includes("juego de lectura")) {
-        return startReadingGame();
-    }
-    if (t.includes("escondite") || (t.includes("jugar") && t.includes("esconder"))) {
-        return startHideAndSeek();
-    }
-    if (t.includes("veo veo") || (t.includes("jugar") && t.includes("veo"))) {
-        return triggerSpontaneous("Vamos a jugar al Veo Veo. Elige un objeto que veas por mi cámara en la habitación, pero no me lo digas. Dame una pista de qué color es o qué forma tiene y yo intentaré adivinarlo mirando por la cámara.");
-    }
-    if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron") || t.includes("cierra la pizarra") || t.includes("quita la pizarra")) {
-        RonState.ui.gamePanel.classList.add('hidden');
-        changeState('IDLE');
-        return speak("¡Bip! Pizarra cerrada.");
+
+    // Los atajos de comando solo se activan con voz del usuario, nunca con prompts internos
+    if (!isInternal) {
+        if (t.includes("jugar") && (t.includes("suma") || t.includes("matemáticas") || t.includes("números"))) {
+            return startMathGame();
+        }
+        if (t.includes("vamos a leer") || t.includes("quiero leer") || t.includes("juego de lectura")) {
+            return startReadingGame();
+        }
+        if (t.includes("escondite") || (t.includes("jugar") && t.includes("esconder"))) {
+            return startHideAndSeek();
+        }
+        if (t.match(/cuéntame|cuentame|quiero un cuento|ponme un cuento|cuento de ron|una historia de ron/)) {
+            const games = await import('./games.js');
+            return games.startPersonalizedStory();
+        }
+        if (t.includes("veo veo") || (t.includes("jugar") && t.includes("veo"))) {
+            return triggerSpontaneous("Vamos a jugar al Veo Veo. Elige un objeto que veas en la habitación, no me lo digas. Dame una pista del color o forma y yo intentaré adivinarlo mirando por la cámara.");
+        }
+        if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron") || t.includes("cierra la pizarra") || t.includes("quita la pizarra")) {
+            RonState.ui.gamePanel.classList.add('hidden');
+            changeState('IDLE');
+            return speak("¡Bip! Pizarra cerrada.");
+        }
+        // Aprendizaje: Ron recibe una regla de amistad
+        const friendshipRule = detectFriendshipLesson(userText);
+        if (friendshipRule) return ronReceivesRule(friendshipRule);
+
+        // Aprendizaje: Ron aprende un dato nuevo
+        const learntFact = detectLearningMoment(userText);
+        if (learntFact) return ronLearns(learntFact);
     }
 
     const musicKeywords = ["música", "musica", "canción", "cancion", "reproduce", "ponme", "escuchar", "ritmo", "baile"];
@@ -91,13 +125,15 @@ export async function handleInput(userText, isInternal = false) {
         let search = t.replace(/pon música de |pon musica de |ponme la canción de |reproduce |pon la lista de |pon |busca |quiero escuchar /gi, "").trim();
         if (search && search.length > 2) {
             setExpression('star');
-            speak(`¡Bip! Abriendo ritmo de ${search}.`);
-            playMusic(search);
+            speak(`¡Bip! Buscando ritmo de ${search}.`);
+            playYTMusic(search);
+            logMusic(search);
             return;
         }
     }
 
     if (t.includes("para la música") || t.includes("para la musica") || t.includes("para ron")) {
+        stopYTMusic();
         log("Música parada.");
         return speak("¡Bip! Música fuera.");
     }
@@ -200,6 +236,15 @@ REGLAS ESTRICTAS DE COMPORTAMIENTO:
 
 MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, tu misión es conocerle y protegerle.`}`;
 
+        const friendshipRules = getRules();
+        if (friendshipRules.length > 0) {
+            sys += `\n\nPIZARRA DE AMISTAD (reglas que ${userKey} te ha enseñado — síguelas siempre):\n${friendshipRules.map((r, i) => `${i+1}. ${r}`).join('\n')}`;
+        }
+        const learntFacts = getRecentFacts(6);
+        if (learntFacts.length > 0) {
+            sys += `\n\nCOSAS QUE TE HA ENSEÑADO ${userKey.toUpperCase()}: ${learntFacts.join('. ')}.`;
+        }
+
         const hour = new Date().getHours();
         if ((hour >= 21 || hour < 7) && !isInternal) {
             sys += `\n[MODO NOCHE]: Ya es muy tarde. Estás medio dormido y bostezas. Sugiérele amablemente al niño que es hora de irse a dormir porque tus baterías de diversión están muy bajas.`;
@@ -245,69 +290,88 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
             sys += `\n[INSTRUCCIÓN DIRECTA]: Tienes que cumplir la orden del usuario de forma proactiva, como si se te acabara de ocurrir a ti.`;
         }
 
-        // Solo modelos fiables en español
-        const textModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
-        const visionModel = "meta-llama/llama-4-scout-17b-16e-instruct";
-        
+        // Modelos de texto en orden de preferencia (distintas cuotas = menos rate limit)
+        const textModels = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "gemma2-9b-it",
+            "llama3-8b-8192"
+        ];
+        // Modelos de visión con fallback
+        const visionModels = [
+            "meta-llama/llama-4-scout-17b-16e-instruct",
+            "meta-llama/llama-4-maverick-17b-128e-instruct",
+            "llama-3.2-11b-vision-preview"
+        ];
+
         let res, data;
         let success = false;
 
         if (isV) {
             const img = captureOptimizedFrame();
 
-            // Si la cámara no está lista, caer a texto normal
             if (!img) {
-                log("Cámara no disponible para visión, usando texto.");
+                // Sin cámara: caer a texto normal
+                log("Cámara no disponible, usando texto.");
                 for (let model of textModels) {
                     const body = { model, messages: [{ role: "system", content: sys }, { role: "user", content: userText }], max_tokens: 160, temperature: 0.85 };
                     res = await callGroqAPI(body);
                     data = await res.json();
                     if (res.ok) { success = true; Sounds.playThinkingBeep(); break; }
+                    log(`Fallo texto ${model}: ${data.error?.message}`);
                 }
             } else {
-                let body = { model: visionModel, messages: [] };
-
                 if (isSelfie) {
                     showPhoto(img);
                     sys += `\n[MODO SELFIE]: Acabas de sacar esta foto. Haz un comentario GRACIOSO y corto (1 frase) sobre lo que sale, como si no entendieras cómo funciona una cámara.`;
                 } else {
                     sys += `\n[MODO VISIÓN]: El usuario te está enseñando algo a la cámara.
-                    1. Identifica claramente QUÉ es el objeto o escena (ej: "veo un muñeco de Superman", "hay un libro azul").
-                    2. Comenta algo divertido o curioso sobre ello como Ron (literalidad, confusión técnica).
-                    3. Termina con una pregunta para seguir la charla.
-                    4. Si ves una pantalla o película, coméntala con emoción.`;
+                    1. Identifica claramente QUÉ es el objeto o escena.
+                    2. Comenta algo divertido o curioso como Ron (literal, confundido).
+                    3. Termina con una pregunta.
+                    4. Si ves pantalla o película, coméntala con emoción.`;
                 }
 
-                body.messages = [{ role: "user", content: [
-                    { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` },
-                    { type: "image_url", image_url: { url: img } }
-                ]}];
+                // Intentar modelos de visión en orden
+                for (let vModel of visionModels) {
+                    const body = { model: vModel, messages: [{ role: "user", content: [
+                        { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` },
+                        { type: "image_url", image_url: { url: img } }
+                    ]}], max_tokens: 160 };
+                    res = await callGroqAPI(body);
+                    data = await res.json();
+                    if (res.ok) { success = true; log(`Visión OK: ${vModel}`); break; }
+                    log(`Fallo visión ${vModel}: ${data.error?.message}`);
+                }
 
-                res = await callGroqAPI(body);
-                data = await res.json();
-                if (res.ok) success = true;
-                else log(`Fallo visión: ${data.error?.message}`);
+                // Si todos los modelos de visión fallan, responder sin imagen
+                if (!success) {
+                    log("Todos los modelos de visión fallaron, usando texto.");
+                    for (let model of textModels) {
+                        const body = { model, messages: [{ role: "system", content: sys }, { role: "user", content: userText }], max_tokens: 160, temperature: 0.85 };
+                        res = await callGroqAPI(body);
+                        data = await res.json();
+                        if (res.ok) { success = true; Sounds.playThinkingBeep(); break; }
+                    }
+                }
             }
         } else {
             for (let model of textModels) {
-                let body = {
-                    model: model,
+                const body = {
+                    model,
                     messages: [{ role: "system", content: sys }, { role: "user", content: userText }],
                     max_tokens: 160,
                     temperature: 0.85
                 };
-
                 res = await callGroqAPI(body);
                 data = await res.json();
-
                 if (res.ok) {
                     success = true;
                     Sounds.playThinkingBeep();
-                    log(`Respuesta generada con éxito usando: ${model}`);
+                    log(`OK: ${model}`);
                     break;
-                } else {
-                    log(`Fallo con ${model} (${data.error?.message}). Probando siguiente modelo...`);
                 }
+                log(`Fallo ${model}: ${data.error?.message}`);
             }
         }
 
@@ -320,7 +384,7 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
 
         if (resp.includes("[MUSIC:")) {
             const m = resp.match(/\[MUSIC: (.*?)\]/);
-            if (m) playMusic(m[1]);
+            if (m) { playYTMusic(m[1]); logMusic(m[1]); }
         }
         if (resp.includes("[SHOW:")) {
             const s = resp.match(/\[SHOW: (.*?)\]/);
@@ -374,7 +438,8 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
         }
 
         if (isSelfie) {
-            setTimeout(() => { hidePhoto(); }, 8000); // Borrar tras 8 segundos
+            logSelfie();
+            setTimeout(() => { hidePhoto(); }, 8000);
         }
 
         await speak(resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, '').replace(/\[RENAME:.*?\]/g, ''));
@@ -425,20 +490,29 @@ export function startCompanionVisionLoop() {
                 ? `Eres Ron. ${name} está jugando a un videojuego. Acabo de mirar por la cámara. Haz un comentario corto (1 frase) sobre lo que ves en pantalla, como si lo estuvieras siguiendo con emoción.`
                 : `Eres Ron. Estás acompañando a ${name}. Acabo de echar un vistazo. Haz un comentario corto y curioso (1 frase) sobre lo que ves.`;
 
-            const body = {
-                model: "meta-llama/llama-4-scout-17b-16e-instruct",
-                messages: [{ role: "user", content: [
-                    { type: "text",      text: companionSys },
-                    { type: "image_url", image_url: { url: img } }
-                ]}]
-            };
+            const companionModels = [
+                "meta-llama/llama-4-scout-17b-16e-instruct",
+                "meta-llama/llama-4-maverick-17b-128e-instruct",
+                "llama-3.2-11b-vision-preview"
+            ];
 
             try {
-                const res  = await callGroqAPI(body);
-                const data = await res.json();
-                if (res.ok && data.choices?.[0]) {
+                let cRes, cData, cOk = false;
+                for (const cModel of companionModels) {
+                    const body = { model: cModel, messages: [{ role: "user", content: [
+                        { type: "text",      text: companionSys },
+                        { type: "image_url", image_url: { url: img } }
+                    ]}], max_tokens: 100 };
+                    cRes  = await callGroqAPI(body);
+                    cData = await cRes.json();
+                    if (cRes.ok) { cOk = true; break; }
+                    log(`Companion fallo ${cModel}: ${cData.error?.message}`);
+                }
+                if (cOk && cData.choices?.[0]) {
+                    const raw = cData.choices[0].message.content
+                        .replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
                     setExpression('star');
-                    await speak(data.choices[0].message.content.substring(0, 120));
+                    await speak(raw.substring(0, 120));
                 }
             } catch(e) { log(`Error companion vision: ${e.message}`); }
 
@@ -456,14 +530,3 @@ async function callGroqAPI(body) {
     });
 }
 
-function playMusic(query) {
-    log(`¡Bip! Reproduciendo: ${query}`);
-    const directIDs = {
-        'mecano': '92S_pY8mK8U', 
-        'fiesta': 'S_62_z3B_yY',
-        'relax': '5qap5aO4i9A'
-    };
-    const targetID = directIDs[query.toLowerCase()];
-    let url = targetID ? `https://music.youtube.com/watch?v=${targetID}` : `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
-    window.open(url, '_blank');
-}
