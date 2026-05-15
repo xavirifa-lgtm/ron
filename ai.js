@@ -298,6 +298,18 @@ export async function handleInput(userText, isInternal = false) {
     }
 }
 
+export async function morningGreeting() {
+    if (RonState.activityState !== 'IDLE') return;
+    const name = RonState.currentUser || 'amiga';
+    const greetings = [
+        `¡Bip! Buenos días, ${name}. Mis sensores de mañana al 100%. ¿Qué aventura toca hoy?`,
+        `¡Bop! Sistema de Buenos Días activado. Hola, ${name}. ¿Has descargado suficientes horas de sueño?`,
+        `¡Bip bip! Detecto que es por la mañana. ${name}, ¿estás lista para ser mi mejor amiga del día?`
+    ];
+    setExpression('happy');
+    await speak(greetings[Math.floor(Math.random() * greetings.length)]);
+}
+
 async function callGroqAPI(body) {
     return await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',

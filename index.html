@@ -95,6 +95,18 @@
                 <img id="photo-img" src="" alt="Selfie">
             </div>
         </div>
+
+        <!-- Panel de Cuento -->
+        <div id="story-panel" class="game-panel hidden">
+            <button id="close-story-btn" class="close-game-btn" onclick="document.getElementById('story-panel').classList.add('hidden');">❌</button>
+            <div id="story-text"></div>
+        </div>
+
+        <!-- Burbuja de estado de ánimo -->
+        <div id="mood-bubble" class="mood-bubble hidden"></div>
+
+        <!-- Wrapper de cara (para efectos) -->
+        <div id="face-wrapper"></div>
     </div>
     <script>const CACHE_NAME = 'ron-bot-v23.0';</script>
     <script type="module" src="app.js?v=23.0"></script>

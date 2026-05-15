@@ -75,16 +75,19 @@ export function resetSpontaneousTimer() {
     if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
     const delay = 480000 + Math.random() * 600000;
     RonState.spontaneousTimer = setTimeout(async () => {
-        if (RonState.activityState !== 'IDLE') return;
-        // 30% probabilidad de recordar algo del diario, 70% conversación espontánea
-        if (Math.random() < 0.3) {
-            const { ronRemembersSomething } = await import('./diary.js');
-            const remembered = await ronRemembersSomething().catch(() => false);
-            if (remembered) return;
+        try {
+            if (RonState.activityState !== 'IDLE') return;
+            if (Math.random() < 0.3) {
+                const { ronRemembersSomething } = await import('./diary.js');
+                const remembered = await ronRemembersSomething().catch(() => false);
+                if (remembered) return;
+            }
+            import('./ai.js').then(ai => ai.triggerSpontaneous(
+                "Llevamos un rato callados. Inicia una conversación corta y divertida o propón un juego."
+            )).catch(() => {});
+        } catch(e) {
+            console.error('[Ron] Error espontáneo:', e);
         }
-        import('./ai.js').then(ai => ai.triggerSpontaneous(
-            "Llevamos un rato callados. Inicia una conversación corta y divertida o propón un juego."
-        ));
     }, delay);
 }
 
@@ -93,10 +96,11 @@ function checkMorningGreeting() {
     const lastGreeting = localStorage.getItem('ron_last_morning') || '';
     const hour = new Date().getHours();
     if (hour >= 7 && hour < 11 && lastGreeting !== today && RonState.currentUser) {
-        localStorage.setItem('ron_last_morning', today);
         setTimeout(() => {
             if (RonState.activityState === 'IDLE') {
-                import('./ai.js').then(ai => ai.morningGreeting());
+                // Guardamos la fecha solo cuando realmente vamos a saludar
+                localStorage.setItem('ron_last_morning', today);
+                import('./ai.js').then(ai => ai.morningGreeting()).catch(() => {});
             }
         }, 3000);
     }

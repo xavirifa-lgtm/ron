@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v25.1';
+const CACHE_NAME = 'ron-bot-v25.4';
 const ASSETS = [
   './',
   'index.html',
@@ -39,8 +39,8 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // No interceptar peticiones a APIs externas (Groq, face-api CDN)
   const url = event.request.url;
+  // No interceptar APIs externas ni CDN de modelos
   if (url.includes('api.groq.com') || url.includes('jsdelivr.net') || url.includes('youtube.com')) {
     return;
   }
