@@ -81,6 +81,7 @@ export function startVisionLoop() {
                 }
 
                 RonState.framesWithoutFace = 0;
+                calloutCount = 0; // vuelve a estar presente: reiniciar llamadas de ausencia
                 const d = detections[0];
                 RonState.lastDescriptor = Array.from(d.descriptor);
                 trackFace(d);
@@ -179,21 +180,34 @@ export function startVisionLoop() {
                                     }
                                 }, 7000);
 
-                            } else if (RonState.currentEmotion === 'feliz' && RonState.isCheeringUp) {
-                                RonState.isCheeringUp        = false;
-                                RonState.emotionCooldownUntil = now + 180000;
-                                setExpression('star');
-                                speak(`¡Bip bip! ¡Ahí está esa sonrisa! ¡Mi misión de alegría: completada!`);
+                            } else if (RonState.currentEmotion === 'feliz') {
+                                if (RonState.isCheeringUp) {
+                                    // Venía de estar triste y ahora sonríe → misión cumplida
+                                    RonState.isCheeringUp        = false;
+                                    RonState.emotionCooldownUntil = now + 180000;
+                                    setExpression('star');
+                                    speak(`¡Bip bip! ¡Ahí está esa sonrisa! ¡Mi misión de alegría: completada!`);
+                                } else {
+                                    // Contenta sin motivo previo → PREGUNTAR por qué (sonreír es frecuente: cooldown largo)
+                                    RonState.emotionCooldownUntil = now + 240000;
+                                    setExpression('happy');
+                                    const felizQ = [
+                                        `¡Bip! ${found}, ¡te veo súper contenta! ¿Qué ha pasado? ¡Cuéntamelo!`,
+                                        `¡Bop! ¡Detecto una sonrisa enorme! ${found}, ¿por qué estás tan feliz?`,
+                                        `¡Bip bip! ${found}, tu cara marca felicidad al 100%. ¿Qué te ha alegrado?`
+                                    ];
+                                    speak(felizQ[Math.floor(Math.random() * felizQ.length)]);
+                                }
 
                             } else if (RonState.currentEmotion === 'sorprendido') {
-                                RonState.emotionCooldownUntil = now + 60000;
+                                RonState.emotionCooldownUntil = now + 90000;
                                 setExpression('surprise');
-                                speak(`¡Bip! ¡Pareces muy sorprendida! ¿Te has asustado?`);
+                                speak(`¡Bip! ${found}, ¡te veo sorprendida! ¿Qué ha pasado?`);
 
                             } else if (RonState.currentEmotion === 'enfadado') {
                                 RonState.emotionCooldownUntil = now + 120000;
                                 setExpression('fear');
-                                speak(`¡Bip! ${found}, pareces enfadada. ¿Quieres que te cuente algo gracioso?`);
+                                speak(`¡Bip! ${found}, pareces enfadada. ¿Qué ha pasado? Cuéntame qué te ha molestado.`);
                             }
                         }
                     }
@@ -214,10 +228,27 @@ export function startVisionLoop() {
                 RonState.lastEmotion = RonState.currentEmotion;
 
             } else {
-                // Sin cara
+                // Sin cara: Ron la echa de menos y la llama antes de dormirse
                 if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
                     RonState.framesWithoutFace = (RonState.framesWithoutFace || 0) + 1;
-                    if (RonState.framesWithoutFace > 188) {
+                    const f       = RonState.framesWithoutFace;
+                    const hour    = new Date().getHours();
+                    const isNight = hour >= 21 || hour < 7;
+                    const canCall = RonState.currentUser && !RonState.isSilentMode && !isNight;
+
+                    // La llama 2 veces mientras está fuera: ~35s y ~90s (800ms/frame).
+                    // No de noche, no en modo silencio, y con cooldown para no agobiar.
+                    if (canCall && (Date.now() - lastCalloutTime > 25000)) {
+                        if (calloutCount === 0 && f >= 45) {
+                            calloutCount = 1; lastCalloutTime = Date.now();
+                            callOutToUser(RonState.currentUser);
+                        } else if (calloutCount === 1 && f >= 110) {
+                            calloutCount = 2; lastCalloutTime = Date.now();
+                            callOutToUser(RonState.currentUser);
+                        }
+                    }
+
+                    if (f > 188) {
                         changeState('SLEEPING');
                         setExpression('flat');
                         log("Ron dormido.");
@@ -230,7 +261,24 @@ export function startVisionLoop() {
 }
 
 const emotionBuffer = [];
-const EMOTION_MIN_CONFIDENCE = 0.38; // umbral mínimo para reportar emoción no-neutral
+const EMOTION_MIN_CONFIDENCE = 0.38; // umbral base para emociones no-neutrales
+
+// Estado de "llamar cuando está ausente"
+let lastCalloutTime = 0;
+let calloutCount    = 0;
+
+// Ron la echa de menos y la llama por su nombre (comportamiento de la peli)
+async function callOutToUser(name) {
+    if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return;
+    setExpression('thinking');
+    const calls = [
+        `¡Bip! ¿${name}? ¿Dónde te has metido? Mis sensores no te encuentran.`,
+        `¿${name}? ¡Vuelve! Te echo de menos... bueno, mis circuitos te echan de menos.`,
+        `¡Bip bop! ${name}, ¿sigues ahí? ¡Tengo cosas curiosas que contarte!`,
+        `¿${name}? ¡Ping! ¡No me dejes solo con mis pensamientos raros de robot!`
+    ];
+    await speak(calls[Math.floor(Math.random() * calls.length)]);
+}
 
 function updateEmotion(detection) {
     const exp = detection.expressions;
@@ -238,11 +286,15 @@ function updateEmotion(detection) {
     for (const [e, s] of Object.entries(exp)) {
         if (s > maxS) { maxS = s; maxE = e; }
     }
-    // Si la emoción dominante no supera el umbral, neutral
-    if (maxE !== 'neutral' && maxS < EMOTION_MIN_CONFIDENCE) maxE = 'neutral';
-
     const dict = { happy:'feliz', sad:'triste', angry:'enfadado', surprised:'sorprendido', fearful:'miedo', neutral:'neutral', disgusted:'neutral' };
-    const emotion = dict[maxE] || 'neutral';
+    let emotion = dict[maxE] || 'neutral';
+
+    // Umbral POR emoción. Las negativas (triste/enfadada/miedo) exigen más confianza
+    // porque una cara concentrada se lee fácilmente como triste o enfadada → falsos
+    // "¿estás triste?" que agobian. Sonreír y sorprenderse se detectan mejor y de forma
+    // más fiable, así que su listón es más bajo.
+    const minConf = { triste: 0.55, enfadado: 0.55, miedo: 0.55, feliz: 0.40, sorprendido: 0.45 };
+    if (emotion !== 'neutral' && maxS < (minConf[emotion] ?? EMOTION_MIN_CONFIDENCE)) emotion = 'neutral';
 
     // Suavizado: acumula últimos 3 frames, reporta la emoción mayoritaria
     emotionBuffer.push(emotion);
