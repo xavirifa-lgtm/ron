@@ -100,11 +100,8 @@ export function shiftEyes(errX = null, errY = null) {
         [RonState.ui.eyes.left, RonState.ui.eyes.right].forEach(el => {
             if (el) el.style.transform = `translate(${mx}px,${my}px)`;
         });
-    } else {
-        if (Math.random() > 0.85) {
-            import('./sounds.js').then(s => s.playBeep(2800, 'square', 0.004, 0.008));
-        }
     }
+    // (Se quitó el beep aleatorio al mover los ojos — añadía ruido innecesario)
 }
 
 export function setChestIcon(type, value = null) {
@@ -298,62 +295,36 @@ export function startBlinkCycle() {
                 });
             }, 105);
             canvasTriggerBlink();
-            if (Math.random() > 0.75) import('./sounds.js').then(s => s.playClick(0.04));
         }
         setTimeout(blink, Math.random() * 5000 + 2500);
     };
     blink();
 }
 
-// Glitches visuales+sonoros aleatorios durante IDLE — como Ron fallando
+// Glitches durante IDLE — sutiles, espaciados y CASI SIEMPRE SILENCIOSOS.
+// Antes sonaba cada 8–30s (estática/zumbidos/beeps) y hacía que Ron pareciera roto.
+// Ahora: cada 25–70s, visual la mayoría de veces, sonido muy de vez en cuando y suave.
 export function startIdleGlitchLoop() {
     const tick = () => {
-        const delay = 8000 + Math.random() * 22000; // cada 8–30 s
+        const delay = 25000 + Math.random() * 45000; // cada 25–70 s
         setTimeout(() => {
-            if (!['IDLE','LISTENING'].includes(RonState.activityState)) { tick(); return; }
+            // Solo si Ron está tranquilo y sin hablar/escuchar activamente
+            if (RonState.activityState !== 'IDLE' || RonState.isRecognitionActive) { tick(); return; }
             const r = Math.random();
+            const withSound = Math.random() < 0.15; // sonido solo 15% de las veces
 
-            if (r < 0.30) {
-                // Parpadeo rápido doble — ojo glitch en canvas
+            if (r < 0.5) {
+                // Parpadeo glitch doble (visual)
                 canvasTriggerBlink();
                 setTimeout(() => canvasTriggerBlink(), 90);
-                import('./sounds.js').then(s => s.playIdleGlitch());
-
-            } else if (r < 0.55) {
-                // Micro-estática: scanlines en canvas + overlay HTML
-                canvasAddGlitch(5, 0.10);
-                if (RonState.ui.glitchOverlay) {
-                    for (let i = 0; i < 3; i++) {
-                        const b = document.createElement('div');
-                        b.className = 'glitch-block';
-                        b.style.cssText = `width:${20+Math.random()*80}px;height:${2+Math.random()*8}px;` +
-                            `left:${Math.random()*100}vw;top:${Math.random()*100}vh;opacity:0.18`;
-                        RonState.ui.glitchOverlay.appendChild(b);
-                        setTimeout(() => b.remove(), 80 + Math.random() * 100);
-                    }
-                }
-                import('./sounds.js').then(s => s.playStatic(0.07, 0.05));
-
-            } else if (r < 0.72) {
-                // Temblor de ojos en canvas
-                canvasShiftEyes((Math.random()-0.5)*0.4, 0);
-                setTimeout(() => canvasShiftEyes(0, 0), 100);
-                import('./sounds.js').then(s => s.playBuzzGlitch(0.09));
-
-            } else if (r < 0.85) {
-                // Glitch completo: cara + scanlines + vibración
-                canvasAddGlitch(6, 0.18);
-                import('./sounds.js').then(s => s.playGlitchSequence());
-                if (RonState.ui.mainApp) {
-                    RonState.ui.mainApp.classList.add('glitch-vibration');
-                    setTimeout(() => RonState.ui.mainApp.classList.remove('glitch-vibration'), 350);
-                }
-
+            } else if (r < 0.8) {
+                // Micro-estática visual breve
+                canvasAddGlitch(4, 0.10);
+                if (withSound) import('./sounds.js').then(s => s.playStatic(0.05, 0.03));
             } else {
-                // Procesando datos: expresión pensando breve en canvas
-                canvasSetExpression('thinking');
-                setTimeout(() => canvasSetExpression(RonState.expressionState), 700);
-                import('./sounds.js').then(s => s.playDataProcess());
+                // Temblor de ojos leve
+                canvasShiftEyes((Math.random() - 0.5) * 0.3, 0);
+                setTimeout(() => canvasShiftEyes(0, 0), 100);
             }
             tick();
         }, delay);

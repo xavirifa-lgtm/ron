@@ -153,7 +153,7 @@ export async function startPersonalizedStory() {
 
     try {
         const apiKey = RonState.apiKey || localStorage.getItem('ron_groq_key');
-        const storyModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+        const storyModels = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
         let data, res;
         for (const model of storyModels) {
             res = await fetch('https://api.groq.com/openai/v1/chat/completions', {

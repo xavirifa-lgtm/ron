@@ -3,58 +3,91 @@ import { setExpression, triggerSafetyGlitch, updateMouth, shiftEyes } from './ui
 import { handleInput } from './ai.js';
 import * as Sounds from './sounds.js';
 
-let convTimeout      = null;
-let activeMouthInterval = null;
-
-// Estados donde el micrófono puede estar activo esperando entrada
+// ── Configuración del bucle de conversación ──────────────────────────────────
 const MIC_ALLOWED_STATES = ['IDLE', 'STORY', 'MATH_GAME', 'READING_GAME'];
+const RESTART_DELAY = 700;    // ms de silencio tras hablar antes de re-escuchar (anti-eco)
+const CONV_WINDOW   = 12000;  // ms de "charla libre" sin decir "Ron" tras cada respuesta
+const ECHO_GUARD_MS = 400;    // ignorar lo "oído" justo tras terminar de hablar (era su propia voz)
+
+let convTimeout        = null;
+let activeMouthInterval = null;
+let listenTimer        = null;  // single-flight: solo un re-arranque de micro pendiente a la vez
+let recognitionStarting = false; // guarda síncrona contra dobles arranques del micro
+let lastSpeakEndTs     = 0;
+let ttsWatchdog        = null;
+let ttsKeepAlive       = null;
+
+// ── Re-arranque de micro centralizado y con guardas ─────────────────────────
+// Un único punto que decide CUÁNDO se vuelve a escuchar, evitando dobles sesiones.
+function scheduleListen(delay = RESTART_DELAY) {
+    if (listenTimer) { clearTimeout(listenTimer); listenTimer = null; }
+    listenTimer = setTimeout(() => {
+        listenTimer = null;
+        startListening();
+    }, delay);
+}
 
 export function startListening() {
-    if (!MIC_ALLOWED_STATES.includes(RonState.activityState) || !RonState.isMicEnabled) return;
+    // Guardas duras: no escuchar si Ron habla/piensa, ni si el TTS sigue sonando (anti-eco)
+    if (!RonState.isMicEnabled) return;
+    if (!MIC_ALLOWED_STATES.includes(RonState.activityState)) {
+        // Estamos hablando/pensando: reintentar en breve sin bloquear
+        scheduleListen(500);
+        return;
+    }
+    if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        scheduleListen(300);
+        return;
+    }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { log("SpeechRecognition no disponible."); return; }
-    if (RonState.isRecognitionActive) return; 
-    
+    if (RonState.isRecognitionActive || recognitionStarting) return;
+
+    recognitionStarting = true;
     RonState.recognition = new SpeechRecognition();
-    RonState.recognition.lang = 'es-ES';
-    RonState.recognition.continuous = false;      // false es más estable en Android Chrome
-    RonState.recognition.interimResults = false;  // Solo resultados finales = menos ruido
+    RonState.recognition.lang           = 'es-ES';
+    RonState.recognition.continuous     = false;  // más estable en Android Chrome
+    RonState.recognition.interimResults = false;
 
     RonState.recognition.onstart = () => {
+        recognitionStarting = false;
         RonState.isRecognitionActive = true;
         if (RonState.activityState === 'IDLE') changeState('LISTENING');
-        // En STORY/MATH_GAME/READING_GAME mantenemos el estado para que handleInput lo detecte
         log("🎙️ Escuchando...");
     };
 
     RonState.recognition.onresult = (e) => {
-        // Coger siempre el último resultado final disponible
+        // Anti-eco: si acabamos de hablar hace nada, probablemente Ron se oyó a sí mismo
+        if (Date.now() - lastSpeakEndTs < ECHO_GUARD_MS) { log("Ignorado (eco propio)."); return; }
+
         let text = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
             if (e.results[i].isFinal) text += e.results[i][0].transcript;
         }
-        if (!text.trim()) return;
-        const t = text.toLowerCase().trim();
-        
+        text = text.trim();
+        if (!text || text.length < 2) return;   // descartar ruido/fragmentos
+        const t = text.toLowerCase();
+
         log(`Oído: ${text}`);
 
-        // En juegos/cuento saltamos el filtro de wake word — el niño está respondiendo al juego
-        const inGame = ['MATH_GAME', 'READING_GAME'].includes(RonState.activityState);
+        const inGame  = ['MATH_GAME', 'READING_GAME'].includes(RonState.activityState);
         const inStory = RonState.activityState === 'STORY' && RonState.storyPendingNextChapter;
 
+        // Fuera de juego/cuento: exigir "Ron" solo cuando la ventana de charla está cerrada
         if (RonState.isWaitingForWakeWord && !inStory && !inGame) {
             if (t.includes("ron")) {
                 RonState.isWaitingForWakeWord = false;
-                const words = t.replace(/ron/g,'').trim();
-                if (!words || words.length < 2) {
+                const rest = t.replace(/ron/g, '').trim();
+                if (!rest || rest.length < 2) {
                     speak(`¡Bip! ¿Qué pasa, ${RonState.currentUser || 'humano'}?`);
                     return;
                 }
+                // Si dijo "Ron ..." con contenido, procesamos ese contenido
             } else {
-                return;
+                return; // ambiente ignorado hasta que digan "Ron"
             }
         } else if (!inStory && !inGame) {
-            if (convTimeout) clearTimeout(convTimeout);
+            if (convTimeout) clearTimeout(convTimeout); // sigue la charla, no cerrar ventana aún
         }
 
         if (RonState.isLearningFace && RonState.tempDescriptor) saveNewUser(text);
@@ -62,42 +95,40 @@ export function startListening() {
     };
 
     RonState.recognition.onerror = (e) => {
-        log(`Error mic: ${e.error}`);
+        recognitionStarting = false;
         RonState.isRecognitionActive = false;
-        // 'no-speech' y 'aborted' son normales, reiniciar silenciosamente
-        if (e.error === 'no-speech' || e.error === 'aborted') {
-            if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled) {
-                setTimeout(() => startListening(), 800);
-            }
+        // 'no-speech'/'aborted' son normales; reintentar en silencio
+        if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') {
+            scheduleListen(RESTART_DELAY);
+        } else {
+            log(`Error mic: ${e.error}`);
+            scheduleListen(1500);
         }
     };
 
     RonState.recognition.onend = () => {
+        recognitionStarting = false;
         RonState.isRecognitionActive = false;
         if (RonState.activityState === 'LISTENING') changeState('IDLE');
 
-        // Auto-reinicio en Android/PC (no iOS) — también en juegos/cuento para escuchar respuestas
-        if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled) {
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            if (!isIOS) {
-                setTimeout(() => startListening(), 800);
-            } else {
-                log("iOS: Micrófono detenido. Pulsa el botón para hablar.");
-                RonState.isMicEnabled = false;
-                RonState.ui.micToggleBtn.classList.add('off');
-            }
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (isIOS) {
+            log("iOS: micrófono detenido. Pulsa el botón para hablar.");
+            RonState.isMicEnabled = false;
+            if (RonState.ui.micToggleBtn) RonState.ui.micToggleBtn.classList.add('off');
+            return;
         }
+        scheduleListen(RESTART_DELAY);
     };
 
-    try { 
+    try {
         RonState.recognition.start();
-    } catch(e) { 
+    } catch (e) {
         log("Fallo al iniciar mic: " + e.message);
+        recognitionStarting = false;
         RonState.isRecognitionActive = false;
-        setTimeout(() => {
-            if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled) startListening();
-        }, 2000);
+        scheduleListen(1500);
     }
 }
 
@@ -116,7 +147,6 @@ export function saveNewUser(text) {
         return speak("¡Bip! Ese nombre es muy largo para mi disco duro. Dime solo tu nombre real.");
     }
 
-    // Usar todos los descriptores acumulados (hasta 10 muestras para robustez)
     const descriptorsToSave = (RonState.learningDescriptors && RonState.learningDescriptors.length > 0)
         ? RonState.learningDescriptors
         : (RonState.tempDescriptor ? [RonState.tempDescriptor] : []);
@@ -125,14 +155,13 @@ export function saveNewUser(text) {
         return speak("¡Bip! No pude ver tu cara. ¡Mira a la cámara y dime tu nombre otra vez!");
     }
 
-    // Eliminar entradas anteriores de la misma cara (evita duplicados entre sesiones)
     try {
         const refDesc = new Float32Array(descriptorsToSave[0]);
         RonState.knownFaces = RonState.knownFaces.filter(f => {
             const ds = f.descriptors || [f.descriptor];
             return !ds.some(dd => faceapi.euclideanDistance(refDesc, new Float32Array(dd)) < 0.45);
         });
-    } catch(e) { log("Dedup error: " + e.message); }
+    } catch (e) { log("Dedup error: " + e.message); }
 
     RonState.knownFaces.push({ label: name, descriptors: descriptorsToSave });
     localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
@@ -144,27 +173,33 @@ export function saveNewUser(text) {
     }
     localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
 
-    // Resetear todo el estado de aprendizaje
-    RonState.isLearningFace = false;
-    RonState.tempDescriptor = null;
+    RonState.isLearningFace      = false;
+    RonState.tempDescriptor      = null;
     RonState.learningDescriptors = [];
+    RonState.conversation        = []; // nuevo amigo, hilo limpio
+    RonState.conversationOwner   = name;
     import('./ui.js').then(ui => ui.stopScanningUI());
 
     speak(`¡Bip! ¡Entendido, ${name}! Ya estás grabado en mi memoria a fuego. ¡Somos mejores amigos!`);
 }
 
+// ── HABLAR ────────────────────────────────────────────────────────────────────
 export function speak(text) {
     return new Promise((resolve) => {
-        if (!window.speechSynthesis) {
+        if (!window.speechSynthesis || !text) {
             changeState('IDLE');
             return resolve();
         }
-        if (RonState.recognition) try { RonState.recognition.abort(); } catch(e) {}
-        // Cancelar intervalo anterior para evitar dos loops de boca en paralelo
+
+        // Cortar cualquier escucha en curso mientras Ron habla (no se oiga a sí mismo)
+        if (listenTimer) { clearTimeout(listenTimer); listenTimer = null; }
+        if (RonState.recognition) { try { RonState.recognition.abort(); } catch (e) {} }
+
+        // Limpiar animación de boca anterior si la hubiera
         if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
+
         changeState('SPEAKING');
         setExpression('neutral');
-
         if (RonState.ui.mouth) RonState.ui.mouth.classList.add('is-speaking');
 
         const mouthShapes = [
@@ -175,7 +210,6 @@ export function speak(text) {
             'M 50 15 L 70 50 L 30 50 Z',
             'M 20 30 L 80 30 L 80 40 L 20 40 Z'
         ];
-
         let shapeIdx = 0;
         activeMouthInterval = setInterval(() => {
             if (RonState.activityState === 'SPEAKING') {
@@ -188,56 +222,71 @@ export function speak(text) {
                 if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
                 setExpression('neutral');
             }
-        }, 200); // <-- Ralentizado de 110ms a 200ms para más fluidez
+        }, 200);
+
+        // Un solo camino de finalización (protege contra doble-resolve)
+        let finished = false;
+        const finish = () => {
+            if (finished) return;
+            finished = true;
+            if (ttsWatchdog)  { clearTimeout(ttsWatchdog);   ttsWatchdog  = null; }
+            if (ttsKeepAlive) { clearInterval(ttsKeepAlive); ttsKeepAlive = null; }
+            if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
+            if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
+            if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.remove('mouth-vibrate');
+
+            lastSpeakEndTs = Date.now();
+            RonState.isWaitingForWakeWord = false; // abrir ventana de charla libre
+            changeState('IDLE');
+
+            // Re-armar la exigencia de "Ron" cuando pase la ventana de charla
+            if (convTimeout) clearTimeout(convTimeout);
+            convTimeout = setTimeout(() => {
+                RonState.isWaitingForWakeWord = true;
+                log("Ventana de charla cerrada. Di 'Ron' para hablarme.");
+            }, CONV_WINDOW);
+
+            // Volver a escuchar (con retardo anti-eco). scheduleListen es single-flight.
+            scheduleListen(RESTART_DELAY);
+            resolve();
+        };
 
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         const voices = window.speechSynthesis.getVoices();
-        const best = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('es'));
+        const best = voices.find(v => v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural')))
+                  || voices.find(v => v.lang.startsWith('es'));
         if (best) u.voice = best;
-        
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        
-        u.lang = 'es-ES'; 
-        // iOS Safari se vuelve loco y distorsiona el sonido si tocamos el pitch/rate
-        if (isIOS) {
-            u.pitch = 1.0; 
-            u.rate = 1.0;
-        } else {
-            u.pitch = 1.4; 
-            u.rate = 1.1;
-        }
-        
+
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        u.lang = 'es-ES';
+        if (isIOS) { u.pitch = 1.0; u.rate = 1.0; }
+        else       { u.pitch = 1.4; u.rate = 1.1; }
+
         u.onstart = () => {
-            Sounds.playBeep(880, 'square', 0.08, 0.05); // Bip inicial
-            RonState.ui.mouthContainer.classList.add('mouth-vibrate');
+            Sounds.playBeep(880, 'square', 0.08, 0.05);
+            if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.add('mouth-vibrate');
         };
-        u.onend = () => {
-            if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
-            if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
-            if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.remove('mouth-vibrate');
-            RonState.isWaitingForWakeWord = false; // Abrir ventana de conversación libre
-            changeState('IDLE');
-            
-            // Reiniciar escucha explícitamente tras hablar — también en juegos y cuento
-            setTimeout(() => {
-                if (MIC_ALLOWED_STATES.includes(RonState.activityState) && RonState.isMicEnabled && !RonState.isRecognitionActive) {
-                    startListening();
-                }
-            }, 500);
-            
-            if (convTimeout) clearTimeout(convTimeout);
-            convTimeout = setTimeout(() => {
-                RonState.isWaitingForWakeWord = true;
-                log("Fin de ventana de charla (30s). Esperando 'Ron'.");
-            }, 30000); // 30 segundos de ventana libre tras cada respuesta
-            resolve();
-        };
-        u.onerror = (e) => {
-            if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
-            if (RonState.ui.mouth) RonState.ui.mouth.classList.remove('is-speaking');
-            log(`Error síntesis: ${e?.error}`); changeState('IDLE'); resolve();
-        };
+        u.onend   = () => finish();
+        u.onerror = (e) => { log(`Error síntesis: ${e?.error}`); finish(); };
+
+        // WATCHDOG: si onend nunca llega (bug de Android Chrome), forzar fin.
+        // Estimación generosa según longitud del texto.
+        const estMs = Math.min(30000, Math.max(4000, text.length * 90 + 3500));
+        ttsWatchdog = setTimeout(() => {
+            log("Watchdog TTS: 'onend' no llegó, forzando fin.");
+            try { window.speechSynthesis.cancel(); } catch (e) {}
+            finish();
+        }, estMs);
+
+        // KEEP-ALIVE: Chrome corta locuciones largas a ~15s. resume() lo evita.
+        ttsKeepAlive = setInterval(() => {
+            if (window.speechSynthesis.speaking) {
+                try { window.speechSynthesis.resume(); } catch (e) {}
+            }
+        }, 8000);
+
         window.speechSynthesis.speak(u);
     });
 }

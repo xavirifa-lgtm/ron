@@ -95,16 +95,21 @@ export function startVisionLoop() {
                             descriptors.map(dd => new Float32Array(dd))
                         );
                     });
-                    const matcher = new faceapi.FaceMatcher(labeled, 0.68);
+                    // Umbral 0.60 = equilibrio: reconoce bien sin confundir a familiares.
+                    // Más bajo (0.5) = más estricto (riesgo: no la reconoce). Más alto (0.68) = confunde personas.
+                    const matcher = new faceapi.FaceMatcher(labeled, 0.60);
                     const best    = matcher.findBestMatch(d.descriptor);
                     log(`Reconocimiento: ${best.label} dist=${best.distance?.toFixed(3)}`);
 
                     if (best.label !== 'unknown') {
                         found = best.label;
                         RonState.unknownStabilityCounter = 0;
-                        // Acumular descriptor para mejorar reconocimiento futuro (multi-shot)
+                        // Acumular descriptor SOLO si la coincidencia es MUY segura (< 0.45).
+                        // Si acumulábamos con cualquier match (< 0.68), un falso positivo metía
+                        // la cara de otra persona bajo esta etiqueta y el reconocimiento se
+                        // corrompía poco a poco. Esta guarda evita esa contaminación.
                         const faceEntry = RonState.knownFaces.find(f => f.label === found);
-                        if (faceEntry) {
+                        if (faceEntry && best.distance < 0.45) {
                             const ds = faceEntry.descriptors || [faceEntry.descriptor];
                             if (ds.length < 12) { // máximo 12 muestras — más variedad = mejor reconocimiento
                                 ds.push(Array.from(d.descriptor));

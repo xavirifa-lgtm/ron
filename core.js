@@ -19,6 +19,10 @@ export const RonState = {
     userStats:   JSON.parse(localStorage.getItem('ron_user_stats')   || '{}'),
     apiKey:      localStorage.getItem('ron_groq_key'),
 
+    // MEMORIA CONVERSACIONAL A CORTO PLAZO (turnos reales de la sesión)
+    conversation:      [],     // [{role:'user'|'assistant', content:'...'}]
+    conversationOwner: null,   // usuario dueño del hilo actual (para resetear al cambiar de persona)
+
     spontaneousTimer: null,
     isCheeringUp:  false,
     isSilentMode:  false,

@@ -12,15 +12,15 @@
                 const unregisterAll = registrations.map(r => r.unregister());
                 Promise.all(unregisterAll).then(() => {
                     // Registrar el SW nuevo tras limpiar el viejo
-                    navigator.serviceWorker.register('./sw.js?v=25.21').then(reg => {
-                        console.log('SW v25.21 registrado:', reg.scope);
+                    navigator.serviceWorker.register('./sw.js?v=25.22').then(reg => {
+                        console.log('SW v25.22 registrado:', reg.scope);
                     }).catch(e => console.warn('SW no disponible:', e.message));
                 });
             });
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=25.21">
+    <link rel="stylesheet" href="styles.css?v=25.22">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -36,7 +36,7 @@
         <!-- Pantalla de Inicio -->
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v23.0 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
+            <button id="power-btn">B-BOT v25.22 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
         </div>
 
         <!-- Botones de Control -->
@@ -114,7 +114,7 @@
         <!-- Wrapper de cara (para efectos) -->
         <div id="face-wrapper"></div>
     </div>
-    <script>const CACHE_NAME = 'ron-bot-v25.21';</script>
-    <script type="module" src="app.js?v=25.21"></script>
+    <script>const CACHE_NAME = 'ron-bot-v25.22';</script>
+    <script type="module" src="app.js?v=25.22"></script>
 </body>
 </html>
