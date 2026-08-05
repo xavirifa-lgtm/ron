@@ -74,12 +74,12 @@ function tick(dt) {
 
 // ── Layout ────────────────────────────────────────────────────────────────
 function getLayout() {
-    const eyeW  = Math.min(W * 0.108, 66);   // ojos pill verticales como Ron
-    const eyeH  = eyeW * 1.62;               // más altos que anchos (pill)
-    const gap   = Math.min(W * 0.265, 164);
-    const eyeCY = H * 0.40;
-    const mouthY = eyeCY + eyeH * 0.5 + 10;  // pegada justo bajo los ojos
-    const mouthW = Math.min(W * 0.22, 105);   // boca pequeña como en la película
+    const eyeW  = Math.min(W * 0.13, 92);    // ojos grandes tipo cápsula como Ron
+    const eyeH  = eyeW * 1.42;               // más altos que anchos
+    const gap   = Math.min(W * 0.32, 280);
+    const eyeCY = H * 0.42;
+    const mouthY = eyeCY + eyeH * 0.5 + Math.min(W * 0.03, 24); // pegada bajo los ojos
+    const mouthW = Math.min(W * 0.20, 140);   // boca pequeña como en la película
     return {
         lx: W/2 - gap/2,
         rx: W/2 + gap/2,
@@ -114,6 +114,7 @@ function render() {
 // ── Ojo ───────────────────────────────────────────────────────────────────
 function drawEye(cx, cy, ew, eh, night, dance) {
     const rx = ew / 2;
+    const side = cx < W / 2 ? -1 : 1;  // -1 izquierdo, +1 derecho
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -131,7 +132,7 @@ function drawEye(cx, cy, ew, eh, night, dance) {
         case 'surprise':    drawNormalEye(rx * 1.22, ry * 1.25, night);     break;
         case 'fear':        drawNormalEye(rx * 0.76, ry * 0.78, night);     break;
         case 'thinking':    drawSquintEye(rx, ry, night);                   break;
-        case 'sad':         drawSadEye(rx, ry, night);                      break;
+        case 'sad':         drawSadEye(rx, ry, night, side);                break;
         default:            drawNormalEye(rx, ry, night);
     }
 
@@ -164,14 +165,11 @@ function rrect(rx, ry, cr) {
 
 function drawNormalEye(rx, ry, night) {
     const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
-    // Pill/rounded-rect — lados casi planos, esquinas muy redondeadas
-    rrect(rx, ery, rx * 0.82);
+    // Cápsula redondeada — como los ojos de Ron en la película
+    rrect(rx, ery, rx * 0.88);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.5)'; ctx.shadowBlur = 10; }
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
-    ctx.lineWidth = Math.max(1.5, rx * 0.06);
-    ctx.stroke();
+    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.5)'; ctx.shadowBlur = 10; ctx.fill(); }
     ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
 }
 
@@ -216,20 +214,21 @@ function drawFlatEye(rx, night) {
 
 function drawGlitchEye(rx, rh, night) {
     const ry = rh * 0.45;
-    ctx.shadowColor = 'rgba(0,212,255,0.8)'; ctx.shadowBlur = 12;
-    ctx.fillStyle = '#00d4ff';
-    ctx.fillRect(-rx, -ry, rx * 2, ry * 2);
+    // Bloque del ojo
+    rrect(rx, ry, rx * 0.5);
+    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r},${ec.g},${ec.b})`;
+    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.7)'; ctx.shadowBlur = 12; }
+    ctx.fill();
     ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1.5;
+    // Scanlines que "rompen" el ojo revelando el fondo (glitch de la peli)
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
     for (let y = -ry + 3; y < ry; y += 5) {
-        if (Math.random() > 0.4) {
-            ctx.beginPath();
-            ctx.moveTo(-rx, y);
-            ctx.lineTo(-rx + rx * 2 * (0.3 + Math.random() * 0.7), y);
-            ctx.stroke();
+        if (Math.random() > 0.45) {
+            ctx.fillRect(-rx, y, rx * 2 * (0.3 + Math.random() * 0.7), 2);
         }
     }
+    ctx.restore();
 }
 
 function drawSquintEye(rx, ry, night) {
@@ -243,22 +242,21 @@ function drawSquintEye(rx, ry, night) {
     ctx.stroke();
 }
 
-function drawSadEye(rx, ry, night) {
+function drawSadEye(rx, ry, night, side = -1) {
     const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
-    ctx.beginPath();
-    ctx.ellipse(0, -ry * 0.05, rx, ery, 0, 0, Math.PI * 2);
+    // Ojo normal
+    rrect(rx, ery, rx * 0.88);
     ctx.fillStyle = eyeGradient(rx, ery, night);
     ctx.fill();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
-    ctx.lineWidth = Math.max(1.5, rx * 0.06);
-    ctx.stroke();
+    // Párpado caído hacia fuera: "borra" la parte superior-exterior revelando el fondo
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.translate(0, -ery);
+    ctx.rotate(side * 0.42);
     ctx.beginPath();
-    ctx.moveTo(-rx, -ery * 0.1);
-    ctx.lineTo(-rx * 0.2, -ery * 0.78);
-    ctx.lineTo(-rx * 0.65, -ery * 0.22);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.rect(-rx * 2, -ery * 1.2, rx * 4, ery * 1.24);
     ctx.fill();
+    ctx.restore();
 }
 
 // ── Boca ──────────────────────────────────────────────────────────────────
@@ -343,76 +341,40 @@ function drawMouth(cx, cy, w, night, dance) {
     ctx.restore();
 }
 
-// Boca expresiva con 5 estados según openness (0=cerrada → 1=triángulo exclamación)
-function openMouth(cx, cy, hw, curveDown, maxDrop, openness, night) {
-    const interior = night ? '#002244' : '#0d0d0d';
+// Boca de Ron: sonrisa fina cerrada → rectángulo redondeado que se abre al hablar
+function openMouth(cx, cy, hw, smile, maxDrop, openness, night) {
+    const interior = night ? '#00d4ff' : '#1a1a1a';
+    ctx.fillStyle = interior;
 
-    if (openness < 0.08) {
-        // ① CERRADA — sonrisita fina
+    if (openness < 0.12) {
+        // Cerrada: sonrisa sutil
         ctx.beginPath();
         ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
+        ctx.quadraticCurveTo(cx, cy + smile, cx + hw, cy);
         ctx.stroke();
-
-    } else if (openness < 0.38) {
-        // ② CUARTO LUNA — apertura pequeña
-        const drop = openness * maxDrop * 2.4;
-        // relleno interior
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown * 0.3 + drop, cx - hw, cy);
-        ctx.fillStyle = interior;
-        ctx.fill();
-        // labio superior
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown, cx + hw, cy);
-        ctx.stroke();
-        // labio inferior
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown * 0.3 + drop, cx + hw, cy);
-        ctx.stroke();
-
-    } else if (openness < 0.62) {
-        // ③ D / MEDIA LUNA — medio abierta
-        const drop = openness * maxDrop * 2.0;
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown * 0.7, cx + hw, cy);
-        ctx.bezierCurveTo(cx + hw * 0.85, cy + drop * 0.55,
-                          cx + hw * 0.45, cy + drop,
-                          cx,             cy + drop * 1.05);
-        ctx.bezierCurveTo(cx - hw * 0.45, cy + drop,
-                          cx - hw * 0.85, cy + drop * 0.55,
-                          cx - hw,        cy);
-        ctx.fillStyle = interior;
-        ctx.fill();
-        ctx.stroke();
-
-    } else if (openness < 0.83) {
-        // ④ CÍRCULO / ÓVALO — boca redonda abierta
-        const rW = hw * 0.72;
-        const rH = maxDrop * 1.2 + openness * maxDrop * 0.9;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy + curveDown * 0.4 + rH * 0.15, rW, rH, 0, 0, Math.PI * 2);
-        ctx.fillStyle = interior;
-        ctx.fill();
-        ctx.stroke();
-
-    } else {
-        // ⑤ TRIÁNGULO INVERTIDO — exclamación / mucho énfasis
-        const h = maxDrop * 2.8;
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + curveDown * 0.2, cx + hw, cy);
-        ctx.lineTo(cx, cy + h);
-        ctx.closePath();
-        ctx.fillStyle = interior;
-        ctx.fill();
-        ctx.stroke();
+        return;
     }
+
+    // Abierta: rectángulo redondeado que crece en alto, con leve sonrisa
+    const openH = hw * 0.28 + openness * hw * 0.85;
+    const topY  = cy - openH * 0.12;
+    const botY  = cy + openH;
+    const ww    = hw * (0.92 - openness * 0.10);
+    const r     = Math.min(ww, (botY - topY) / 2) * 0.6;
+
+    ctx.beginPath();
+    ctx.moveTo(cx - ww + r, topY);
+    ctx.quadraticCurveTo(cx, topY + smile * 0.5, cx + ww - r, topY);
+    ctx.arcTo(cx + ww, topY, cx + ww, topY + r, r);
+    ctx.lineTo(cx + ww, botY - r);
+    ctx.arcTo(cx + ww, botY, cx + ww - r, botY, r);
+    ctx.quadraticCurveTo(cx, botY + smile * 0.8, cx - ww + r, botY);
+    ctx.arcTo(cx - ww, botY, cx - ww, botY - r, r);
+    ctx.lineTo(cx - ww, topY + r);
+    ctx.arcTo(cx - ww, topY, cx - ww + r, topY, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
 }
 
 // Mueca/ceño triste — labio superior arqueado arriba, labio inferior cae un poco
