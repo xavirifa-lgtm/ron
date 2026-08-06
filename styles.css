@@ -416,16 +416,22 @@ body.dance-mode .ron-container {
 
 /* ── SELFIE ─────────────────────────────────────────────────────────────────── */
 #photo-panel {
-    position: absolute; bottom: 16px; right: 16px;
+    position: absolute; bottom: 14px; right: 14px;
     z-index: 1000; animation: slide-up 0.5s cubic-bezier(0.34,1.56,0.64,1);
 }
 #photo-panel.hidden { display: none; }
 .polaroid {
-    background: white; padding: 8px 8px 24px;
+    background: white; padding: 8px 8px 22px;
     box-shadow: 0 10px 26px rgba(0,0,0,0.38);
     border-radius: 3px; transform: rotate(4deg);
+    max-width: 46vw;
 }
-#photo-img { width: 150px; height: auto; background: #eee; display: block; }
+/* Se escala para caber siempre en la pantalla (horizontal incluida) */
+#photo-img {
+    display: block; background: #eee;
+    width: auto; height: auto;
+    max-width: 42vw; max-height: 46vh;
+}
 @keyframes slide-up {
     from { transform: translateY(90px) rotate(10deg); opacity: 0; }
     to   { transform: translateY(0) rotate(4deg); opacity: 1; }

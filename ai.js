@@ -192,7 +192,7 @@ export async function handleInput(userText, isInternal = false) {
     try {
         // isSelfie ya declarada arriba
         
-        const visualKeywords = ['mira esto', 'mira lo que', 'mira mi', 'qué es esto', 'que es esto', 'qué es este', 'que es este', 'enseño', 'te enseño', 'qué color', 'que color', 'lee esto', 'este objeto', 'este dibujo', 'mi dibujo'];
+        const visualKeywords = ['mira', 'ves esto', 'ves este', 'ves esta', '¿ves', 'qué es esto', 'que es esto', 'qué es este', 'que es este', 'qué es esta', 'enseño', 'te enseño', 'enseña', 'qué color', 'que color', 'de qué es', 'lee esto', 'qué pone', 'que pone', 'este dibujo', 'mi dibujo', 'este objeto', 'este juguete', 'he dibujado'];
         const isV = isSelfie || visualKeywords.some(kw => t.includes(kw));
         const userKey = RonState.currentUser || 'amigo';
 
@@ -349,7 +349,7 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
                     const body = { model: vModel, messages: [{ role: "user", content: [
                         { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` },
                         { type: "image_url", image_url: { url: img } }
-                    ]}], max_tokens: 160, reasoning_effort: "none", reasoning_format: "hidden" };
+                    ]}], max_tokens: 512, reasoning_format: "hidden" };
                     res = await callGroqAPI(body);
                     data = await res.json();
                     if (res.ok) { success = true; log(`Visión OK: ${vModel}`); break; }
@@ -541,7 +541,7 @@ export function startCompanionVisionLoop() {
                     const body = { model: cModel, messages: [{ role: "user", content: [
                         { type: "text",      text: companionSys },
                         { type: "image_url", image_url: { url: img } }
-                    ]}], max_tokens: 100, reasoning_effort: "none", reasoning_format: "hidden" };
+                    ]}], max_tokens: 400, reasoning_format: "hidden" };
                     cRes  = await callGroqAPI(body);
                     cData = await cRes.json();
                     if (cRes.ok) { cOk = true; break; }
