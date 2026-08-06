@@ -78,7 +78,7 @@ function getLayout() {
     const eyeH  = eyeW * 1.42;               // más altos que anchos
     const gap   = Math.min(W * 0.32, 280);
     const eyeCY = H * 0.42;
-    const mouthY = eyeCY + eyeH * 0.5 + Math.min(W * 0.03, 24); // pegada bajo los ojos
+    const mouthY = eyeCY + eyeH * 0.56; // boca pegada a los ojos, como en las imágenes de Ron
     const mouthW = Math.min(W * 0.20, 140);   // boca pequeña como en la película
     return {
         lx: W/2 - gap/2,
