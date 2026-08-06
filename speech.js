@@ -186,8 +186,11 @@ export function saveNewUser(text) {
 // ── HABLAR ────────────────────────────────────────────────────────────────────
 export function speak(text) {
     return new Promise((resolve) => {
-        if (!window.speechSynthesis || !text) {
+        // Sin texto o solo espacios: no dejar a Ron con cara de "pensando" y mudo
+        if (!window.speechSynthesis || !text || !String(text).trim()) {
+            setExpression('neutral');
             changeState('IDLE');
+            scheduleListen(RESTART_DELAY);
             return resolve();
         }
 

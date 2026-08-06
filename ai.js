@@ -192,7 +192,7 @@ export async function handleInput(userText, isInternal = false) {
     try {
         // isSelfie ya declarada arriba
         
-        const visualKeywords = ['mira', 'ves', 'qué es', 'que es', 'esto', 'esta', 'este', 'aquí', 'aqui', 'enseño', 'objeto', 'color', 'lee', 'leer', 'libro', 'tengo'];
+        const visualKeywords = ['mira esto', 'mira lo que', 'mira mi', 'qué es esto', 'que es esto', 'qué es este', 'que es este', 'enseño', 'te enseño', 'qué color', 'que color', 'lee esto', 'este objeto', 'este dibujo', 'mi dibujo'];
         const isV = isSelfie || visualKeywords.some(kw => t.includes(kw));
         const userKey = RonState.currentUser || 'amigo';
 
@@ -391,18 +391,24 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
         clearTimeout(watchdog);
         if (!success) throw new Error(data?.error?.message || "Error API crítico en todos los modelos.");
 
-        // Limpiar etiquetas de pensamiento (qwen, deepseek) y espacios sobrantes
-        const rawResp = data.choices[0].message.content || '';
+        // Limpiar etiquetas de pensamiento (qwen, gpt-oss) y espacios sobrantes
+        const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+        const rawResp = (msg && msg.content) ? msg.content : '';
         let resp = rawResp;
+        const hasHarmony = /<\|channel\|>|<\|message\|>/i.test(resp);
         // gpt-oss (formato harmony): quedarse solo con el canal 'final' si aparece
         const finalCh = resp.match(/final<\|message\|>([\s\S]*?)(?:<\|end\|>|<\|return\|>|$)/i);
-        if (finalCh) resp = finalCh[1];
-        // qwen: quitar bloques de pensamiento
+        if (finalCh) {
+            resp = finalCh[1];
+        } else if (hasHarmony) {
+            resp = ''; // razonamiento truncado sin respuesta final → descartar (no leer en inglés)
+        }
+        // qwen: quitar bloques de pensamiento y restos de marcadores
         resp = resp.replace(/<think>[\s\S]*?<\/think>/gi, '')
-                   .replace(/<\|[^>]*\|>/g, '')     // restos de marcadores de canal
+                   .replace(/<\|[^>]*\|>/g, '')
                    .replace(/^[\s\n]+/, '')
                    .trim();
-        // Si tras limpiar no queda nada (todo era razonamiento), respuesta segura
+        // Si tras limpiar no queda nada, respuesta segura (nunca mudo)
         if (!resp) resp = "¡Bip! Se me ha cruzado un cable. ¿Me lo repites?";
 
         // Guardar el turno en la memoria conversacional para poder seguir el hilo
@@ -475,7 +481,9 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
             setTimeout(() => { hidePhoto(); }, 8000);
         }
 
-        await speak(resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, '').replace(/\[RENAME:.*?\]/g, ''));
+        let spoken = resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, '').replace(/\[RENAME:.*?\]/g, '').trim();
+        if (!spoken) spoken = "¡Bip!";
+        await speak(spoken);
     } catch (e) {
         clearTimeout(watchdog);
         log(`Error Cerebro: ${e.message}`);
