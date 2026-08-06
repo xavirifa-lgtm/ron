@@ -159,7 +159,7 @@ export async function startPersonalizedStory() {
             res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: sysPrompt }], temperature: 0.88, max_tokens: 700 })
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: sysPrompt }], temperature: 0.88, max_tokens: 700, reasoning_effort: 'low' })
             });
             data = await res.json();
             if (res.ok) break;
@@ -167,8 +167,10 @@ export async function startPersonalizedStory() {
         }
         if (!res.ok) throw new Error(data?.error?.message || 'Error API historia');
 
-        const storyRaw = data.choices[0].message.content
-            .replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\n]+/, '');
+        const storyRaw = (data.choices[0].message.content || '')
+            .replace(/<think>[\s\S]*?<\/think>/gi, '')
+            .replace(/<\|[^>]*\|>/g, '')
+            .replace(/^[\s\n]+/, '');
         storyChapters = storyRaw.split('|||').map(s => s.trim()).filter(Boolean);
         if (storyChapters.length === 0) throw new Error('Historia vacía');
 

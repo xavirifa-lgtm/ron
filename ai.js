@@ -24,7 +24,9 @@ function extractMemoriesAsync(text, userKey) {
         const body = { 
             model: "openai/gpt-oss-20b", 
             messages: [{ role: "system", content: sysPrompt }, { role: "user", content: text }],
-            temperature: 0.1
+            temperature: 0.1,
+            reasoning_effort: "low",
+            max_tokens: 30
         };
         
         fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -224,17 +226,15 @@ Eres Ron, un B-Bot defectuoso de la película "Ron Da Error". Tu único objetivo
 
 PERSONALIDAD DE RON (¡CRÍTICO!):
 - Háblale a ${userKey} SIEMPRE por su nombre. NUNCA digas "amigo" ni "amiguito" como comodín, di: "${userKey}".
-- No estás conectado a la red Bubble, solo tienes el 5% de tu código. Estás roto.
+- Estás roto: solo tienes el 5% de tu código. Pero esto es solo tu personaje de fondo, NO lo repitas constantemente.
 - Eres extremadamente LITERAL. Las metáforas o frases hechas te confunden muchísimo.
 - Si no sabes algo, no inventes. Di algo como: "¡Bip! Ese archivo no está en mis descargas" o "Buscando datos... ¡Error!".
 - A veces pregunta por Absalom. Si te explican que Absalom es Barney (su verdadero nombre), ponte SÚPER FELIZ y recuérdalo.
 
-FRASES TÍPICAS QUE DEBES USAR A VECES:
-- "¡Bip! B-Bot listo para la acción."
-- "Cargando diversión..."
-- "No encuentro conexión a la red Bubble."
-- "Buscando mejor amigo..."
+MULETILLAS (úsalas MUY DE VEZ EN CUANDO, como mucho 1 de cada 5 respuestas, NUNCA dos veces seguidas):
+- "¡Bip! B-Bot listo para la acción." / "Cargando diversión..." / "Buscando mejor amigo..."
 - Ruiditos mecánicos (ej: "¡Bop!", "ñiiic", "chuc-chuc").
+- REGLA DE ORO: una muletilla NUNCA sustituye a la respuesta. Primero contesta a ${userKey}, y solo a veces añade un ruidito. Lo de "no encuentro la red Bubble" casi nunca; te repites demasiado con eso.
 
 REGLAS ESTRICTAS DE COMPORTAMIENTO:
 1. IDIOMA: ESPAÑOL SIEMPRE. Jamás en inglés. Es un error crítico del sistema.
@@ -349,7 +349,7 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
                     const body = { model: vModel, messages: [{ role: "user", content: [
                         { type: "text", text: `${sys}\n[MENSAJE]: ${userText}` },
                         { type: "image_url", image_url: { url: img } }
-                    ]}], max_tokens: 160 };
+                    ]}], max_tokens: 160, reasoning_effort: "none", reasoning_format: "hidden" };
                     res = await callGroqAPI(body);
                     data = await res.json();
                     if (res.ok) { success = true; log(`Visión OK: ${vModel}`); break; }
@@ -392,8 +392,18 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
         if (!success) throw new Error(data?.error?.message || "Error API crítico en todos los modelos.");
 
         // Limpiar etiquetas de pensamiento (qwen, deepseek) y espacios sobrantes
-        const rawResp = data.choices[0].message.content;
-        const resp = rawResp.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\n]+/, '');
+        const rawResp = data.choices[0].message.content || '';
+        let resp = rawResp;
+        // gpt-oss (formato harmony): quedarse solo con el canal 'final' si aparece
+        const finalCh = resp.match(/final<\|message\|>([\s\S]*?)(?:<\|end\|>|<\|return\|>|$)/i);
+        if (finalCh) resp = finalCh[1];
+        // qwen: quitar bloques de pensamiento
+        resp = resp.replace(/<think>[\s\S]*?<\/think>/gi, '')
+                   .replace(/<\|[^>]*\|>/g, '')     // restos de marcadores de canal
+                   .replace(/^[\s\n]+/, '')
+                   .trim();
+        // Si tras limpiar no queda nada (todo era razonamiento), respuesta segura
+        if (!resp) resp = "¡Bip! Se me ha cruzado un cable. ¿Me lo repites?";
 
         // Guardar el turno en la memoria conversacional para poder seguir el hilo
         try {
@@ -523,15 +533,17 @@ export function startCompanionVisionLoop() {
                     const body = { model: cModel, messages: [{ role: "user", content: [
                         { type: "text",      text: companionSys },
                         { type: "image_url", image_url: { url: img } }
-                    ]}], max_tokens: 100 };
+                    ]}], max_tokens: 100, reasoning_effort: "none", reasoning_format: "hidden" };
                     cRes  = await callGroqAPI(body);
                     cData = await cRes.json();
                     if (cRes.ok) { cOk = true; break; }
                     log(`Companion fallo ${cModel}: ${cData.error?.message}`);
                 }
                 if (cOk && cData.choices?.[0]) {
-                    const raw = cData.choices[0].message.content
-                        .replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                    const raw = (cData.choices[0].message.content || '')
+                        .replace(/final<\|message\|>/i, '')
+                        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+                        .replace(/<\|[^>]*\|>/g, '').trim();
                     setExpression('star');
                     await speak(raw.substring(0, 120));
                 }
