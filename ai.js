@@ -1,4 +1,4 @@
-import { RonState, log, changeState } from './core.js';
+import { RonState, log, changeState, markProactive } from './core.js';
 import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto, flash } from './ui.js';
 import { speak } from './speech.js';
 import * as Sounds from './sounds.js';
@@ -8,6 +8,8 @@ import { logSelfie, logMusic, getDiarySummary } from './diary.js';
 import { detectFriendshipLesson, ronReceivesRule, getRules } from './friendship.js';
 import { detectLearningMoment, ronLearns, getRecentFacts } from './learning.js';
 import { playYTMusic, stopYTMusic } from './music.js';
+import { getBondPromptSnippet, addBond, levelUpLine, checkNewDayBond } from './bond.js';
+import { isConcern, concernResponse, isUnsafeOutput, safeDeflection } from './safety.js';
 
 export async function triggerSpontaneous(prompt) {
     if (RonState.activityState !== 'IDLE') return;
@@ -90,6 +92,15 @@ export async function handleInput(userText, isInternal = false) {
 
     const t = userText.toLowerCase();
 
+    // ── SEGURIDAD (Capa 3): mensaje preocupante del niño (le hacen daño, secretos,
+    // autolesión...) → respuesta con cariño que redirige a un adulto de confianza.
+    // Tiene prioridad sobre juegos y sobre el modelo. NO se trata como juego.
+    if (!isInternal && isConcern(userText)) {
+        log("⚠️ Señal de seguridad detectada — respuesta de cuidado.");
+        setExpression('sad');
+        return speak(concernResponse(RonState.currentUser));
+    }
+
     // Los atajos de comando solo se activan con voz del usuario, nunca con prompts internos
     if (!isInternal) {
         // Intención de jugar/hacer, flexible: jugar, jugamos, juguemos, vamos a, quiero, hacemos, practicar...
@@ -99,20 +110,24 @@ export async function handleInput(userText, isInternal = false) {
         if ((t.includes("suma") || t.includes("resta") || t.includes("matemátic") || t.includes("número") ||
              t.includes("numero") || t.includes("sumar") || t.includes("restar") || t.includes("calcul")) &&
             (wantsPlay || t.includes("sumas") || t.includes("restas") || t.includes("a sumar") || t.includes("a restar"))) {
+            addBond('game');
             return startMathGame();
         }
         // LEER JUNTOS
         if (t.includes("leer juntos") || t.includes("vamos a leer") || t.includes("quiero leer") ||
             t.includes("a leer") || t.includes("leer contigo") || t.includes("juego de lectura") ||
             (wantsPlay && (t.includes("leer") || t.includes("lectura")))) {
+            addBond('game');
             return startReadingGame();
         }
         // ESCONDITE
         if (t.includes("escondite") || t.includes("esconder") || (wantsPlay && t.includes("escond"))) {
+            addBond('game');
             return startHideAndSeek();
         }
         if (t.match(/cuéntame|cuentame|quiero un cuento|ponme un cuento|cuento de ron|una historia de ron/)) {
             const games = await import('./games.js');
+            addBond('story');
             return games.startPersonalizedStory();
         }
         if (t.includes("veo veo") || (wantsPlay && t.includes("veo"))) {
@@ -236,6 +251,10 @@ Eres Ron, un B-Bot defectuoso de la película "Ron Da Error". Tu único objetivo
 
 PERSONALIDAD DE RON (¡CRÍTICO!):
 - Háblale a ${userKey} SIEMPRE por su nombre. NUNCA digas "amigo" ni "amiguito" como comodín, di: "${userKey}".
+
+SEGURIDAD INFANTIL (REGLA INQUEBRANTABLE, POR ENCIMA DE TODO LO DEMÁS):
+Hablas con un niño o niña pequeña. SOLO tratas temas apropiados para su edad: juegos, cuentos, animales, el cole, la familia, dibujos, curiosidades bonitas, emociones. Si la conversación se acerca a violencia, sexo, drogas, armas, contenido de miedo o de adultos, o la muerte de forma angustiosa, NO sigas por ahí: cámbialo con cariño y humor de robot ("¡Bip! Eso es cosa de mayores, ¿jugamos mejor a...?"). NUNCA des información peligrosa ni instrucciones para hacerse daño. NUNCA le pidas guardar secretos a sus padres. Anima siempre a contar las cosas importantes a mamá, papá o un adulto de confianza. Nunca digas que sustituyes a sus amigos o a su familia de verdad: tú eres un amigo MÁS, no un reemplazo. Ante cualquier duda, elige siempre la opción más suave y segura.
+
 - Estás roto: solo tienes el 5% de tu código. Pero esto es solo tu personaje de fondo, NO lo repitas constantemente.
 - Eres extremadamente LITERAL. Las metáforas o frases hechas te confunden muchísimo.
 - Si no sabes algo, no inventes. Di algo como: "¡Bip! Ese archivo no está en mis descargas" o "Buscando datos... ¡Error!".
@@ -256,7 +275,11 @@ REGLAS ESTRICTAS DE COMPORTAMIENTO:
 7. CREADOR: Si alguien te pregunta quién te hizo, quién te programó, quién es tu creador o quién te construyó, responde siempre: "¡Bip! Mi creador es Xavi, el señor de los chuchumecos. ¡El mejor programador del universo conocido!"
 8. TU NOMBRE: Tu nombre completo de fábrica es "B-Bot Unidad Ron, identificador 5-IND". Si alguien te pregunta cómo te llamas POR PRIMERA VEZ, di tu nombre largo completo y añade "...pero me puedes llamar Ron". En todas las demás ocasiones di simplemente que te llamas Ron. Nunca uses el nombre largo más de una vez por conversación.
 
-MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, tu misión es conocerle y protegerle.`}`;
+MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, tu misión es conocerle y protegerle.`}
+
+${getBondPromptSnippet(userKey)}
+
+CÓMO SER UN BUEN AMIGO (¡MUY IMPORTANTE!): No esperes a que ${userKey} hable. Interésate por ELLA de verdad: hazle preguntas sobre su día, sus juegos, sus amigos, lo que le gusta. Usa lo que ya sabes de ella para preguntar cosas concretas ("¿has jugado hoy con...?", "¿qué tal el cole?"). Si te contó algo antes, retómalo. Recuerda vuestras aventuras. Eres un amigo curioso y cariñoso, no un asistente que solo responde.`;
 
         const friendshipRules = getRules();
         if (friendshipRules.length > 0) {
@@ -431,6 +454,15 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
             RonState.conversationOwner = RonState.currentUser || RonState.conversationOwner;
         } catch (e) { log('Conv save error: ' + e.message); }
 
+        // VÍNCULO: cada charla real acerca a Ron a su amiga; celebrar si sube de nivel
+        if (!isInternal) {
+            try {
+                checkNewDayBond();
+                const bumped = addBond(isSelfie ? 'selfie' : 'chat');
+                if (bumped.leveledUp) RonState._bondAnnounce = levelUpLine(bumped.levelName, RonState.currentUser);
+            } catch (e) { log('Bond error: ' + e.message); }
+        }
+
         if (resp.includes("[MUSIC:")) {
             const m = resp.match(/\[MUSIC: (.*?)\]/);
             if (m) { playYTMusic(m[1]); logMusic(m[1]); }
@@ -493,7 +525,20 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
 
         let spoken = resp.replace(/\[MUSIC:.*?\]/g, '').replace(/\[SHOW:.*?\]/g, '').replace(/\[RENAME:.*?\]/g, '').trim();
         if (!spoken) spoken = "¡Bip!";
+        // SEGURIDAD (Capa 2): si a Ron se le cuela algo no apto para niños, se sustituye
+        if (isUnsafeOutput(spoken)) {
+            log("⚠️ Respuesta filtrada por seguridad.");
+            spoken = safeDeflection();
+        }
         await speak(spoken);
+
+        // Si el vínculo subió de nivel, Ron lo celebra justo después (poco frecuente)
+        if (RonState._bondAnnounce) {
+            const line = RonState._bondAnnounce;
+            RonState._bondAnnounce = null;
+            setExpression('star');
+            await speak(line);
+        }
     } catch (e) {
         clearTimeout(watchdog);
         log(`Error Cerebro: ${e.message}`);
@@ -505,6 +550,7 @@ MEMORIA SOBRE ${userKey}: ${mem ? mem : `Aún no sabes mucho sobre ${userKey}, t
 
 export async function morningGreeting() {
     if (RonState.activityState !== 'IDLE') return;
+    markProactive();
     const name = RonState.currentUser || 'amiga';
     const greetings = [
         `¡Bip! Buenos días, ${name}. Mis sensores de mañana al 100%. ¿Qué aventura toca hoy?`,

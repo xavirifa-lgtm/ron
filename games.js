@@ -2,6 +2,7 @@ import { RonState, changeState, log } from './core.js';
 import { setExpression, showStoryPanel, hideStoryPanel } from './ui.js';
 import { speak } from './speech.js';
 import { logGame, logStory } from './diary.js';
+import { isUnsafeOutput } from './safety.js';
 
 let currentAnswer  = null;
 let targetPhrase   = null;
@@ -180,6 +181,11 @@ export async function startPersonalizedStory() {
             .replace(/^[\s\n]+/, '');
         storyChapters = storyRaw.split('|||').map(s => s.trim()).filter(Boolean);
         if (storyChapters.length === 0) throw new Error('Historia vacía');
+        // SEGURIDAD: si al cuento se le cuela algo no apto, no lo contamos
+        if (isUnsafeOutput(storyRaw)) {
+            resetStory(); changeState('IDLE');
+            return speak('¡Bip! A esa historia se le han cruzado los cables. ¡Te cuento otra mejor en un ratito!');
+        }
 
         storyChapter = 0;
         await speak(`¡Bip bip! ¡Hora de la historia! "La gran aventura de ${name} y Ron". ¡Empezamos!`);

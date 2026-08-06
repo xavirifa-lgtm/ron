@@ -31,6 +31,7 @@ export const RonState = {
     unknownStabilityCounter: 0,
     emotionCooldownUntil: 0,
     lastSpontaneousTime:  0,
+    lastProactiveTime:    0,   // coordina espontáneo + curiosidad para que no se pisen
     framesWithoutFace:    0,
     userLastSeen:  {},
     batteryLevel:  100,
@@ -77,21 +78,54 @@ export function changeState(newState) {
     }
 }
 
+// ¿Puede Ron iniciar algo ahora? Presente + tranquilo + no de noche + sin pisar otro momento
+export function canBeProactive() {
+    if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return false;
+    if (!RonState.currentUser) return false;
+    if ((RonState.framesWithoutFace || 0) > 12) return false;   // solo si te ve (o no hay cámara → 0)
+    const hour = new Date().getHours();
+    if (hour >= 21 || hour < 7) return false;
+    if (Date.now() - (RonState.lastProactiveTime || 0) < 90000) return false; // no dos seguidos
+    return true;
+}
+export function markProactive() { RonState.lastProactiveTime = Date.now(); }
+
+// Construye una iniciativa PERSONALIZADA (sobre ella), no genérica
+function buildProactivePrompt() {
+    const name  = RonState.currentUser || 'tu amiga';
+    const u     = RonState.userStats[RonState.currentUser] || {};
+    const likes = u.likes || [];
+    const opts  = [];
+    if (likes.length) {
+        const like = likes[Math.floor(Math.random() * likes.length)];
+        opts.push(`Pregúntale con MUCHA ilusión a ${name} por ${like} (algo que le encanta). Una pregunta concreta y curiosa, de amigo interesado.`);
+    }
+    opts.push(`Pregúntale a ${name} qué tal su día, a qué ha jugado o cómo se siente. Interés de verdad, cortito.`);
+    opts.push(`Propón con entusiasmo hacer algo juntos: un juego, un cuento o adivinar algo. Una frase.`);
+    opts.push(`Comparte una duda graciosa de robot sobre los humanos y pregúntale su opinión a ${name}.`);
+    if ((u.history || []).length) {
+        const last = u.history[u.history.length - 1];
+        opts.push(`Antes ${name} te contó esto: "${last}". Retómalo con una pregunta de seguimiento, como haría un amigo que se acuerda.`);
+    }
+    return opts[Math.floor(Math.random() * opts.length)];
+}
+
 export function resetSpontaneousTimer() {
     if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
-    const delay = 480000 + Math.random() * 600000;
+    const delay = 240000 + Math.random() * 300000; // 4–9 min (interacción viva pero no agobiante)
     RonState.spontaneousTimer = setTimeout(async () => {
         try {
-            if (RonState.activityState !== 'IDLE') return;
+            if (!canBeProactive()) return;
+            // A veces recuerda una aventura del diario en vez de preguntar
             if (Math.random() < 0.3) {
                 const { ronRemembersSomething } = await import('./diary.js');
                 const remembered = await ronRemembersSomething().catch(() => false);
-                if (remembered) return;
+                if (remembered) { markProactive(); return; }
             }
-            import('./ai.js').then(ai => ai.triggerSpontaneous(
-                "Llevamos un rato callados. Inicia una conversación corta y divertida o propón un juego."
-            )).catch(() => {});
-        } catch(e) {
+            markProactive();
+            const prompt = buildProactivePrompt();
+            import('./ai.js').then(ai => ai.triggerSpontaneous(prompt)).catch(() => {});
+        } catch (e) {
             console.error('[Ron] Error espontáneo:', e);
         }
     }, delay);

@@ -1,5 +1,5 @@
 // defender.js - Ron como defensor activo
-import { RonState, log } from './core.js';
+import { RonState, log, markProactive } from './core.js';
 import { speak } from './speech.js';
 import { setExpression } from './ui.js';
 
@@ -45,6 +45,7 @@ export function updateSadnessTracking(emotion, faceVisible) {
 
 async function triggerDefenderMode() {
     if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return;
+    markProactive();
 
     const name = RonState.currentUser || 'amiga';
     log(`Defensor activado para ${name}`);

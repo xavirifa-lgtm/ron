@@ -1,5 +1,5 @@
 // curiosity.js - Curiosidad literal de Ron (como en la película)
-import { RonState, log } from './core.js';
+import { RonState, log, canBeProactive, markProactive } from './core.js';
 import { speak } from './speech.js';
 import { setExpression } from './ui.js';
 
@@ -43,17 +43,17 @@ export function stopCuriosityLoop() {
 
 function scheduleCuriosity() {
     if (curiosityTimer) { clearTimeout(curiosityTimer); curiosityTimer = null; }
-    const delay = 420000 + Math.random() * 660000; // 7–18 minutos
+    const delay = 420000 + Math.random() * 480000; // 7–15 minutos
     curiosityTimer = setTimeout(async () => {
         curiosityTimer = null;
         try {
-            if (RonState.activityState === 'IDLE' && RonState.currentUser && !RonState.isSilentMode) {
+            if (canBeProactive()) {
+                markProactive();
                 await fireRandomQuestion();
             }
         } catch (e) {
             log(`Curiosidad error: ${e.message}`);
         } finally {
-            // BUG FIX: re-programar siempre, incluso si la pregunta falla
             if (loopStarted) scheduleCuriosity();
         }
     }, delay);

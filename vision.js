@@ -1,4 +1,4 @@
-import { RonState, log, changeState } from './core.js';
+import { RonState, log, changeState, markProactive } from './core.js';
 import { setExpression, showMoodBubble, celebrateFaceRecognition } from './ui.js';
 import { speak } from './speech.js';
 import { updateSadnessTracking } from './defender.js';
@@ -157,6 +157,7 @@ export function startVisionLoop() {
                     if (RonState.currentUser !== found) {
                         RonState.currentUser = found;
                         if ((now - lastSeen) > 120000 && !RonState.isSilentMode && RonState.activityState === 'IDLE') {
+                            markProactive();
                             celebrateFaceRecognition();
                             const greetings = [
                                 `¡Bip! ¡${found}! ¡Ya estás aquí! ¡Mi sistema de amistad al 100%!`,
@@ -174,6 +175,7 @@ export function startVisionLoop() {
                         const emotionChanged = RonState.currentEmotion !== RonState.lastEmotion;
 
                         if (emotionChanged && cooldownOk && !RonState.isSilentMode) {
+                            markProactive(); // coordina: no lanzar una pregunta espontánea justo después
                             showMoodBubble(RonState.currentEmotion);
 
                             if (RonState.currentEmotion === 'triste') {
@@ -279,6 +281,7 @@ let calloutCount    = 0;
 // Ron la echa de menos y la llama por su nombre (comportamiento de la peli)
 async function callOutToUser(name) {
     if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return;
+    markProactive();
     setExpression('thinking');
     const calls = [
         `¡Bip! ¿${name}? ¿Dónde te has metido? Mis sensores no te encuentran.`,
