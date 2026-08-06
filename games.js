@@ -88,6 +88,13 @@ export async function handleReadingAnswer(text) {
         changeState('IDLE');
         return speak("Vale, guardo los libros en mi disco duro.");
     }
+    // "Ahora tú" / "léelo tú" / "te toca" → Ron lee EL MISMO texto en voz alta
+    if (/ahora t(ú|u)|lee(lo)? t(ú|u)|te toca|léelo|leelo|lee tú|tu turno/i.test(text)) {
+        setExpression('star');
+        await speak(`¡Bip! Me toca. Dice así: ${targetPhrase}.`);
+        if (RonState.activityState === 'IDLE') changeState('READING_GAME');
+        return;
+    }
     const input       = text.toLowerCase().trim().replace(/[.,!¡?¿]/g, '');
     const target      = targetPhrase.toLowerCase().trim();
     const inputWords  = input.split(' ');

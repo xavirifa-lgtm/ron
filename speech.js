@@ -13,6 +13,8 @@ let convTimeout        = null;
 let activeMouthInterval = null;
 let listenTimer        = null;  // single-flight: solo un re-arranque de micro pendiente a la vez
 let recognitionStarting = false; // guarda síncrona contra dobles arranques del micro
+let recognitionStartTs  = 0;     // cuándo empezó la sesión actual (para backoff)
+let quickEndCount       = 0;     // sesiones que mueren al instante seguidas
 let lastSpeakEndTs     = 0;
 let ttsWatchdog        = null;
 let ttsKeepAlive       = null;
@@ -52,6 +54,7 @@ export function startListening() {
     RonState.recognition.onstart = () => {
         recognitionStarting = false;
         RonState.isRecognitionActive = true;
+        recognitionStartTs = Date.now();
         if (RonState.activityState === 'IDLE') changeState('LISTENING');
         log("🎙️ Escuchando...");
     };
@@ -66,6 +69,7 @@ export function startListening() {
         }
         text = text.trim();
         if (!text || text.length < 2) return;   // descartar ruido/fragmentos
+        quickEndCount = 0;                        // hubo voz real: resetear backoff
         const t = text.toLowerCase();
 
         log(`Oído: ${text}`);
@@ -119,7 +123,18 @@ export function startListening() {
             if (RonState.ui.micToggleBtn) RonState.ui.micToggleBtn.classList.add('off');
             return;
         }
-        scheduleListen(RESTART_DELAY);
+
+        // Anti-bucle: si la sesión murió al instante (sin audio), espaciar cada vez más
+        const lasted = Date.now() - recognitionStartTs;
+        if (lasted < 1200) {
+            quickEndCount = Math.min(quickEndCount + 1, 6);
+        } else {
+            quickEndCount = 0;
+        }
+        const delay = quickEndCount > 1
+            ? Math.min(1000 + quickEndCount * 800, 5000) // backoff progresivo hasta 5s
+            : RESTART_DELAY;
+        scheduleListen(delay);
     };
 
     try {

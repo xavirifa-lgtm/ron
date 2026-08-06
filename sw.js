@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v25.27';
+const CACHE_NAME = 'ron-bot-v25.28';
 const ASSETS = [
   './',
   'index.html',
@@ -19,13 +19,16 @@ const ASSETS = [
   'face-canvas.js',
   'music.js',
   'manifest.json',
-  'icon.png'
+  'icon.png',
+  'icon-192.png',
+  'icon-512.png'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
+      // allSettled: si un asset falta (p.ej. un icono), no aborta todo el install
+      .then(cache => Promise.allSettled(ASSETS.map(a => cache.add(a))))
       .then(() => self.skipWaiting())
   );
 });

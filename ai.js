@@ -92,20 +92,30 @@ export async function handleInput(userText, isInternal = false) {
 
     // Los atajos de comando solo se activan con voz del usuario, nunca con prompts internos
     if (!isInternal) {
-        if (t.includes("jugar") && (t.includes("suma") || t.includes("matemáticas") || t.includes("números"))) {
+        // Intención de jugar/hacer, flexible: jugar, jugamos, juguemos, vamos a, quiero, hacemos, practicar...
+        const wantsPlay = /\bjug(ar|amos|uemos|á)|\bjuego\b|vamos a|quiero|hacemos|hacer|practic|ponme|empez|a jugar|toca\b/.test(t);
+
+        // SUMAS: mención de sumas/restas/mates + intención (o el sustantivo directo)
+        if ((t.includes("suma") || t.includes("resta") || t.includes("matemátic") || t.includes("número") ||
+             t.includes("numero") || t.includes("sumar") || t.includes("restar") || t.includes("calcul")) &&
+            (wantsPlay || t.includes("sumas") || t.includes("restas") || t.includes("a sumar") || t.includes("a restar"))) {
             return startMathGame();
         }
-        if (t.includes("vamos a leer") || t.includes("quiero leer") || t.includes("juego de lectura")) {
+        // LEER JUNTOS
+        if (t.includes("leer juntos") || t.includes("vamos a leer") || t.includes("quiero leer") ||
+            t.includes("a leer") || t.includes("leer contigo") || t.includes("juego de lectura") ||
+            (wantsPlay && (t.includes("leer") || t.includes("lectura")))) {
             return startReadingGame();
         }
-        if (t.includes("escondite") || (t.includes("jugar") && t.includes("esconder"))) {
+        // ESCONDITE
+        if (t.includes("escondite") || t.includes("esconder") || (wantsPlay && t.includes("escond"))) {
             return startHideAndSeek();
         }
         if (t.match(/cuéntame|cuentame|quiero un cuento|ponme un cuento|cuento de ron|una historia de ron/)) {
             const games = await import('./games.js');
             return games.startPersonalizedStory();
         }
-        if (t.includes("veo veo") || (t.includes("jugar") && t.includes("veo"))) {
+        if (t.includes("veo veo") || (wantsPlay && t.includes("veo"))) {
             return triggerSpontaneous("Vamos a jugar al Veo Veo. Elige un objeto que veas en la habitación, no me lo digas. Dame una pista del color o forma y yo intentaré adivinarlo mirando por la cámara.");
         }
         if (t.includes("para el juego") || t.includes("salir del juego") || t.includes("adiós ron") || t.includes("cierra la pizarra") || t.includes("quita la pizarra")) {
