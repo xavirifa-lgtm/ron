@@ -94,6 +94,12 @@ export function startVisionLoop() {
                 const d = detections[0];
                 RonState.lastDescriptor = Array.from(d.descriptor);
                 trackFace(d);
+                // MODO SEGUIR: convierte la posición de la cara en conducción (si está activo)
+                import('./follow.js').then(f => f.updateFollow(
+                    d.detection.box,
+                    RonState.ui.video.videoWidth,
+                    RonState.ui.video.videoHeight
+                )).catch(() => {});
 
                 // Reconocimiento
                 let found = null;
@@ -239,7 +245,8 @@ export function startVisionLoop() {
                 RonState.lastEmotion = RonState.currentEmotion;
 
             } else {
-                // Sin cara: Ron la echa de menos y la llama antes de dormirse
+                // Sin cara: parar el modo seguir (no conducir a ciegas) y echarla de menos
+                import('./follow.js').then(f => f.faceLost()).catch(() => {});
                 if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
                     RonState.framesWithoutFace = (RonState.framesWithoutFace || 0) + 1;
                     const f       = RonState.framesWithoutFace;
@@ -359,6 +366,13 @@ export async function sendMove(cmd) {
         RonState.ble.isConnected = false;
         import('./ui.js').then(ui => ui.setChestIcon('warning'));
     }
+}
+
+// Envía velocidades de motor al ESP-32 para el modo seguir: M<izq>,<der>
+export function sendDrive(left, right) {
+    const l = Math.max(-255, Math.min(255, Math.round(left  || 0)));
+    const r = Math.max(-255, Math.min(255, Math.round(right || 0)));
+    sendMove(`M${l},${r}\n`);
 }
 
 function trackFace(detection) {

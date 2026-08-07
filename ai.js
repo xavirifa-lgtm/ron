@@ -10,6 +10,7 @@ import { detectLearningMoment, ronLearns, getRecentFacts } from './learning.js';
 import { playYTMusic, stopYTMusic } from './music.js';
 import { getBondPromptSnippet, addBond, levelUpLine, checkNewDayBond } from './bond.js';
 import { isConcern, concernResponse, isUnsafeOutput, safeDeflection } from './safety.js';
+import { startFollow, stopFollow, isFollowing } from './follow.js';
 
 export async function triggerSpontaneous(prompt) {
     if (RonState.activityState !== 'IDLE') return;
@@ -105,6 +106,23 @@ export async function handleInput(userText, isInternal = false) {
     if (!isInternal) {
         // Intención de jugar/hacer, flexible: jugar, jugamos, juguemos, vamos a, quiero, hacemos, practicar...
         const wantsPlay = /\bjug(ar|amos|uemos|á)|\bjuego\b|vamos a|quiero|hacemos|hacer|practic|ponme|empez|a jugar|toca\b/.test(t);
+
+        // ── MODO SEGUIR ──────────────────────────────────────────────────
+        if (/s[íi]gueme|sigueme|ven conmigo|ven aqu[íi]|ven ron|acomp[áa][ñn]ame|vamos juntos/.test(t)) {
+            if (startFollow()) {
+                setExpression('star');
+                return speak("¡Bip bip! ¡Voy contigo! ¡Arrancando motores!");
+            } else {
+                return speak("¡Bip! Quiero seguirte, pero mis motores no están conectados. Pulsa el botón de la antena para conectarlos.");
+            }
+        }
+        if (/qu[ée]date|qu[íi]eto|para de seguirme|no me sigas|deja de seguirme|para el robot|det[ée]nte/.test(t)) {
+            if (isFollowing()) {
+                stopFollow();
+                setExpression('happy');
+                return speak("¡Vale! Me quedo aquí contigo, ¡bip!");
+            }
+        }
 
         // SUMAS: mención de sumas/restas/mates + intención (o el sustantivo directo)
         if ((t.includes("suma") || t.includes("resta") || t.includes("matemátic") || t.includes("número") ||
