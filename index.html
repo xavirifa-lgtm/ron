@@ -20,7 +20,7 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=27.0">
+    <link rel="stylesheet" href="styles.css?v=28.1">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -36,7 +36,7 @@
         <!-- Pantalla de Inicio -->
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v27.0 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
+            <button id="power-btn">B-BOT v28.1 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
         </div>
 
         <!-- Botones de Control -->
@@ -66,7 +66,8 @@
                 </label><br><br>
                 <label>Voz de Gemini <select id="gemini-voice-input"></select></label>
                 <label><input type="checkbox" id="robot-effect-input"> Efecto robot</label>
-                <button id="test-voice-btn" type="button">Probar voz</button><br><br>
+                <button id="test-voice-btn" type="button">Probar voz</button>
+                <div id="test-voice-result" style="font-size:12px;color:#0a6aa8;margin-top:4px"></div><br>
                 <label>Hora de dormir <input type="time" id="bedtime-input" value="22:00"></label><br><br>
                 <label>Hora de despertar <input type="time" id="waketime-input" value="07:30"></label><br><br>
                 <label>Iniciativa de Ron
@@ -82,6 +83,14 @@
                         <option value="navegador">Navegador — sin gastar cuota</option>
                     </select>
                 </label><br><br>
+                <label>Cuándo te escucha
+                    <select id="listen-mode-input">
+                        <option value="cara">Siempre que te vea delante (recomendado)</option>
+                        <option value="ron">Solo si le dices «Ron»</option>
+                    </select>
+                </label><br><br>
+                <label><input type="checkbox" id="captions-input"> Subtítulos (lo que oye y lo que dice)</label><br>
+                <label><input type="checkbox" id="diag-input"> Diagnóstico en pantalla (registro técnico)</label><br><br>
                 <div id="usage-info" style="font-size:12px;color:#555;white-space:pre-line"></div><br>
                 <button id="save-api-key">Guardar</button>
                 <button id="close-settings-btn" type="button">Cerrar</button>
@@ -122,7 +131,9 @@
         </div>
         
         <!-- UI de Control (Invisible por defecto) -->
-        <div id="debug-info" class="hidden"></div>
+        <div id="debug-info"></div>
+        <!-- Subtítulos: lo que Ron ha oído / lo que dice -->
+        <div id="caption" class="caption"></div>
         
         <!-- Panel de Selfie (Polaroid) -->
         <div id="photo-panel" class="hidden">
@@ -143,7 +154,7 @@
         <!-- Wrapper de cara (para efectos) -->
         <div id="face-wrapper"></div>
     </div>
-    <script>const CACHE_NAME = 'ron-bot-v27.0';</script>
-    <script type="module" src="app.js?v=27.0"></script>
+    <script>const CACHE_NAME = 'ron-bot-v28.1';</script>
+    <script type="module" src="app.js?v=28.1"></script>
 </body>
 </html>

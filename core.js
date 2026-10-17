@@ -11,6 +11,9 @@ const DEFAULT_CONFIG = {
     voiceEngine: 'gemini',   // gemini | navegador (sin clave de Gemini se usa el navegador)
     geminiVoice: 'Puck',     // voz de Gemini
     robotEffect: true,       // efecto metálico de B-Bot sobre la voz de Gemini
+    listenMode: 'cara',      // cara: sin decir "Ron" si te ve delante · ron: siempre con "Ron"
+    captions: true,          // subtítulos en pantalla
+    diagnostics: false,      // registro técnico en pantalla
     cerebrasKey: '',         // opcional: segundo proveedor de IA
     openrouterKey: '',       // opcional: tercer proveedor de IA
 };
@@ -143,8 +146,16 @@ export function rememberTurn(role, text) {
 
 // Ron está libre: en reposo o solo escuchando (el micro está casi siempre en LISTENING;
 // antes muchas conductas exigían IDLE estricto y casi nunca llegaban a dispararse)
+// "Ron está libre para tomar la iniciativa": en reposo Y sin que nadie le esté hablando.
+// (Antes contaba LISTENING como libre: Ron soltaba un saludo o una pregunta en mitad de
+// la frase de la niña y lo que ella decía se perdía.)
+let _whisper = null;
+import('./whisper.js').then(m => { _whisper = m; }).catch(() => {});
 export function isIdleLike() {
-    return RonState.activityState === 'IDLE' || RonState.activityState === 'LISTENING';
+    if (RonState.activityState !== 'IDLE') return false;
+    if (_whisper && _whisper.userIsSpeaking()) return false;
+    if (Date.now() - (RonState.lastHeardTs || 0) < 6000) return false;
+    return true;
 }
 
 // ¿Puede Ron iniciar algo ahora? Presente + tranquilo + no de noche + sin pisar otro momento

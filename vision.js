@@ -136,6 +136,7 @@ export function startVisionLoop() {
             }
 
             RonState.framesWithoutFace = 0;
+            RonState.faceSeenTs = now;          // está delante: se le puede hablar sin decir "Ron"
             calloutCount = 0;
             RonState.lastDescriptor = Array.from(d.descriptor);
             trackFace(d);
@@ -152,7 +153,9 @@ export function startVisionLoop() {
             // Muestras extra solo con coincidencia MUY segura (no contamina con otras personas)
             if (best && best.distance < SAMPLE_MAX && Math.random() < 0.15) id.addSamples(best.label, [Array.from(d.descriptor)]);
 
-            const busy = ['THINKING','SPEAKING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY'].includes(RonState.activityState);
+            // "Ocupado" también si ella está hablando o acaba de hablar: no pisarle la frase con un saludo
+            const busy = ['THINKING','SPEAKING','LISTENING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY'].includes(RonState.activityState)
+                || now - (RonState.lastHeardTs || 0) < 5000;
 
             if (stable && stable !== '?') {
                 const name = stable;
@@ -249,10 +252,12 @@ async function callOutToUser(name) {
     await speak(calls[Math.floor(Math.random() * calls.length)]);
 }
 
-export function captureOptimizedFrame() {
-    // Guard: si la cámara no está disponible, devolver null
-    if (!RonState.ui.video || !RonState.ui.video.videoWidth) return null;
-    const MAX = 1280;
+export function captureOptimizedFrame(MAX = 1280, quality = 0.92) {
+    // Guard: si la cámara no está disponible (o el vídeo se ha parado), devolver null
+    const vid = RonState.ui.video;
+    if (!vid || !vid.videoWidth || vid.readyState < 2) return null;
+    const tr = vid.srcObject && vid.srcObject.getVideoTracks && vid.srcObject.getVideoTracks()[0];
+    if (tr && tr.readyState === 'ended') return null;
     const canvas = document.createElement('canvas');
     let w = RonState.ui.video.videoWidth  || 640;
     let h = RonState.ui.video.videoHeight || 480;
@@ -261,7 +266,15 @@ export function captureOptimizedFrame() {
     canvas.width  = w;
     canvas.height = h;
     canvas.getContext('2d').drawImage(RonState.ui.video, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.92);
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+// Reabrir la cámara si Android la ha parado (p. ej. tras volver de segundo plano)
+export async function restartCamera() {
+    const vid = RonState.ui.video;
+    try { vid && vid.srcObject && vid.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {}
+    log('Cámara: reabriendo…');
+    await startCamera();
 }
 
 export async function connectBLE() {

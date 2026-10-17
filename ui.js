@@ -1,4 +1,4 @@
-import { RonState, log, changeState, isBedtime, minutesToBedtime } from './core.js';
+import { RonState, RonConfig, log, changeState, isBedtime, minutesToBedtime } from './core.js';
 import * as Sounds from './sounds.js';
 import {
     initCanvas, canvasSetExpression, canvasSetEyeColor,
@@ -82,6 +82,41 @@ export function handleStateChange(newState) {
         RonState.ui.micToggleBtn.classList.toggle('active', newState === 'LISTENING');
     }
 }
+
+// ── Subtítulos: lo que Ron ha oído y lo que dice ─────────────────────────────
+// kind: 'heard' (te ha entendido) · 'ignored' (oído, pero esperaba "Ron") · 'ron' · 'hint'
+let captionTimer = null;
+export function showCaption(text, kind = 'heard') {
+    const el = document.getElementById('caption');
+    if (!el || RonConfig.captions === false) return;
+    const clean = String(text || '').replace(/\[[A-Z]+:[^\]]*\]/g, '').trim();
+    if (!clean) return;
+    const short = clean.length > 140 ? clean.slice(0, 137) + '…' : clean;
+    el.className = 'caption show ' + kind;
+    el.innerHTML = '';
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = kind === 'ron' ? '🤖' : kind === 'hint' ? '👂' : '🗣️';
+    const msg = document.createElement('span');
+    msg.textContent = short;
+    el.append(who, msg);
+    if (kind === 'ignored') {
+        const h = document.createElement('small');
+        h.textContent = 'Di «Ron» para hablarme';
+        el.append(h);
+    }
+    if (captionTimer) clearTimeout(captionTimer);
+    captionTimer = setTimeout(() => el.classList.remove('show'), kind === 'ron' ? Math.min(9000, 2500 + short.length * 60) : 4500);
+}
+
+// Anillo del botón del micro que se mueve con el volumen (para ver que te oye)
+setInterval(async () => {
+    const btn = RonState.ui?.micToggleBtn;
+    if (!btn) return;
+    let lvl = 0;
+    try { const w = await import('./whisper.js'); lvl = w.micLevel(); } catch (e) {}
+    btn.style.setProperty('--mic', lvl.toFixed(2));
+}, 120);
 
 export function setEyeColor(color) {
     document.documentElement.style.setProperty('--ron-eye-color', color);

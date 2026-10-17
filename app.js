@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v27.0...");
+    log("Iniciando Ron v28.1...");
     initUI();
     setChestIcon('wifi');
 
@@ -22,6 +22,7 @@ async function preInit() {
         Sounds.resume();
         import('./tts.js').then(t => t.unlockAudio()).catch(() => {});
         RonState.ui.bootScreen.classList.add('hidden');
+        import('./core.js').then(c => document.body.classList.toggle('diag', !!c.RonConfig.diagnostics));
         await init();
     };
 
@@ -42,7 +43,9 @@ async function preInit() {
         faceEl.addEventListener('click', (ev) => {
             // Sin cosquillas al tocar botones, ajustes o paneles
             if (ev.target.closest('button, input, select, label, .api-modal, .game-panel, #photo-panel')) return;
-            if (isIdleLike() && !RonState.isLearningFace) {
+            // Mientras Ron habla, tocarle lo calla y se pone a escuchar (como interrumpir a un amigo)
+            if (RonState.activityState === 'SPEAKING') { import('./speech.js').then(s => s.interruptSpeaking()); return; }
+            if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
                 setExpression('happy');
                 Sounds.playBeep(900, 'sine', 0.08, 0.05);
                 setTimeout(() => Sounds.playBeep(1200, 'sine', 0.08, 0.05), 110);
@@ -141,6 +144,9 @@ function setupInteractions() {
         $('gemini-key-input').value     = RonConfig.geminiKey || '';
         $('voice-engine-input').value   = RonConfig.voiceEngine || 'gemini';
         $('robot-effect-input').checked = RonConfig.robotEffect !== false;
+        $('listen-mode-input').value    = RonConfig.listenMode || 'cara';
+        $('captions-input').checked     = RonConfig.captions !== false;
+        $('diag-input').checked         = !!RonConfig.diagnostics;
         const { VOICES } = await import('./tts.js');
         $('gemini-voice-input').innerHTML = Object.entries(VOICES).map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join('');
         $('gemini-voice-input').value   = RonConfig.geminiVoice || 'Puck';
@@ -171,7 +177,11 @@ function setupInteractions() {
             voiceEngine:   $('voice-engine-input').value || 'gemini',
             geminiVoice:   $('gemini-voice-input').value || 'Puck',
             robotEffect:   $('robot-effect-input').checked,
+            listenMode:    $('listen-mode-input').value || 'cara',
+            captions:      $('captions-input').checked,
+            diagnostics:   $('diag-input').checked,
         });
+        document.body.classList.toggle('diag', $('diag-input').checked);
         close();
         checkNightMode();
         // Aplicar el motor de escucha elegido
@@ -187,7 +197,14 @@ function setupInteractions() {
         Object.assign(RonConfig, { geminiKey: $('gemini-key-input').value.trim(), voiceEngine: $('voice-engine-input').value,
             geminiVoice: $('gemini-voice-input').value, robotEffect: $('robot-effect-input').checked });
         const tts = await import('./tts.js'); tts.unlockAudio();
+        const out = $('test-voice-result');
+        out.textContent = 'Probando…';
         await speak('¡Bip! Hola, soy Ron, tu mejor amigo fuera de la caja.', { remember: false });
+        const info = tts.lastTtsInfo();
+        out.textContent = RonConfig.voiceEngine !== 'gemini' ? 'Ha sonado la voz del navegador (elegida en Ajustes).'
+            : !RonConfig.geminiKey ? 'Falta la clave de Gemini: ha sonado la voz del navegador.'
+            : info.ok ? `✅ Voz de Gemini (${info.model}, ${info.ms} ms).`
+            : `❌ Gemini no respondió: ${info.error}. Ha sonado la voz del navegador.`;
         Object.assign(RonConfig, prev);
     };
     RonState.ui.apiKeyInput.addEventListener('keydown', (e) => {

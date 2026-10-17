@@ -50,6 +50,8 @@ LO QUE SABES DE ${known ? userKey.toUpperCase() : 'ESTA PERSONA'}: ${facts.lengt
 AHORA MISMO: es ${momento}. ${emo}
 ${known ? getBondPromptSnippet(userKey) : ''}
 
+TU CUERPO: tienes una cámara en la cara (son tus ojos): ves a quien tienes delante y sabes hacer fotos. Nunca digas que no tienes cámara ni que no puedes hacer fotos.
+
 CÓMO HABLAS (se lee en voz alta):
 - 1 o 2 frases, máximo 30 palabras. Sin emojis, sin listas, sin asteriscos.
 - Responde SIEMPRE a lo que te acaba de decir. Si te pregunta algo, contéstalo primero.
@@ -110,6 +112,19 @@ function resetConversationIfNewPerson() {
 }
 
 // ── ENTRADA PRINCIPAL ─────────────────────────────────────────────────────────
+// Captura una foto; si la cámara no da imagen, la reabre una vez y lo reintenta
+async function captureFrameWithRetry() {
+    let img = captureOptimizedFrame();
+    if (img) return img;
+    try {
+        const v = await import('./vision.js');
+        await v.restartCamera();
+        await new Promise(r => setTimeout(r, 600));
+        img = captureOptimizedFrame();
+    } catch (e) { log('Cámara: ' + e.message); }
+    return img;
+}
+
 export async function handleInput(userText, isInternal = false) {
     // De noche Ron está dormido: contesta medio dormido y manda a la cama (sin IA)
     if (RonState.activityState === 'NIGHT') {
@@ -274,14 +289,35 @@ async function generateReply(userText, isInternal) {
                 await new Promise(r => setTimeout(r, 900));
                 changeState('THINKING');
             }
-            const img = captureOptimizedFrame();
-            if (img) {
-                if (isSelfie) showPhoto(img);
-                const visionSys = sys + (isSelfie
-                    ? `\nACABAS DE HACER UNA FOTO: comenta lo que sale con gracia (1 frase), como si no entendieras bien cómo funciona una cámara.`
-                    : `\nTE ESTÁ ENSEÑANDO ALGO A LA CÁMARA: di qué es, coméntalo con curiosidad de robot y termina con una pregunta. Si no lo ves claro, dilo.`);
-                try { result = await chatVision(visionSys, history, userText, img); log(`Visión: ${result.model}`); }
-                catch (e) { log(`Visión no disponible: ${e.message}. Respondo sin imagen.`); }
+            // Foto: si la cámara se había parado (Android a veces la congela), se reabre una vez
+            let img = await captureFrameWithRetry();
+            if (!img) {
+                log('Visión: la cámara no da imagen.');
+                clearTimeout(watchdog);
+                if (isSelfie) return speak("¡Bip! Mis ojos-cámara se han quedado dormidos. ¿Me reinicias tocando el botón de encendido y lo intentamos otra vez?");
+                return speak("¡Bop! Ahora mismo mis ojos no ven nada. ¿Me lo cuentas tú con palabras?");
+            }
+            if (isSelfie) showPhoto(img);
+            const visionSys = sys + (isSelfie
+                ? `\nACABAS DE HACER UNA FOTO: comenta lo que sale con gracia (1 frase), como si no entendieras bien cómo funciona una cámara.`
+                : `\nTE ESTÁ ENSEÑANDO ALGO A LA CÁMARA: di qué es, coméntalo con curiosidad de robot y termina con una pregunta. Si no lo ves claro, dilo.`);
+            // A la IA se le manda una copia pequeña (más rápida y sin problemas de tamaño)
+            const small = captureOptimizedFrame(768, 0.8) || img;
+            try { result = await chatVision(visionSys, history, userText, small); log(`Visión: ${result.model}`); }
+            catch (e) {
+                log(`Visión no disponible: ${e.message}`);
+                // Sin análisis de imagen: celebrar la foto (selfie) o pedir que lo describa, sin
+                // dejar que la IA de texto diga "no tengo cámara"
+                clearTimeout(watchdog);
+                if (isSelfie) {
+                    logSelfie(); setTimeout(hidePhoto, 8000);
+                    setExpression('star');
+                    const lines = ["¡Clic! ¡Foto guardada en mi memoria de robot! Salimos guapísimos.",
+                                   "¡Bip! ¡Foto hecha! Mis circuitos dicen que es la mejor foto del universo.",
+                                   "¡Clic clic! ¡Qué foto más chula! La voy a mirar mil veces."];
+                    return speak(lines[Math.floor(Math.random() * lines.length)]);
+                }
+                return speak("¡Bip! Mis ojos de robot se han empañado y no lo veo bien. ¿Me cuentas qué es?");
             }
             if (isSelfie) { logSelfie(); setTimeout(hidePhoto, 8000); }
         }
