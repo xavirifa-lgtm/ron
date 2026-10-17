@@ -1,25 +1,39 @@
-// face-canvas.js — Renderizado procedural de la cara de Ron con Canvas API
+// face-canvas.js — Cara de Ron dibujada con Canvas (diseño propio B-Bot, v27)
+// Ojos redondos negros con brillos, cejas que expresan la emoción y boca que se mueve
+// con el volumen REAL de la voz de Gemini (o con un oscilador si habla el navegador).
+// Todas las transiciones entre expresiones son suaves (interpolación por fotograma).
 import { RonState } from './core.js';
+import { voiceLevel } from './tts.js';
 
 let canvas, ctx, W, H;
 
 // ── Estado interno ────────────────────────────────────────────────────────
-let blinkP    = 0;                          // 0=abierto, 1=cerrado
-let blinkDir  = 0;                          // 0=esperando, 1=cerrando, -1=abriendo
-let blinkWait = 3000 + Math.random()*4000;  // ms hasta próximo parpadeo
-
-let eyeX = 0, eyeY = 0;                    // posición actual (lerp)
-let eyeTargX = 0, eyeTargY = 0;            // objetivo
-
-let expr  = 'neutral';
-let ec    = { r: 13, g: 13, b: 13 };       // color de ojo
-
-let speakT = 0;   // oscilador de habla
-let danceT = 0;   // fase de baile
-
-let glitches = []; // scanlines de glitch: {x,y,w,h,r,g,b,life}
-
+let blinkP = 0, blinkDir = 0, blinkWait = 2500 + Math.random() * 3000;
+let eyeX = 0, eyeY = 0, eyeTargX = 0, eyeTargY = 0;
+let sacT = 2 + Math.random() * 3;           // micro-movimientos de mirada en reposo
+let expr = 'neutral';
+let ec = { r: 18, g: 20, b: 24 };           // color de ojos/boca/cejas
+let t = 0, speakT = 0, danceT = 0, mouthOpen = 0;
+let glitches = [];
 let lastTs = 0;
+
+// Parámetros animables por expresión (se interpolan → transiciones suaves)
+//  eyeS: escala del ojo · eyeSY: aplastamiento vertical · browY: altura de cejas (+ = arriba)
+//  browTilt: inclinación (+ = extremo interior arriba, triste/preocupado) · smile: curva de boca
+//  mouthW: anchura de boca · blush: rubor de mejillas
+const TARGETS = {
+    neutral:    { eyeS: 1.00, eyeSY: 1.00, browY: 0.00, browTilt: 0.00, smile: 0.55, mouthW: 1.00, blush: 0.15 },
+    happy:      { eyeS: 1.00, eyeSY: 1.00, browY: 0.18, browTilt: -0.05, smile: 1.00, mouthW: 1.15, blush: 0.55 },
+    recognised: { eyeS: 1.05, eyeSY: 1.00, browY: 0.30, browTilt: -0.05, smile: 1.00, mouthW: 1.20, blush: 0.65 },
+    star:       { eyeS: 1.10, eyeSY: 1.00, browY: 0.35, browTilt: -0.10, smile: 1.10, mouthW: 1.25, blush: 0.70 },
+    surprise:   { eyeS: 1.22, eyeSY: 1.08, browY: 0.60, browTilt: 0.05, smile: 0.00, mouthW: 0.70, blush: 0.10 },
+    fear:       { eyeS: 0.82, eyeSY: 1.05, browY: 0.35, browTilt: 0.45, smile: -0.45, mouthW: 0.85, blush: 0.00 },
+    sad:        { eyeS: 0.95, eyeSY: 0.92, browY: 0.05, browTilt: 0.55, smile: -0.70, mouthW: 0.85, blush: 0.00 },
+    thinking:   { eyeS: 0.95, eyeSY: 0.80, browY: 0.10, browTilt: 0.00, smile: 0.10, mouthW: 0.70, blush: 0.05 },
+    flat:       { eyeS: 1.00, eyeSY: 0.08, browY: -0.15, browTilt: 0.00, smile: 0.25, mouthW: 0.70, blush: 0.10 },
+    glitch:     { eyeS: 1.00, eyeSY: 1.00, browY: 0.10, browTilt: 0.20, smile: -0.15, mouthW: 1.00, blush: 0.00 },
+};
+const cur = { ...TARGETS.neutral };
 
 // ── Init ──────────────────────────────────────────────────────────────────
 export function initCanvas() {
@@ -32,428 +46,286 @@ export function initCanvas() {
 }
 
 function resize() {
-    W = canvas.width  = window.innerWidth;
-    H = canvas.height = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);   // nitidez en pantallas densas
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-// ── Loop principal ────────────────────────────────────────────────────────
 function loop(ts) {
-    const dt = Math.min((ts - lastTs) / 1000, 0.05);
+    const dt = Math.min((ts - lastTs) / 1000, 0.05) || 0.016;
     lastTs = ts;
     tick(dt);
     render();
     requestAnimationFrame(loop);
 }
 
-function tick(dt) {
-    // Lerp de tracking ocular
-    eyeX += (eyeTargX - eyeX) * Math.min(1, dt * 10);
-    eyeY += (eyeTargY - eyeY) * Math.min(1, dt * 10);
+const isDance = () => document.body.classList.contains('dance-mode');
+const isNight = () => document.body.classList.contains('night-mode');
 
-    // Parpadeo
+function tick(dt) {
+    t += dt;
+    const e = isDance() ? 'star' : expr;
+    const tg = TARGETS[e] || TARGETS.neutral;
+    const k = Math.min(1, dt * 9);
+    for (const p in tg) cur[p] += (tg[p] - cur[p]) * k;
+
+    // Mirada: sigue la cara detectada; en reposo hace pequeños movimientos naturales
+    sacT -= dt;
+    if (sacT <= 0 && RonState.activityState !== 'SPEAKING') {
+        sacT = 1.5 + Math.random() * 3.5;
+        if (Math.abs(eyeTargX) < 3) { eyeTargX += (Math.random() - 0.5) * 6; eyeTargY += (Math.random() - 0.5) * 3; }
+    }
+    eyeX += (eyeTargX - eyeX) * Math.min(1, dt * 12);
+    eyeY += (eyeTargY - eyeY) * Math.min(1, dt * 12);
+
+    // Parpadeo (a veces doble)
     if (blinkDir === 0) {
         blinkWait -= dt * 1000;
-        if (blinkWait <= 0) { blinkDir = 1; blinkWait = 2500 + Math.random() * 5000; }
+        if (blinkWait <= 0) { blinkDir = 1; blinkWait = Math.random() < 0.2 ? 180 : 2200 + Math.random() * 4500; }
     } else if (blinkDir === 1) {
-        blinkP = Math.min(1, blinkP + dt / 0.065);
+        blinkP = Math.min(1, blinkP + dt / 0.06);
         if (blinkP >= 1) blinkDir = -1;
     } else {
-        blinkP = Math.max(0, blinkP - dt / 0.10);
-        if (blinkP <= 0) { blinkP = 0; blinkDir = 0; }
+        blinkP = Math.max(0, blinkP - dt / 0.09);
+        if (blinkP <= 0) blinkDir = 0;
     }
 
-    // Oscilador de habla — lento para que las formas de boca sean visibles
-    if (RonState.activityState === 'SPEAKING') speakT += dt * (3.2 + Math.sin(speakT * 0.35) * 0.8);
+    // Boca: volumen real de la voz de Gemini; si no hay, sílabas simuladas
+    let target = 0;
+    if (RonState.activityState === 'SPEAKING') {
+        const lvl = voiceLevel();
+        if (lvl >= 0) target = Math.min(1, lvl);
+        else { speakT += dt * 9; target = Math.max(0, Math.sin(speakT) * 0.6 + Math.sin(speakT * 2.3) * 0.4); }
+    }
+    mouthOpen += (target - mouthOpen) * Math.min(1, dt * (target > mouthOpen ? 28 : 14));
 
-    // Fase de baile
-    if (document.body.classList.contains('dance-mode')) danceT += dt * 4.5;
-
-    // Decay de glitches
+    if (isDance()) danceT += dt * 4.5;
     glitches = glitches.filter(g => (g.life -= dt) > 0);
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────
-function getLayout() {
-    const eyeW  = Math.min(W * 0.13, 92);    // ojos grandes tipo cápsula como Ron
-    const eyeH  = eyeW * 1.42;               // más altos que anchos
-    const gap   = Math.min(W * 0.32, 280);
-    const eyeCY = H * 0.42;
-    const mouthY = eyeCY + eyeH * 0.56; // boca pegada a los ojos, como en las imágenes de Ron
-    const mouthW = Math.min(W * 0.20, 140);   // boca pequeña como en la película
-    return {
-        lx: W/2 - gap/2,
-        rx: W/2 + gap/2,
-        ey: eyeCY,
-        ew: eyeW, eh: eyeH,
-        mx: W/2, my: mouthY, mw: mouthW
-    };
+function layout() {
+    const R = Math.min(W * 0.13, H * 0.15, 110);             // radio del ojo
+    const gap = Math.min(W * 0.62, R * 4.4);
+    const bob = Math.sin(t * 1.4) * R * 0.04 + (isDance() ? Math.sin(danceT) * R * 0.18 : 0);
+    const cy = H * 0.44 + bob;
+    return { R, lx: W / 2 - gap / 2, rx: W / 2 + gap / 2, cy, my: cy + R * 1.75, mw: R * 1.4 };
+}
+
+function color(a = 1) {
+    if (isNight()) return `rgba(0,212,255,${a})`;
+    return `rgba(${ec.r},${ec.g},${ec.b},${a})`;
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
 function render() {
     ctx.clearRect(0, 0, W, H);
-    const L     = getLayout();
-    const night = document.body.classList.contains('night-mode');
-    const dance = document.body.classList.contains('dance-mode');
+    const L = layout();
+    const night = isNight();
+    const e = isDance() ? 'star' : expr;
 
-    const ex = L.lx + eyeX;
-    const rx = L.rx + eyeX;
-    const ey = L.ey + eyeY + (dance ? Math.sin(danceT) * 9 : 0);
+    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.55)'; ctx.shadowBlur = 14; }
 
-    drawEye(ex, ey, L.ew, L.eh, night, dance);
-    drawEye(rx, ey, L.ew, L.eh, night, dance);
-    drawMouth(L.mx, L.my, L.mw, night, dance);
+    drawBlush(L);
+    for (const side of [-1, 1]) {
+        const cx = (side < 0 ? L.lx : L.rx) + eyeX;
+        const cy = L.cy + eyeY;
+        drawEye(cx, cy, L.R, e, side);
+        drawBrow(cx, cy, L.R, e, side);
+    }
+    drawMouth(W / 2 + eyeX * 0.4, L.my + eyeY * 0.5, L.mw, e);
 
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
     for (const g of glitches) {
-        const alpha = Math.min(1, g.life * 6) * 0.38;
-        ctx.fillStyle = `rgba(${g.r},${g.g},${g.b},${alpha})`;
+        ctx.fillStyle = `rgba(${g.r},${g.g},${g.b},${Math.min(1, g.life * 6) * 0.38})`;
         ctx.fillRect(g.x, g.y, g.w, g.h);
     }
 }
 
-// ── Ojo ───────────────────────────────────────────────────────────────────
-function drawEye(cx, cy, ew, eh, night, dance) {
-    const rx = ew / 2;
-    const side = cx < W / 2 ? -1 : 1;  // -1 izquierdo, +1 derecho
+// ── Mejillas ──────────────────────────────────────────────────────────────
+function drawBlush(L) {
+    if (cur.blush < 0.03 || isNight()) return;
+    for (const side of [-1, 1]) {
+        const x = (side < 0 ? L.lx : L.rx) + side * L.R * 0.55 + eyeX;
+        const y = L.cy + L.R * 1.35 + eyeY;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, L.R * 0.75);
+        g.addColorStop(0, `rgba(255,140,160,${0.42 * cur.blush})`);
+        g.addColorStop(1, 'rgba(255,140,160,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(x, y, L.R * 0.75, L.R * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+    }
+}
 
+// ── Ojos ──────────────────────────────────────────────────────────────────
+function drawEye(cx, cy, R, e, side) {
     ctx.save();
     ctx.translate(cx, cy);
+    const r = R * cur.eyeS;
 
-    // La expresión 'dance' usa 'star' + rebote en Y (manejado en render)
-    const e = dance ? 'star' : expr;
-
-    const ry = eh / 2;
-    switch (e) {
-        case 'happy':
-        case 'recognised':  drawHappyEye(rx, ry, night);                   break;
-        case 'star':        drawStarEye(rx, night, dance);                  break;
-        case 'flat':        drawFlatEye(rx, night);                         break;
-        case 'glitch':      drawGlitchEye(rx, eh, night);                   break;
-        case 'surprise':    drawNormalEye(rx * 1.22, ry * 1.25, night);     break;
-        case 'fear':        drawNormalEye(rx * 0.76, ry * 0.78, night);     break;
-        case 'thinking':    drawSquintEye(rx, ry, night);                   break;
-        case 'sad':         drawSadEye(rx, ry, night, side);                break;
-        default:            drawNormalEye(rx, ry, night);
-    }
-
-    ctx.restore();
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-function eyeGradient(rx, ry, night) {
-    return night ? 'rgb(0,160,210)' : `rgb(${ec.r},${ec.g},${ec.b})`;
-}
-
-// Rounded-rect centrado en 0,0 — para la forma pill de los ojos de Ron
-function rrect(rx, ry, cr) {
-    cr = Math.min(cr, rx, ry);
-    ctx.beginPath();
-    ctx.moveTo(-rx + cr, -ry);
-    ctx.lineTo( rx - cr, -ry);
-    ctx.arcTo( rx, -ry,  rx, -ry + cr, cr);
-    ctx.lineTo( rx,  ry - cr);
-    ctx.arcTo( rx,  ry,  rx - cr,  ry, cr);
-    ctx.lineTo(-rx + cr,  ry);
-    ctx.arcTo(-rx,  ry, -rx,  ry - cr, cr);
-    ctx.lineTo(-rx, -ry + cr);
-    ctx.arcTo(-rx, -ry, -rx + cr, -ry, cr);
-    ctx.closePath();
-}
-
-// ── Tipos de ojos ─────────────────────────────────────────────────────────
-
-function drawNormalEye(rx, ry, night) {
-    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
-    // Cápsula redondeada — como los ojos de Ron en la película
-    rrect(rx, ery, rx * 0.88);
-    ctx.fillStyle = eyeGradient(rx, ery, night);
-    ctx.fill();
-    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.5)'; ctx.shadowBlur = 10; ctx.fill(); }
-    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-}
-
-function drawHappyEye(rx, ry, night) {
-    // Media luna — plana abajo, curva arriba
-    const ery = Math.max(ry * 0.75 * (1 - blinkP * 0.97), 0.5);
-    ctx.beginPath();
-    ctx.moveTo(-rx, 0);
-    ctx.ellipse(0, 0, rx, ery, 0, Math.PI, 0, false);
-    ctx.closePath();
-    ctx.fillStyle = eyeGradient(rx, ery, night);
-    ctx.fill();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
-    ctx.lineWidth = Math.max(1.5, rx * 0.06);
-    ctx.stroke();
-}
-
-function drawStarEye(rx, night, dance) {
-    const r1 = rx * 1.1 * (dance ? 1 + Math.sin(danceT) * 0.1 : 1);
-    const r2 = rx * 0.44;
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? r1 : r2;
-        const a = (i * Math.PI / 5) - Math.PI / 2;
-        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-        else         ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-    }
-    ctx.closePath();
-    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r+22},${ec.g+22},${ec.b+22})`;
-    ctx.fill();
-}
-
-function drawFlatEye(rx, night) {
-    const ery = Math.max(rx * 0.15, 2);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx, ery, 0, 0, Math.PI * 2);
-    ctx.globalAlpha = 0.45;
-    ctx.fillStyle = night ? 'rgb(0,175,210)' : `rgb(${ec.r},${ec.g},${ec.b})`;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-}
-
-function drawGlitchEye(rx, rh, night) {
-    const ry = rh * 0.45;
-    // Bloque del ojo
-    rrect(rx, ry, rx * 0.5);
-    ctx.fillStyle = night ? 'rgb(0,212,255)' : `rgb(${ec.r},${ec.g},${ec.b})`;
-    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.7)'; ctx.shadowBlur = 12; }
-    ctx.fill();
-    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-    // Scanlines que "rompen" el ojo revelando el fondo (glitch de la peli)
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    for (let y = -ry + 3; y < ry; y += 5) {
-        if (Math.random() > 0.45) {
-            ctx.fillRect(-rx, y, rx * 2 * (0.3 + Math.random() * 0.7), 2);
+    if (e === 'happy' || e === 'recognised') {
+        // Ojo sonriente: arco grueso hacia arriba (^)
+        const lift = 1 - blinkP * 0.6;
+        ctx.lineWidth = r * 0.36; ctx.lineCap = 'round'; ctx.strokeStyle = color();
+        ctx.beginPath(); ctx.arc(0, r * 0.35, r * 0.72, Math.PI * 1.13, Math.PI * 1.87, false);
+        ctx.save(); ctx.scale(1, lift); ctx.stroke(); ctx.restore();
+    } else if (e === 'star') {
+        // Destello de 4 puntas que late
+        const s = r * 1.15 * (1 + Math.sin(t * 7) * 0.06);
+        ctx.rotate(Math.sin(t * 2) * 0.12);
+        ctx.fillStyle = color();
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2 - Math.PI / 2;
+            const b = a + Math.PI / 4;
+            ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+            ctx.quadraticCurveTo(0, 0, Math.cos(a + Math.PI / 2) * s, Math.sin(a + Math.PI / 2) * s);
+            void b;
+        }
+        ctx.closePath(); ctx.fill();
+        highlight(r * 0.55, false);
+    } else if (e === 'glitch') {
+        ctx.fillStyle = color();
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        ctx.save(); ctx.globalCompositeOperation = 'destination-out';
+        for (let y = -r + 3; y < r; y += 6) if (Math.random() > 0.45) ctx.fillRect(-r, y, r * 2 * (0.3 + Math.random() * 0.7), 2.5);
+        ctx.restore();
+    } else {
+        // Ojo redondo normal con párpado (parpadeo y expresión)
+        const sy = Math.max(cur.eyeSY * (1 - blinkP * 0.94), 0.05);
+        if (e === 'thinking') ctx.translate(side * r * 0.08, -r * 0.18);   // mira hacia arriba al pensar
+        ctx.save(); ctx.scale(1, sy);
+        ctx.fillStyle = color();
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        if (sy > 0.35) highlight(r, e === 'sad' || e === 'fear', sy);
+        if (e === 'sad') {    // lagrimita brillante en el borde inferior
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.beginPath(); ctx.ellipse(side * -r * 0.15, r * sy * 0.62, r * 0.16, r * 0.1, 0, 0, Math.PI * 2); ctx.fill();
         }
     }
     ctx.restore();
 }
 
-function drawSquintEye(rx, ry, night) {
-    const ery = Math.max(ry * 0.58 * (1 - blinkP * 0.97), 0.5);
-    ctx.beginPath();
-    ctx.ellipse(0, ry * 0.12, rx, ery, 0, 0, Math.PI * 2);
-    ctx.fillStyle = eyeGradient(rx, ery, night);
-    ctx.fill();
-    ctx.strokeStyle = night ? 'rgba(0,212,255,0.3)' : 'rgba(0,0,0,0.5)';
-    ctx.lineWidth = Math.max(1.5, rx * 0.06);
-    ctx.stroke();
+// Brillos blancos que dan vida al ojo
+function highlight(r, wet = false, sy = 1) {
+    if (isNight()) return;
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath(); ctx.arc(-r * 0.32, -r * 0.34 * sy, r * (wet ? 0.32 : 0.27), 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath(); ctx.arc(r * 0.3, r * 0.28 * sy, r * 0.11, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
 }
 
-function drawSadEye(rx, ry, night, side = -1) {
-    const ery = Math.max(ry * (1 - blinkP * 0.97), 0.5);
-    // Ojo normal
-    rrect(rx, ery, rx * 0.88);
-    ctx.fillStyle = eyeGradient(rx, ery, night);
-    ctx.fill();
-    // Párpado caído hacia fuera: "borra" la parte superior-exterior revelando el fondo
+// ── Cejas ─────────────────────────────────────────────────────────────────
+function drawBrow(cx, cy, R, e, side) {
+    if (e === 'flat') return;                          // dormido: sin cejas
+    let y = cy - R * (1.45 + cur.browY * 0.6);
+    let tilt = cur.browTilt;
+    if (e === 'thinking') { tilt = side < 0 ? -0.25 : 0.3; y -= side > 0 ? R * 0.15 : 0; }
+    if (e === 'glitch') y += (Math.random() - 0.5) * R * 0.15;
+    const len = R * 1.05, th = R * 0.2;
+    // side=-1 (izquierdo): el extremo interior es el derecho. tilt + → interior arriba
+    const ang = side < 0 ? -tilt * 0.6 : tilt * 0.6;
     ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.translate(0, -ery);
-    ctx.rotate(side * 0.42);
+    ctx.translate(cx, y);
+    ctx.rotate(ang);
+    ctx.strokeStyle = color(); ctx.lineWidth = th; ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.rect(-rx * 2, -ery * 1.2, rx * 4, ery * 1.24);
-    ctx.fill();
+    ctx.moveTo(-len / 2, th * 0.15);
+    ctx.quadraticCurveTo(0, -th * 0.55, len / 2, th * 0.15);   // ceja ligeramente arqueada
+    ctx.stroke();
     ctx.restore();
 }
 
 // ── Boca ──────────────────────────────────────────────────────────────────
-function drawMouth(cx, cy, w, night, dance) {
-    const hw = w / 2;
-    const speaking = RonState.activityState === 'SPEAKING';
-    // Apertura: 0=cerrado, 1=abierto. Solo parte positiva del seno.
-    const openness = speaking ? Math.abs(Math.sin(speakT)) : 0;
-    const col = night ? '#00d4ff' : '#1a1a1a';
-    const sw  = Math.max(4.5, hw * 0.062);
-
+function drawMouth(cx, cy, w, e) {
+    const hw = (w / 2) * cur.mouthW;
+    const smile = cur.smile * hw * 0.55;              // + sonrisa, − tristeza
+    const open = mouthOpen;
     ctx.save();
-    ctx.strokeStyle = col;
-    ctx.lineWidth   = sw;
-    ctx.lineCap     = 'round';
-    ctx.lineJoin    = 'round';
-    if (night) { ctx.shadowColor = 'rgba(0,212,255,0.55)'; ctx.shadowBlur = 9; }
+    ctx.strokeStyle = color(); ctx.fillStyle = color();
+    ctx.lineWidth = Math.max(4, hw * 0.16); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-    const e = dance ? 'star' : expr;
-
-    switch (e) {
-        case 'happy':
-        case 'recognised':
-            openMouth(cx, cy, hw, hw*0.40, hw*0.36, openness, night);
-            break;
-
-        case 'star':
-            openMouth(cx, cy, hw*1.08, hw*0.54, hw*0.50,
-                dance ? 0.75 + Math.abs(Math.sin(danceT))*0.25 : openness, night);
-            break;
-
-        case 'neutral':
-        default:
-            // Sonrisa más curvada y boca pequeña como Ron película
-            openMouth(cx, cy, hw*0.72, hw*0.32, hw*0.26, openness, night);
-            break;
-
-        case 'sad':
-            frownMouth(cx, cy, hw*0.80, hw*0.17, hw*0.13, openness, night);
-            break;
-
-        case 'fear':
-            frownMouth(cx, cy, hw*0.70, hw*0.13, hw*0.10, openness, night);
-            break;
-
-        case 'surprise': {
-            // Boca-O que se agranda al hablar
-            const rW = hw*0.22 + openness*hw*0.14;
-            const rH = hw*0.28 + openness*hw*0.20;
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, rW, rH, 0, 0, Math.PI*2);
-            ctx.fillStyle = night ? '#003855' : '#1a1a1a';
-            ctx.fill();
-            ctx.stroke();
-            break;
+    if (e === 'glitch') {
+        ctx.beginPath(); ctx.moveTo(cx - hw, cy);
+        for (let i = 1; i <= 8; i++) ctx.lineTo(cx - hw + (i / 8) * hw * 2, cy + (i % 2 ? -1 : 1) * hw * 0.12);
+        ctx.stroke();
+    } else if (e === 'surprise' && open < 0.15) {
+        ctx.beginPath(); ctx.ellipse(cx, cy + hw * 0.1, hw * 0.42, hw * 0.52, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (open < 0.08 && !(e === 'star' || e === 'recognised')) {
+        // Cerrada: curva simple
+        ctx.beginPath();
+        ctx.moveTo(cx - hw, cy - smile * 0.25);
+        ctx.quadraticCurveTo(cx, cy + smile, cx + hw, cy - smile * 0.25);
+        ctx.stroke();
+    } else {
+        // Abierta: forma de "D" (alegre) o invertida (triste) que se abre con la voz
+        const o = (e === 'star' || e === 'recognised') ? Math.max(open, 0.45) : open;
+        const depth = hw * (0.25 + o * 0.85);
+        const top = cy - smile * 0.25;
+        ctx.beginPath();
+        if (cur.smile >= 0) {
+            ctx.moveTo(cx - hw, top);
+            ctx.quadraticCurveTo(cx, top + smile * 0.35, cx + hw, top);
+            ctx.quadraticCurveTo(cx + hw * 0.9, top + depth * 1.25, cx, top + depth * 1.15);
+            ctx.quadraticCurveTo(cx - hw * 0.9, top + depth * 1.25, cx - hw, top);
+        } else {
+            ctx.moveTo(cx - hw * 0.8, cy + depth * 0.4);
+            ctx.quadraticCurveTo(cx, cy - depth * 0.6 + smile * 0.3, cx + hw * 0.8, cy + depth * 0.4);
+            ctx.quadraticCurveTo(cx, cy + depth * 0.7, cx - hw * 0.8, cy + depth * 0.4);
         }
-
-        case 'thinking':
-            ctx.beginPath();
-            ctx.moveTo(cx - hw*0.42, cy);
-            ctx.quadraticCurveTo(cx, cy + hw*0.045, cx + hw*0.42, cy);
-            ctx.stroke();
-            break;
-
-        case 'flat':
-            ctx.beginPath();
-            ctx.moveTo(cx - hw*0.36, cy);
-            ctx.lineTo(cx + hw*0.36, cy);
-            ctx.stroke();
-            break;
-
-        case 'glitch':
-            ctx.beginPath();
-            ctx.moveTo(cx - hw, cy);
-            for (let i = 1; i <= 7; i++) {
-                ctx.lineTo(cx - hw + (i/7)*w, cy + (i%2===0 ? -hw*0.09 : hw*0.09));
-            }
-            ctx.stroke();
-            break;
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Lengua: solo si abre bastante y es alegre (detalle que da simpatía)
+        if (o > 0.35 && cur.smile >= 0 && !isNight()) {
+            ctx.save(); ctx.clip();
+            ctx.fillStyle = 'rgba(255,120,140,0.9)'; ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.ellipse(cx, top + depth * 1.15, hw * 0.45, depth * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
     }
-
     ctx.restore();
 }
 
-// Boca de Ron: sonrisa fina cerrada → rectángulo redondeado que se abre al hablar
-function openMouth(cx, cy, hw, smile, maxDrop, openness, night) {
-    const interior = night ? '#00d4ff' : '#1a1a1a';
-    ctx.fillStyle = interior;
-
-    if (openness < 0.12) {
-        // Cerrada: sonrisa sutil
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, cy);
-        ctx.quadraticCurveTo(cx, cy + smile, cx + hw, cy);
-        ctx.stroke();
-        return;
-    }
-
-    // Abierta: rectángulo redondeado que crece en alto, con leve sonrisa
-    const openH = hw * 0.28 + openness * hw * 0.85;
-    const topY  = cy - openH * 0.12;
-    const botY  = cy + openH;
-    const ww    = hw * (0.92 - openness * 0.10);
-    const r     = Math.min(ww, (botY - topY) / 2) * 0.6;
-
-    ctx.beginPath();
-    ctx.moveTo(cx - ww + r, topY);
-    ctx.quadraticCurveTo(cx, topY + smile * 0.5, cx + ww - r, topY);
-    ctx.arcTo(cx + ww, topY, cx + ww, topY + r, r);
-    ctx.lineTo(cx + ww, botY - r);
-    ctx.arcTo(cx + ww, botY, cx + ww - r, botY, r);
-    ctx.quadraticCurveTo(cx, botY + smile * 0.8, cx - ww + r, botY);
-    ctx.arcTo(cx - ww, botY, cx - ww, botY - r, r);
-    ctx.lineTo(cx - ww, topY + r);
-    ctx.arcTo(cx - ww, topY, cx - ww + r, topY, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-}
-
-// Mueca/ceño triste — labio superior arqueado arriba, labio inferior cae un poco
-function frownMouth(cx, cy, hw, frown, maxDrop, openness, night) {
-    const drop = openness * maxDrop;
-    const endY = cy + frown;       // extremos bajos (esquinas de la mueca)
-    const ctrlY = cy - frown * 0.55; // punto de control alto
-
-    // Interior cuando abre
-    if (drop > maxDrop * 0.12) {
-        ctx.beginPath();
-        ctx.moveTo(cx - hw, endY);
-        ctx.quadraticCurveTo(cx, ctrlY, cx + hw, endY);
-        ctx.lineTo(cx + hw, endY + drop * 0.6);
-        ctx.quadraticCurveTo(cx, endY + drop + frown * 0.10, cx - hw, endY + drop * 0.6);
-        ctx.closePath();
-        ctx.fillStyle = night ? '#003355' : '#1a1a1a';
-        ctx.fill();
-    }
-
-    // Labio superior (mueca triste)
-    ctx.beginPath();
-    ctx.moveTo(cx - hw, endY);
-    ctx.quadraticCurveTo(cx, ctrlY, cx + hw, endY);
-    ctx.stroke();
-
-    // Labio inferior
-    if (drop > maxDrop * 0.12) {
-        ctx.beginPath();
-        ctx.moveTo(cx - hw * 0.88, endY + drop * 0.2);
-        ctx.quadraticCurveTo(cx, endY + drop + frown * 0.08,
-                              cx + hw * 0.88, endY + drop * 0.2);
-        ctx.stroke();
-    }
-}
-
-// ── API pública ───────────────────────────────────────────────────────────
-
-export function canvasSetExpression(exp) {
-    expr = exp;
-}
+// ── API pública (la misma que antes: ui.js no cambia) ─────────────────────
+export function canvasSetExpression(exp) { expr = TARGETS[exp] ? exp : 'neutral'; }
 
 export function canvasSetEyeColor(hex) {
     if (!/^#[0-9a-f]{6}$/i.test(hex)) return;
-    ec = {
-        r: parseInt(hex.slice(1,3), 16),
-        g: parseInt(hex.slice(3,5), 16),
-        b: parseInt(hex.slice(5,7), 16)
-    };
+    ec = { r: parseInt(hex.slice(1, 3), 16), g: parseInt(hex.slice(3, 5), 16), b: parseInt(hex.slice(5, 7), 16) };
 }
 
 export function canvasShiftEyes(ex, ey) {
     if (!W) return;
-    const mx = Math.min(W * 0.04, 18);
-    const my = Math.min(H * 0.025, 12);
+    const mx = Math.min(W * 0.045, 22), my = Math.min(H * 0.03, 14);
     if (ex !== null && ey !== null) {
         eyeTargX = Math.max(-mx, Math.min(mx, ex * -65));
         eyeTargY = Math.max(-my, Math.min(my, ey * -38));
     } else {
-        eyeTargX = (Math.random() - 0.5) * mx * 0.8;
-        eyeTargY = 0;
+        eyeTargX = (Math.random() - 0.5) * mx * 0.8; eyeTargY = 0;
     }
 }
 
-export function canvasTriggerBlink() {
-    if (blinkDir === 0) { blinkDir = 1; blinkP = 0; }
-}
+export function canvasTriggerBlink() { if (blinkDir === 0) { blinkDir = 1; blinkP = 0; } }
 
 export function canvasAddGlitch(count = 4, dur = 0.15) {
     for (let i = 0; i < count; i++) {
         glitches.push({
-            x: Math.random() * W,
-            y: Math.random() * H,
-            w: 20 + Math.random() * 140,
-            h: 2  + Math.random() * 12,
-            r: Math.random() > 0.4 ? 200 : 20,
-            g: Math.random() > 0.6 ? 200 : 20,
-            b: Math.random() > 0.3 ? 230 : 20,
+            x: Math.random() * W, y: Math.random() * H,
+            w: 20 + Math.random() * 140, h: 2 + Math.random() * 12,
+            r: Math.random() > 0.4 ? 200 : 20, g: Math.random() > 0.6 ? 200 : 20, b: Math.random() > 0.3 ? 230 : 20,
             life: dur + Math.random() * 0.08
         });
     }
+}
+
+// Solo para la página de pruebas de expresiones
+export function _debugSet({ open, blink, time } = {}) {
+    if (open !== undefined) mouthOpen = open;
+    if (blink !== undefined) { blinkP = blink; blinkDir = 0; blinkWait = 1e9; }
+    if (time !== undefined) t = time;
+    const e = isDance() ? 'star' : expr;
+    Object.assign(cur, TARGETS[e] || TARGETS.neutral);
 }

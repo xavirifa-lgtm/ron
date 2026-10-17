@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v26.3...");
+    log("Iniciando Ron v27.0...");
     initUI();
     setChestIcon('wifi');
 

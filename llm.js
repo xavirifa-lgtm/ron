@@ -1,4 +1,4 @@
-// llm.js — Enrutador de IA para Ron (v26.1)
+// llm.js — Enrutador de IA para Ron (v26.4)
 // Reparte las peticiones entre modelos y proveedores para no agotar la cuota gratuita:
 //  - Groq (obligatorio). Límites verificados (oct 2026, plan gratuito) por modelo:
 //    gpt-oss-120b / gpt-oss-20b / qwen3.8-27b: 30 RPM, 1.000 RPD, 8K TPM, 200K TPD.
@@ -20,13 +20,16 @@ const PROVIDERS = {
 
 // Orden de preferencia. "proveedor:modelo". Los proveedores sin clave se saltan.
 export const MODELS = {
+    // Gemini (verificado 17-oct-2026, todos estables y con plan gratuito): 3.8-flash, 3.6-flash,
+    // 3.5-flash-lite, 3.1-flash-lite. Cada modelo tiene su propia cuota → más margen.
     chat: ['groq:openai/gpt-oss-120b', 'groq:llama-3.3-70b-versatile', 'gemini:gemini-3.8-flash',
-           'cerebras:gpt-oss-120b', 'openrouter:openai/gpt-oss-120b:free', 'groq:openai/gpt-oss-20b'],
-    fast: ['groq:openai/gpt-oss-20b', 'groq:llama-3.1-8b-instant', 'gemini:gemini-3.5-flash-lite', 'cerebras:gpt-oss-120b'],
-    vision: ['groq:qwen/qwen3.8-27b', 'gemini:gemini-3.8-flash', 'cerebras:qwen-3.8-27b'],
+           'gemini:gemini-3.6-flash', 'cerebras:gpt-oss-120b', 'openrouter:openai/gpt-oss-120b:free', 'groq:openai/gpt-oss-20b'],
+    fast: ['groq:openai/gpt-oss-20b', 'groq:llama-3.1-8b-instant', 'gemini:gemini-3.5-flash-lite',
+           'gemini:gemini-3.1-flash-lite', 'cerebras:gpt-oss-120b'],
+    vision: ['groq:qwen/qwen3.8-27b', 'gemini:gemini-3.8-flash', 'gemini:gemini-3.6-flash', 'cerebras:qwen-3.8-27b'],
     // Clasificador de seguridad: el específico tiene solo 3 RPM; si se agota, la misma
     // política la evalúa un modelo general (30 RPM) antes de recurrir al filtro local.
-    guard: ['groq:openai/gpt-oss-safeguard-20b', 'groq:openai/gpt-oss-20b', 'gemini:gemini-3.5-flash-lite', 'cerebras:gpt-oss-120b'],
+    guard: ['groq:openai/gpt-oss-safeguard-20b', 'groq:openai/gpt-oss-20b', 'gemini:gemini-3.5-flash-lite', 'gemini:gemini-3.1-flash-lite', 'cerebras:gpt-oss-120b'],
 };
 
 const cooldownUntil = {};      // "prov:modelo" → timestamp

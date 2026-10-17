@@ -13,17 +13,13 @@ body, html {
 }
 
 /* ── TODA LA PANTALLA ES RON ─────────────────────────────────────────────────
-   Fondo azul hielo muy pálido — como el cuerpo plástico blanco de Ron.
+   Fondo blanco azulado con un brillo suave arriba.
 */
 .ron-container {
     width: 100vw;
     height: 100vh;
     position: relative;
-    background: linear-gradient(180deg,
-        #eef8ff 0%,
-        #d6eefa 35%,
-        #bde2f5 70%,
-        #a8d8ee 100%);
+    background: radial-gradient(ellipse at 50% 38%, #ffffff 0%, #f1f7fc 40%, #e1eef8 75%, #d2e5f3 100%);
     overflow: hidden;
     display: flex;
     flex-direction: column;

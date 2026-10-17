@@ -22,6 +22,7 @@ export const VOICES = {
 
 let ctx = null;
 let current = null;            // { src, osc } en reproducción
+let analyser = null, levelBuf = null;   // volumen en vivo → movimiento de la boca
 const cache = new Map();       // texto → AudioBuffer (ahorra cuota en frases repetidas)
 const cooldown = {};
 let failures = 0, disabledUntil = 0;
@@ -103,6 +104,16 @@ export async function synthesize(text) {
     return null;
 }
 
+// Volumen actual de la voz (0..1) para animar la boca; -1 si no suena audio de Gemini
+export function voiceLevel() {
+    if (!current || !analyser) return -1;
+    analyser.getFloatTimeDomainData(levelBuf);
+    let sum = 0;
+    for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i];
+    const rms = Math.sqrt(sum / levelBuf.length);
+    return Math.min(1, Math.max(0, (rms - 0.015) * 7));
+}
+
 export function stopAudio() {
     if (!current) return;
     try { current.src.onended = null; current.src.stop(); } catch (e) {}
@@ -129,6 +140,8 @@ export function play(buffer) {
         node.connect(hp); hp.connect(peak); peak.connect(ring); node = ring;
     }
     node.connect(c.destination);
+    if (!analyser) { analyser = c.createAnalyser(); analyser.fftSize = 512; levelBuf = new Float32Array(analyser.fftSize); }
+    node.connect(analyser);
     const durationMs = buffer.duration * 1000 / src.playbackRate.value;
     const done = new Promise(resolve => {
         src.onended = () => { try { osc && osc.stop(); } catch (e) {} if (current && current.src === src) current = null; resolve(); };
