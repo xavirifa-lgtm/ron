@@ -2,7 +2,9 @@ import { RonState, changeState, log } from './core.js';
 import { setExpression, showStoryPanel, hideStoryPanel } from './ui.js';
 import { speak } from './speech.js';
 import { logGame, logStory } from './diary.js';
-import { isUnsafeOutput } from './safety.js';
+import { isChildSafe } from './safety.js';
+import { chat, MODELS } from './llm.js';
+import { getFacts } from './memory.js';
 
 let currentAnswer  = null;
 let targetPhrase   = null;
@@ -149,42 +151,25 @@ export async function startPersonalizedStory() {
     changeState('STORY');
     setExpression('star');
 
-    const name    = userName();
-    const likes   = RonState.userStats[name]?.likes || [];
-    const likeStr = likes.length > 0 ? `A ${name} le gusta: ${likes.join(', ')}.` : '';
+    const name  = userName();
+    const facts = getFacts(RonState.currentUser).slice(-8);
+    const factStr = facts.length ? `Cosas de ${name} que puedes usar: ${facts.join('. ')}.` : '';
 
     const sysPrompt =
-        `Eres Ron, el B-Bot de "Ron da Error". Cuenta una historia CORTA (exactamente 4 párrafos breves) ` +
-        `donde ${name} (7 años) es la protagonista con una aventura contigo. ${likeStr} ` +
-        `Divertida y apropiada para niños. Cada párrafo: "Capítulo 1:", "Capítulo 2:", etc. ` +
-        `Separa con |||. Empieza DIRECTAMENTE con "Capítulo 1:".`;
+        `Eres Ron, el B-Bot de "Ron da error". Cuenta un cuento CORTO (exactamente 4 párrafos breves, ` +
+        `máximo 60 palabras cada uno) donde ${name} (7-8 años) es la protagonista de una aventura contigo. ${factStr} ` +
+        `Divertido, tierno y apropiado para niños de 7 años: sin miedo de verdad, sin violencia. Sin emojis. ` +
+        `Cada párrafo empieza por "Capítulo 1:", "Capítulo 2:", etc. Separa los párrafos con |||. Empieza DIRECTAMENTE con "Capítulo 1:".`;
 
     try {
-        const apiKey = RonState.apiKey || localStorage.getItem('ron_groq_key');
-        const storyModels = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
-        let data, res;
-        for (const model of storyModels) {
-            res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: sysPrompt }], temperature: 0.88, max_tokens: 700, reasoning_effort: 'low' })
-            });
-            data = await res.json();
-            if (res.ok) break;
-            log(`Historia: fallo con ${model}: ${data.error?.message}`);
-        }
-        if (!res.ok) throw new Error(data?.error?.message || 'Error API historia');
-
-        const storyRaw = (data.choices[0].message.content || '')
-            .replace(/<think>[\s\S]*?<\/think>/gi, '')
-            .replace(/<\|[^>]*\|>/g, '')
-            .replace(/^[\s\n]+/, '');
+        const { text: storyRaw } = await chat([{ role: 'user', content: sysPrompt }],
+            { models: MODELS.chat, maxTokens: 1400, temperature: 0.9, timeoutMs: 15000 });
         storyChapters = storyRaw.split('|||').map(s => s.trim()).filter(Boolean);
         if (storyChapters.length === 0) throw new Error('Historia vacía');
-        // SEGURIDAD: si al cuento se le cuela algo no apto, no lo contamos
-        if (isUnsafeOutput(storyRaw)) {
+        // SEGURIDAD: el cuento entero pasa por el clasificador antes de leerlo
+        if (!(await isChildSafe(storyRaw))) {
             resetStory(); changeState('IDLE');
-            return speak('¡Bip! A esa historia se le han cruzado los cables. ¡Te cuento otra mejor en un ratito!');
+            return speak('¡Bip! A ese cuento se le han cruzado los cables. ¡Te cuento otro mejor en un ratito!');
         }
 
         storyChapter = 0;

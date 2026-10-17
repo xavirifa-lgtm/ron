@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v25.33';
+const CACHE_NAME = 'ron-bot-v26.3';
 const ASSETS = [
   './',
   'index.html',
@@ -17,6 +17,12 @@ const ASSETS = [
   'bond.js',
   'safety.js',
   'follow.js',
+  'llm.js',
+  'memory.js',
+  'identity.js',
+  'bedtime.js',
+  'whisper.js',
+  'tts.js',
   'app.js',
   'sounds.js',
   'face-canvas.js',
@@ -48,8 +54,8 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const url = event.request.url;
-  // No interceptar APIs externas ni CDN de modelos
-  if (url.includes('api.groq.com') || url.includes('jsdelivr.net') || url.includes('youtube.com')) {
+  // Solo cachear GET de la propia app. Las APIs de IA (POST) y los CDN externos van directos.
+  if (event.request.method !== 'GET' || !url.startsWith(self.location.origin)) {
     return;
   }
   event.respondWith(

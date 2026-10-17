@@ -21,7 +21,6 @@ const KNOWN_IDS = {
     'dinosaurios':   'iMaVHOlkGoc',
     'pokemon':       'rg6CiPI6h2g',
     'minecraft':     'Dg0IjOa51jI',
-    'fnaf':          'TsthCHM8o04',
     'cumpleaños':    'xGU6oO0Us-E',
     'feliz cumpleaños': 'xGU6oO0Us-E',
     'infantil':      'GbFXMo_9p-Y',
@@ -64,15 +63,10 @@ function initPlayer() {
                 }
             },
             onError: (e) => {
+                // Sin abrir YouTube en otra pestaña: la niña no debe acabar navegando sola
                 log(`YT error código: ${e.data}`);
-                // Fallback: abrir YouTube en nueva pestaña si el player falla
-                const q = currentQuery || pendingQuery;
-                if (q) {
-                    const url = `https://music.youtube.com/search?q=${encodeURIComponent(q)}`;
-                    window.open(url, '_blank');
-                    currentQuery = null;
-                    pendingQuery = null;
-                }
+                currentQuery = null;
+                pendingQuery = null;
             }
         }
     });
@@ -83,27 +77,30 @@ window.onYouTubeIframeAPIReady = () => initPlayer();
 // Si YT ya estaba cargado antes que este módulo (PWA con caché)
 if (window.YT && window.YT.Player) initPlayer();
 
-function _playQuery(query) {
-    currentQuery = query;
-    const key = query.toLowerCase().trim();
-    const id  = KNOWN_IDS[key];
-    if (id) {
-        log(`YT: video directo → ${id}`);
-        player.loadVideoById({ videoId: id, startSeconds: 0 });
-    } else {
-        log(`YT: búsqueda → "${query}"`);
-        player.loadPlaylist({ listType: 'search', list: query, index: 0, startSeconds: 0 });
-    }
+// SOLO lista segura: sin búsquedas libres en YouTube (podrían salir vídeos no aptos)
+function findSong(query) {
+    const q = (query || '').toLowerCase().trim();
+    if (KNOWN_IDS[q]) return KNOWN_IDS[q];
+    const key = Object.keys(KNOWN_IDS).find(k => q.includes(k) || k.includes(q));
+    return key ? KNOWN_IDS[key] : null;
 }
 
+export function allowedSongs() { return [...new Set(Object.keys(KNOWN_IDS))]; }
+
+function _playQuery(query) {
+    const id = findSong(query);
+    if (!id) return;
+    currentQuery = query;
+    log(`YT: video permitido → ${id}`);
+    player.loadVideoById({ videoId: id, startSeconds: 0 });
+}
+
+// Devuelve true si la canción está en la lista segura (y se reproduce o queda en cola)
 export function playYTMusic(query) {
-    if (isReady && player) {
-        _playQuery(query);
-    } else {
-        // Guardar para cuando el player esté listo
-        pendingQuery = query;
-        log(`YT no listo, música en cola: "${query}"`);
-    }
+    if (!findSong(query)) { log(`Música no permitida: "${query}"`); return false; }
+    if (isReady && player) _playQuery(query);
+    else { pendingQuery = query; log(`YT no listo, música en cola: "${query}"`); }
+    return true;
 }
 
 export function stopYTMusic() {

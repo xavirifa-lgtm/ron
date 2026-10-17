@@ -1,4 +1,4 @@
-import { RonState, log, changeState } from './core.js';
+import { RonState, log, changeState, isBedtime, minutesToBedtime } from './core.js';
 import * as Sounds from './sounds.js';
 import {
     initCanvas, canvasSetExpression, canvasSetEyeColor,
@@ -73,6 +73,7 @@ export function handleStateChange(newState) {
 
     switch (newState) {
         case 'LISTENING': setEyeColor(isNight ? '#ffffff' : '#006699'); break;
+        case 'NIGHT':
         case 'SLEEPING':  setEyeColor(isNight ? '#223344' : '#558899'); break;
         default:          setEyeColor(isNight ? '#00d4ff' : '#0d0d0d'); break;
     }
@@ -399,8 +400,8 @@ export function stopScanningUI() {
 }
 
 export function checkNightMode() {
-    const hour = new Date().getHours();
-    if (hour >= 21 || hour < 7) {
+    // Cara nocturna desde 1 h antes de dormir hasta la hora de despertar
+    if (isBedtime() || minutesToBedtime() <= 60) {
         document.body.classList.add('night-mode');
         setEyeColor('#00d4ff');
     } else {

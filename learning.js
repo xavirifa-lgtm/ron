@@ -34,12 +34,13 @@ export function clearFacts() {
 }
 
 export function detectLearningMoment(text) {
+    // SOLO enseñanza explícita. Antes también capturaba "es que...", "pues...",
+    // "te cuento..." y "un X es...", y eso convertía respuestas normales de la
+    // niña ("es que mi amiga no quiere jugar") en "¡Dato grabado!" en vez de
+    // conversar. Lo demás lo recoge la memoria (memory.js) sin cortar la charla.
     const teachPatterns = [
-        /^(?:ron[,\s]+)?(?:un|una|el|la|los|las)\s+\w+\s+(?:es|son|sirve|sirven)\s+(.{5,80})/i,
-        /^(?:ron[,\s]+)?(?:tienes? que saber|aprende que|recuerda que|fíjate que)\s*:?\s*(.{5,80})/i,
-        /^(?:es que|pues|o sea|lo que pasa es que)\s+(.{8,80})/i,
-        /^(?:ron[,\s]+)?(?:te explico|te cuento|mira ron|escucha)[,:\s]+(.{5,80})/i,
-        /^(?:¿sabes(?: que)?|¿sabías(?: que)?)\s+(.{8,80})\??$/i,
+        /^(?:ron[,\s]+)?(?:aprende que|recuerda que|apunta que|te enseño que)\s*:?\s*(.{5,80})/i,
+        /^(?:ron[,\s]+)?(?:¿?sab[íi]as que)\s+(.{8,80})\??$/i,
     ];
     for (const pat of teachPatterns) {
         const m = text.match(pat);

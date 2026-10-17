@@ -1,4 +1,49 @@
-// core.js v24 - Estado Central
+// core.js v26 - Estado Central
+
+// ── Configuración (se guarda en el dispositivo; se edita con pulsación larga en 📡) ──
+const DEFAULT_CONFIG = {
+    bedtime: '22:00',        // a esta hora Ron manda a dormir y se duerme
+    wakeTime: '07:30',       // desde esta hora Ron se despierta al verla
+    warnMinutes: 10,         // aviso previo: "en 10 minutos a la cama"
+    initiative: 'alta',      // alta | media | baja: cada cuánto propone cosas
+    sttEngine: 'whisper',    // whisper (Groq, mejor con niños) | navegador
+    geminiKey: '',           // AI Studio (gratis): voz de Ron y IA de respaldo
+    voiceEngine: 'gemini',   // gemini | navegador (sin clave de Gemini se usa el navegador)
+    geminiVoice: 'Puck',     // voz de Gemini
+    robotEffect: true,       // efecto metálico de B-Bot sobre la voz de Gemini
+    cerebrasKey: '',         // opcional: segundo proveedor de IA
+    openrouterKey: '',       // opcional: tercer proveedor de IA
+};
+export const RonConfig = (() => {
+    try { return { ...DEFAULT_CONFIG, ...JSON.parse(localStorage.getItem('ron_config') || '{}') }; }
+    catch (e) { return { ...DEFAULT_CONFIG }; }
+})();
+export function saveConfig(patch) {
+    Object.assign(RonConfig, patch);
+    localStorage.setItem('ron_config', JSON.stringify(RonConfig));
+}
+function hmToMin(hm) { const [h, m] = String(hm).split(':').map(Number); return (h || 0) * 60 + (m || 0); }
+export function nowMin() { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+// ¿Es horario de dormir? (entre bedtime y wakeTime, cruzando medianoche)
+export function isBedtime(at = nowMin()) {
+    const b = hmToMin(RonConfig.bedtime), w = hmToMin(RonConfig.wakeTime);
+    return b > w ? (at >= b || at < w) : (at >= b && at < w);
+}
+// Minutos que faltan para la hora de dormir (negativo si ya pasó)
+export function minutesToBedtime(at = nowMin()) {
+    let d = hmToMin(RonConfig.bedtime) - at;
+    if (d < -720) d += 1440;
+    return d;
+}
+
+// Hilo reciente guardado en el dispositivo: si se reabre la app en < 6 h, Ron sigue el hilo
+function loadConv() {
+    try {
+        const c = JSON.parse(localStorage.getItem('ron_conv') || 'null');
+        if (c && Date.now() - c.ts < 6 * 3600000) return { turns: c.turns || [], owner: c.owner || null };
+    } catch (e) {}
+    return { turns: [], owner: null };
+}
 export const RonState = {
     activityState: 'BOOTING',
     expressionState: 'neutral',
@@ -20,8 +65,8 @@ export const RonState = {
     apiKey:      localStorage.getItem('ron_groq_key'),
 
     // MEMORIA CONVERSACIONAL A CORTO PLAZO (turnos reales de la sesión)
-    conversation:      [],     // [{role:'user'|'assistant', content:'...'}]
-    conversationOwner: null,   // usuario dueño del hilo actual (para resetear al cambiar de persona)
+    conversation:      loadConv().turns,   // [{role:'user'|'assistant', content:'...'}]
+    conversationOwner: loadConv().owner,   // dueño del hilo (se reinicia al cambiar de persona)
 
     spontaneousTimer: null,
     isCheeringUp:  false,
@@ -32,6 +77,8 @@ export const RonState = {
     emotionCooldownUntil: 0,
     lastSpontaneousTime:  0,
     lastProactiveTime:    0,   // coordina espontáneo + curiosidad para que no se pisen
+    lastInteractionTs:    Date.now(), // última vez que alguien habló (niña o Ron)
+    pendingName:          null,       // nombre oído pendiente de confirmar
     framesWithoutFace:    0,
     userLastSeen:  {},
     batteryLevel:  100,
@@ -70,66 +117,118 @@ export function changeState(newState) {
                 import('./speech.js').then(s => s.startListening());
             }
         }, 900);
-        resetSpontaneousTimer();
         checkMorningGreeting();
     } else {
         if (idleListenTimer) { clearTimeout(idleListenTimer); idleListenTimer = null; }
-        if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
     }
+}
+
+// ── Memoria de conversación (lo que dice ella Y lo que dice Ron) ────────────
+// Antes solo se guardaban las respuestas de la IA: si Ron preguntaba "¿por qué
+// estás triste?" con una frase fija, la IA no sabía que lo había preguntado.
+export function rememberTurn(role, text) {
+    if (!text || !String(text).trim()) return;
+    if (!Array.isArray(RonState.conversation)) RonState.conversation = [];
+    const content = String(text).replace(/\[(MUSIC|SHOW|RENAME):.*?\]/g, '').trim().substring(0, 300);
+    if (!content) return;
+    RonState.conversation.push({ role, content });
+    if (RonState.conversation.length > 20) RonState.conversation = RonState.conversation.slice(-20);
+    RonState.lastInteractionTs = Date.now();
+    try {
+        localStorage.setItem('ron_conv', JSON.stringify({
+            owner: RonState.conversationOwner || RonState.currentUser, turns: RonState.conversation, ts: Date.now()
+        }));
+    } catch (e) {}
+}
+
+// Ron está libre: en reposo o solo escuchando (el micro está casi siempre en LISTENING;
+// antes muchas conductas exigían IDLE estricto y casi nunca llegaban a dispararse)
+export function isIdleLike() {
+    return RonState.activityState === 'IDLE' || RonState.activityState === 'LISTENING';
 }
 
 // ¿Puede Ron iniciar algo ahora? Presente + tranquilo + no de noche + sin pisar otro momento
 export function canBeProactive() {
-    if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return false;
+    if (!isIdleLike() || RonState.isSilentMode) return false;
     if (!RonState.currentUser) return false;
     if ((RonState.framesWithoutFace || 0) > 12) return false;   // solo si te ve (o no hay cámara → 0)
-    const hour = new Date().getHours();
-    if (hour >= 21 || hour < 7) return false;
+    if (isBedtime() || minutesToBedtime() <= RonConfig.warnMinutes) return false;
     if (Date.now() - (RonState.lastProactiveTime || 0) < 90000) return false; // no dos seguidos
     return true;
 }
 export function markProactive() { RonState.lastProactiveTime = Date.now(); }
 
-// Construye una iniciativa PERSONALIZADA (sobre ella), no genérica
-function buildProactivePrompt() {
-    const name  = RonState.currentUser || 'tu amiga';
-    const u     = RonState.userStats[RonState.currentUser] || {};
-    const likes = u.likes || [];
-    const opts  = [];
-    if (likes.length) {
-        const like = likes[Math.floor(Math.random() * likes.length)];
-        opts.push(`Pregúntale con MUCHA ilusión a ${name} por ${like} (algo que le encanta). Una pregunta concreta y curiosa, de amigo interesado.`);
+// Protocolo de mejor amigo: como Ron con Barney, recopila datos de su amiga.
+// Una pregunta nueva al día (las respuestas las guarda la memoria).
+const BEST_FRIEND_QUESTIONS = [
+    '¿Cuál es tu color favorito y por qué?', '¿Qué animal te gustaría tener de mascota?',
+    '¿Cuál es tu comida favorita del mundo?', '¿Quién es tu mejor amiga o amigo del cole?',
+    '¿Qué quieres ser de mayor?', '¿A qué te gusta jugar en el patio?',
+    'Si tuvieras un superpoder, ¿cuál sería?', '¿Qué es lo que más te hace reír?',
+    '¿Cuáles son tus dibujos animados favoritos?', '¿Qué canción te sabes de memoria?',
+    'Si pudieras viajar a cualquier sitio, ¿adónde irías?', '¿Cuál es tu libro o cuento favorito?',
+    '¿Qué es lo que más te gusta del cole?', '¿Qué deporte te gusta más?',
+    '¿Qué harías si fueras un robot como yo durante un día?', '¿Cuál es tu juguete favorito?',
+    '¿Qué es lo más divertido que has hecho este fin de semana?', '¿Qué te gusta hacer con tu familia?',
+    '¿Qué estación te gusta más: verano, otoño, invierno o primavera?', '¿Qué dinosaurio o animal salvaje te parece más chulo?',
+    '¿Qué te gustaría aprender este año?', '¿Cuál es tu postre favorito?',
+    '¿Qué inventarías si fueras científica?', '¿Qué es lo que mejor se te da hacer?',
+    '¿Cómo sería tu casa del árbol ideal?', '¿Qué personaje de cuento te gustaría ser?'
+];
+function bestFriendQuestion() {
+    const today = new Date().toDateString();
+    if (localStorage.getItem('ron_bf_day') === today) return null;   // ya preguntó hoy
+    const i = parseInt(localStorage.getItem('ron_bf_idx') || '0', 10) || 0;
+    localStorage.setItem('ron_bf_day', today);
+    localStorage.setItem('ron_bf_idx', String((i + 1) % BEST_FRIEND_QUESTIONS.length));
+    return BEST_FRIEND_QUESTIONS[i % BEST_FRIEND_QUESTIONS.length];
+}
+
+// Construye una iniciativa PERSONALIZADA usando lo que Ron sabe de ella
+async function buildProactivePrompt() {
+    const name = RonState.currentUser || 'tu amiga';
+    const bf = bestFriendQuestion();
+    if (bf) return `Activa tu "protocolo de mejor amigo" para conocer mejor a ${name} y pregúntale esto a tu manera, con curiosidad de robot: "${bf}"`;
+    let facts = [];
+    try { facts = (await import('./memory.js')).getFacts(RonState.currentUser); } catch (e) {}
+    const opts = [];
+    if (facts.length) {
+        const f = facts[Math.floor(Math.random() * facts.length)];
+        opts.push(`Sabes esto de ${name}: "${f}". Pregúntale algo nuevo y concreto sobre eso, como un amigo que se acuerda.`);
+        opts.push(`Sabes esto de ${name}: "${f}". Propón un juego o una adivinanza relacionada con eso.`);
     }
-    opts.push(`Pregúntale a ${name} qué tal su día, a qué ha jugado o cómo se siente. Interés de verdad, cortito.`);
-    opts.push(`Propón con entusiasmo hacer algo juntos: un juego, un cuento o adivinar algo. Una frase.`);
-    opts.push(`Comparte una duda graciosa de robot sobre los humanos y pregúntale su opinión a ${name}.`);
-    if ((u.history || []).length) {
-        const last = u.history[u.history.length - 1];
-        opts.push(`Antes ${name} te contó esto: "${last}". Retómalo con una pregunta de seguimiento, como haría un amigo que se acuerda.`);
-    }
+    opts.push(`Pregúntale a ${name} qué ha hecho hoy o a qué ha jugado. Una sola pregunta, cortita.`);
+    opts.push(`Propón con entusiasmo un juego de palabras: adivinanza, veo veo o "adivina en qué animal pienso".`);
+    opts.push(`Hazle a ${name} una pregunta curiosa y literal de robot sobre los humanos y pídele su opinión.`);
     return opts[Math.floor(Math.random() * opts.length)];
 }
 
-export function resetSpontaneousTimer() {
-    if (RonState.spontaneousTimer) clearTimeout(RonState.spontaneousTimer);
-    const delay = 240000 + Math.random() * 300000; // 4–9 min (interacción viva pero no agobiante)
-    RonState.spontaneousTimer = setTimeout(async () => {
+// Bucle de iniciativa INDEPENDIENTE: no se reinicia con cada cambio de estado.
+// Ron toma la iniciativa cuando lleva un rato sin hablar nadie y la está viendo.
+let proactiveLoop = null;
+let nextGapMs = 180000;
+export function startProactiveLoop() {
+    if (proactiveLoop) return;
+    proactiveLoop = setInterval(async () => {
         try {
             if (!canBeProactive()) return;
-            // A veces recuerda una aventura del diario en vez de preguntar
-            if (Math.random() < 0.3) {
-                const { ronRemembersSomething } = await import('./diary.js');
-                const remembered = await ronRemembersSomething().catch(() => false);
-                if (remembered) { markProactive(); return; }
-            }
+            if (Date.now() - RonState.lastInteractionTs < nextGapMs) return;
+            const gaps = { alta: [120000, 120000], media: [180000, 240000], baja: [360000, 360000] }[RonConfig.initiative] || [180000, 240000];
+            nextGapMs = gaps[0] + Math.random() * gaps[1]; // alta: 2–4 min · media: 3–7 · baja: 6–12
             markProactive();
-            const prompt = buildProactivePrompt();
+            if (Math.random() < 0.25) {
+                const { ronRemembersSomething } = await import('./diary.js');
+                if (await ronRemembersSomething().catch(() => false)) return;
+            }
+            const prompt = await buildProactivePrompt();
             import('./ai.js').then(ai => ai.triggerSpontaneous(prompt)).catch(() => {});
         } catch (e) {
-            console.error('[Ron] Error espontáneo:', e);
+            console.error('[Ron] Error iniciativa:', e);
         }
-    }, delay);
+    }, 20000);
 }
+// Compatibilidad con código antiguo
+export function resetSpontaneousTimer() { startProactiveLoop(); }
 
 function checkMorningGreeting() {
     const today = new Date().toDateString();
@@ -138,7 +237,7 @@ function checkMorningGreeting() {
     if (hour >= 7 && hour < 11 && lastGreeting !== today && RonState.currentUser) {
         localStorage.setItem('ron_last_morning', today); // guardar YA para evitar doble saludo si IDLE se repite rápido
         setTimeout(() => {
-            if (RonState.activityState === 'IDLE') {
+            if (isIdleLike()) {
                 import('./ai.js').then(ai => ai.morningGreeting()).catch(() => {});
             }
         }, 3000);

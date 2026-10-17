@@ -1,4 +1,4 @@
-import { RonState, log, changeState, markProactive } from './core.js';
+import { RonState, log, changeState, markProactive, isIdleLike } from './core.js';
 import { setExpression, showMoodBubble, celebrateFaceRecognition } from './ui.js';
 import { speak } from './speech.js';
 import { updateSadnessTracking } from './defender.js';
@@ -27,9 +27,64 @@ export async function startCamera() {
             video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
         });
     }
-    RonState.ui.video.srcObject = stream;
-    await RonState.ui.video.play();
-    return new Promise(res => { RonState.ui.video.onloadedmetadata = res; });
+    const v = RonState.ui.video;
+    v.srcObject = stream;
+    // BUG FIX v26: antes se esperaba 'loadedmetadata' DESPUÉS de play(), cuando ese
+    // evento ya había ocurrido → la promesa no se resolvía nunca y el bucle de
+    // reconocimiento facial no llegaba a arrancar. Ahora se espera antes, y solo si hace falta.
+    if (v.readyState < 1) {
+        await new Promise(res => v.addEventListener('loadedmetadata', res, { once: true }));
+    }
+    await v.play();
+}
+
+// ── Parámetros de reconocimiento ─────────────────────────────────────────────
+// Distancia euclídea de face-api: menor = más parecido.
+const MATCH_MAX     = 0.58;   // por debajo: es esa persona
+const UNKNOWN_MIN   = 0.64;   // por encima: es alguien desconocido
+const SAMPLE_MAX    = 0.42;   // solo coincidencias MUY seguras añaden muestras
+const VOTE_WINDOW   = 6;      // frames (~5 s) para decidir identidad
+const GREET_AFTER_MS = 120000;// saludar si no la veía desde hace 2 min
+
+let lastCalloutTime = 0;
+let calloutCount    = 0;
+const votes = [];             // últimas decisiones: nombre | '?' (desconocido) | '~' (dudoso)
+let lastPersistSeen = 0;
+let lastReactedEmotion = 'neutral';
+const emotionCooldown = {};   // emoción → timestamp hasta el que no se repite
+
+function largestFace(detections) {
+    return detections.reduce((a, b) =>
+        (b.detection.box.width * b.detection.box.height) > (a.detection.box.width * a.detection.box.height) ? b : a);
+}
+
+function vote(v) {
+    votes.push(v);
+    if (votes.length > VOTE_WINDOW) votes.shift();
+    const counts = {};
+    votes.forEach(x => counts[x] = (counts[x] || 0) + 1);
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (!top) return null;
+    if (top[0] === '?' && top[1] >= 5) return '?';
+    if (!['?', '~', '-'].includes(top[0]) && top[1] >= 3) return top[0];
+    return null;   // aún no hay decisión estable
+}
+
+function lastSeenOf(name) {
+    const mem = RonState.userLastSeen?.[name];
+    if (mem) return mem;
+    const saved = RonState.userStats?.[name]?.lastSeenTs;
+    return saved || 0;
+}
+
+function markSeen(name, now) {
+    RonState.userLastSeen = RonState.userLastSeen || {};
+    RonState.userLastSeen[name] = now;
+    if (now - lastPersistSeen > 30000 && RonState.userStats[name]) {
+        RonState.userStats[name].lastSeenTs = now;
+        localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+        lastPersistSeen = now;
+    }
 }
 
 export function startVisionLoop() {
@@ -44,233 +99,82 @@ export function startVisionLoop() {
                 .withFaceExpressions()
                 .withFaceDescriptors();
 
-            const busy = ['THINKING','SPEAKING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY'].includes(RonState.activityState);
+            if (RonState.activityState === 'NIGHT') return;   // dormido: no saluda ni pregunta
+            const now  = Date.now();
+            const d    = detections.length ? largestFace(detections) : null;   // la persona más cercana
+            const vw   = RonState.ui.video.videoWidth || 640;
+            const id   = await import('./identity.js');
 
-            // Emoción: una sola vez aquí
-            if (detections.length > 0) updateEmotion(detections[0]);
+            if (d) updateEmotion(d);
+            updateSadnessTracking(RonState.currentEmotion, !!d);
 
-            // Actualizar defensor
-            updateSadnessTracking(RonState.currentEmotion, detections.length > 0);
-
-            // Acumular descriptores SIEMPRE en modo aprendizaje (incluso si Ron está hablando)
-            if (RonState.isLearningFace && detections.length > 0) {
-                RonState.lastDescriptor = Array.from(detections[0].descriptor);
-                if (!RonState.learningDescriptors) RonState.learningDescriptors = [];
-                if (RonState.learningDescriptors.length < 10) {
-                    RonState.learningDescriptors.push(Array.from(detections[0].descriptor));
-                }
-            }
-
-            if (busy || RonState.isLearningFace) return;
-
-            // Escondite
-            if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
-                if (detections.length > 0) {
-                    changeState('IDLE');
-                    setExpression('star');
-                    speak("¡TE PILLÉ! ¡Bip bip! ¡Eres increíble escondiéndote!");
+            // Aprendizaje de nombre en curso: recoger muestras de ESA cara y vigilar caducidad
+            if (RonState.nameFlow) {
+                if (id.nameFlowExpired()) { log("Aprendizaje de nombre caducado."); id.cancelNameFlow(true); }
+                else if (RonState.isLearningFace && d) {
+                    const first = RonState.learningDescriptors?.[0];
+                    const same  = !first || faceapi.euclideanDistance(d.descriptor, new Float32Array(first)) < 0.6;
+                    if (same && RonState.learningDescriptors.length < 12) RonState.learningDescriptors.push(Array.from(d.descriptor));
                 }
                 return;
             }
 
-            if (detections.length > 0) {
-                // Despertar
-                if (RonState.activityState === 'SLEEPING') {
-                    changeState('IDLE');
-                    setExpression('happy');
-                    RonState.framesWithoutFace = 0;
-                    RonState.lastEmotion = 'neutral'; // reset para evitar reacciones falsas al despertar
-                    const wakeUps = [
-                        "¡Bip! ¡Uy! ¡Me había quedado frito! ¿Cuánto rato llevas ahí?",
-                        "¡Zzzz... bip! ¡Ah! ¡Estaba soñando con palomitas de datos!",
-                        "¡Bip bop! Sistema reiniciado. ¡Hola otra vez!"
-                    ];
-                    speak(wakeUps[Math.floor(Math.random() * wakeUps.length)]);
-                    return;
+            // Escondite
+            if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
+                if (d) { changeState('IDLE'); setExpression('star'); speak("¡TE PILLÉ! ¡Bip bip! ¡Eres increíble escondiéndote!"); }
+                return;
+            }
+
+            if (!d) { handleNoFace(); return; }
+
+            // Despertar: NO saludar genérico; el saludo por nombre llega al reconocerla
+            if (RonState.activityState === 'SLEEPING') {
+                changeState('IDLE');
+                setExpression('happy');
+                RonState.lastEmotion = 'neutral';
+                if (!RonState.knownFaces.length) speak("¡Bip! ¡Uy, me había quedado frito!");
+            }
+
+            RonState.framesWithoutFace = 0;
+            calloutCount = 0;
+            RonState.lastDescriptor = Array.from(d.descriptor);
+            trackFace(d);
+            import('./follow.js').then(f => f.updateFollow(d.detection.box, vw, RonState.ui.video.videoHeight)).catch(() => {});
+
+            // ── Reconocimiento con votación (evita confundir por un frame malo) ──
+            const best = id.matchFace(d.descriptor);
+            let v = '?';
+            if (best && best.distance < MATCH_MAX) v = best.label;
+            else if (best && best.distance < UNKNOWN_MIN) v = '~';
+            const stable = vote(v);
+            if (best) log(`Cara: ${best.label} d=${best.distance.toFixed(3)} → ${stable || '…'}`);
+
+            // Muestras extra solo con coincidencia MUY segura (no contamina con otras personas)
+            if (best && best.distance < SAMPLE_MAX && Math.random() < 0.15) id.addSamples(best.label, [Array.from(d.descriptor)]);
+
+            const busy = ['THINKING','SPEAKING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY'].includes(RonState.activityState);
+
+            if (stable && stable !== '?') {
+                const name = stable;
+                const absentLong = now - lastSeenOf(name) > GREET_AFTER_MS;
+                const changed = RonState.currentUser !== name;
+                if (changed) { RonState.currentUser = name; }
+                if ((changed || absentLong) && !busy && !RonState.isSilentMode) {
+                    markSeen(name, now);
+                    markProactive();
+                    celebrateFaceRecognition();
+                    import('./ai.js').then(ai => ai.greetKnown(name, absentLong)).catch(() => {});
+                } else {
+                    markSeen(name, now);
                 }
-
-                RonState.framesWithoutFace = 0;
-                calloutCount = 0; // vuelve a estar presente: reiniciar llamadas de ausencia
-                const d = detections[0];
-                RonState.lastDescriptor = Array.from(d.descriptor);
-                trackFace(d);
-                // MODO SEGUIR: convierte la posición de la cara en conducción (si está activo)
-                import('./follow.js').then(f => f.updateFollow(
-                    d.detection.box,
-                    RonState.ui.video.videoWidth,
-                    RonState.ui.video.videoHeight
-                )).catch(() => {});
-
-                // Reconocimiento
-                let found = null;
-                if (RonState.knownFaces.length > 0) {
-                    const labeled = RonState.knownFaces.map(f => {
-                        const descriptors = f.descriptors || [f.descriptor];
-                        return new faceapi.LabeledFaceDescriptors(
-                            f.label,
-                            descriptors.map(dd => new Float32Array(dd))
-                        );
-                    });
-                    // Umbral 0.60 = equilibrio: reconoce bien sin confundir a familiares.
-                    // Más bajo (0.5) = más estricto (riesgo: no la reconoce). Más alto (0.68) = confunde personas.
-                    const matcher = new faceapi.FaceMatcher(labeled, 0.60);
-                    const best    = matcher.findBestMatch(d.descriptor);
-                    log(`Reconocimiento: ${best.label} dist=${best.distance?.toFixed(3)}`);
-
-                    if (best.label !== 'unknown') {
-                        found = best.label;
-                        RonState.unknownStabilityCounter = 0;
-                        // Acumular descriptor SOLO si la coincidencia es MUY segura (< 0.45).
-                        // Si acumulábamos con cualquier match (< 0.68), un falso positivo metía
-                        // la cara de otra persona bajo esta etiqueta y el reconocimiento se
-                        // corrompía poco a poco. Esta guarda evita esa contaminación.
-                        const faceEntry = RonState.knownFaces.find(f => f.label === found);
-                        if (faceEntry && best.distance < 0.45) {
-                            const ds = faceEntry.descriptors || [faceEntry.descriptor];
-                            if (ds.length < 12) { // máximo 12 muestras — más variedad = mejor reconocimiento
-                                ds.push(Array.from(d.descriptor));
-                                faceEntry.descriptors = ds;
-                                localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
-                            }
-                        }
-                        // Deduplicación
-                        if (RonState.knownFaces.length > 1) {
-                            const others = RonState.knownFaces.filter(f => f.label !== found);
-                            const dupe = others.find(f => {
-                                const ds = f.descriptors || [f.descriptor];
-                                return ds.some(dd => faceapi.euclideanDistance(d.descriptor, new Float32Array(dd)) < 0.40);
-                            });
-                            if (dupe) {
-                                log(`Deduplicando: ${dupe.label} → ${found}`);
-                                RonState.knownFaces = RonState.knownFaces.filter(f => f.label !== dupe.label);
-                                localStorage.setItem('ron_known_faces', JSON.stringify(RonState.knownFaces));
-                            }
-                        }
-                    } else {
-                        // Mantener usuario actual por más tiempo antes de declararlo desconocido
-                        if (RonState.currentUser && RonState.unknownStabilityCounter < 40) {
-                            found = RonState.currentUser;
-                            RonState.unknownStabilityCounter++;
-                        }
-                    }
-                }
-
-                if (found) {
-                    RonState.userLastSeen = RonState.userLastSeen || {};
-                    const now      = Date.now();
-                    const lastSeen = RonState.userLastSeen[found] || 0;
-
-                    if (RonState.currentUser !== found) {
-                        RonState.currentUser = found;
-                        if ((now - lastSeen) > 120000 && !RonState.isSilentMode && RonState.activityState === 'IDLE') {
-                            markProactive();
-                            celebrateFaceRecognition();
-                            const greetings = [
-                                `¡Bip! ¡${found}! ¡Ya estás aquí! ¡Mi sistema de amistad al 100%!`,
-                                `¡Bop bip! ¡${found}! Te echaba de menos. Bueno, yo no siento "menos", pero mis sensores lo notaban.`,
-                                `¡${found}! ¡Detección de mejor amiga confirmada! ¡Bip bip!`
-                            ];
-                            speak(greetings[Math.floor(Math.random() * greetings.length)]);
-                        }
-                    }
-                    RonState.userLastSeen[found] = now;
-
-                    // Reacción emocional
-                    if (RonState.activityState === 'IDLE') {
-                        const cooldownOk     = now > RonState.emotionCooldownUntil;
-                        const emotionChanged = RonState.currentEmotion !== RonState.lastEmotion;
-
-                        if (emotionChanged && cooldownOk && !RonState.isSilentMode) {
-                            markProactive(); // coordina: no lanzar una pregunta espontánea justo después
-                            showMoodBubble(RonState.currentEmotion);
-
-                            if (RonState.currentEmotion === 'triste') {
-                                setExpression('sad');
-                                RonState.isCheeringUp        = true;
-                                RonState.emotionCooldownUntil = now + 180000;
-                                speak(`¡Bip! ${found}, te veo un poco triste. ¿Qué ha pasado?`);
-                                setTimeout(() => {
-                                    if (RonState.currentEmotion === 'triste' && !RonState.isSilentMode) {
-                                        import('./ai.js').then(ai =>
-                                            ai.triggerSpontaneous(`${found} sigue triste. Cuéntale un chiste muy corto y gracioso para animarla.`)
-                                        ).catch(() => {});
-                                    }
-                                }, 7000);
-
-                            } else if (RonState.currentEmotion === 'feliz') {
-                                if (RonState.isCheeringUp) {
-                                    // Venía de estar triste y ahora sonríe → misión cumplida
-                                    RonState.isCheeringUp        = false;
-                                    RonState.emotionCooldownUntil = now + 180000;
-                                    setExpression('star');
-                                    speak(`¡Bip bip! ¡Ahí está esa sonrisa! ¡Mi misión de alegría: completada!`);
-                                } else {
-                                    // Contenta sin motivo previo → PREGUNTAR por qué (sonreír es frecuente: cooldown largo)
-                                    RonState.emotionCooldownUntil = now + 240000;
-                                    setExpression('happy');
-                                    const felizQ = [
-                                        `¡Bip! ${found}, ¡te veo súper contenta! ¿Qué ha pasado? ¡Cuéntamelo!`,
-                                        `¡Bop! ¡Detecto una sonrisa enorme! ${found}, ¿por qué estás tan feliz?`,
-                                        `¡Bip bip! ${found}, tu cara marca felicidad al 100%. ¿Qué te ha alegrado?`
-                                    ];
-                                    speak(felizQ[Math.floor(Math.random() * felizQ.length)]);
-                                }
-
-                            } else if (RonState.currentEmotion === 'sorprendido') {
-                                RonState.emotionCooldownUntil = now + 90000;
-                                setExpression('surprise');
-                                speak(`¡Bip! ${found}, ¡te veo sorprendida! ¿Qué ha pasado?`);
-
-                            } else if (RonState.currentEmotion === 'enfadado') {
-                                RonState.emotionCooldownUntil = now + 120000;
-                                setExpression('fear');
-                                speak(`¡Bip! ${found}, pareces enfadada. ¿Qué ha pasado? Cuéntame qué te ha molestado.`);
-                            }
-                        }
-                    }
-
-                } else if (!RonState.isLearningFace) {
-                    if (RonState.unknownStabilityCounter > 50) {
-                        RonState.tempDescriptor        = Array.from(d.descriptor);
-                        RonState.isLearningFace        = true;
-                        RonState.learningDescriptors   = [];
-                        RonState.unknownStabilityCounter = 0;
-                        import('./ui.js').then(ui => ui.startScanningUI());
-                        speak("¡Bip bip! ¡Nuevo humano detectado! ¿Cómo te llamas? ¡Yo soy Ron!");
-                    } else {
-                        RonState.unknownStabilityCounter++;
-                    }
-                }
-
-                RonState.lastEmotion = RonState.currentEmotion;
-
-            } else {
-                // Sin cara: parar el modo seguir (no conducir a ciegas) y echarla de menos
-                import('./follow.js').then(f => f.faceLost()).catch(() => {});
-                if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
-                    RonState.framesWithoutFace = (RonState.framesWithoutFace || 0) + 1;
-                    const f       = RonState.framesWithoutFace;
-                    const hour    = new Date().getHours();
-                    const isNight = hour >= 21 || hour < 7;
-                    const canCall = RonState.currentUser && !RonState.isSilentMode && !isNight;
-
-                    // La llama 2 veces mientras está fuera: ~35s y ~90s (800ms/frame).
-                    // No de noche, no en modo silencio, y con cooldown para no agobiar.
-                    if (canCall && (Date.now() - lastCalloutTime > 25000)) {
-                        if (calloutCount === 0 && f >= 45) {
-                            calloutCount = 1; lastCalloutTime = Date.now();
-                            callOutToUser(RonState.currentUser);
-                        } else if (calloutCount === 1 && f >= 110) {
-                            calloutCount = 2; lastCalloutTime = Date.now();
-                            callOutToUser(RonState.currentUser);
-                        }
-                    }
-
-                    if (f > 188) {
-                        changeState('SLEEPING');
-                        setExpression('flat');
-                        log("Ron dormido.");
-                    }
+                if (!busy) maybeReactToEmotion(name, now);
+            } else if (stable === '?') {
+                // Persona desconocida y cerca → preguntar su nombre (con enfriamiento)
+                const bigEnough = d.detection.box.width / vw > 0.12;
+                if (!busy && bigEnough && !RonState.isSilentMode && now > (RonState.learnCooldownUntil || 0)) {
+                    RonState.currentUser = null;
+                    votes.length = 0;
+                    id.startLearning(Array.from(d.descriptor));
                 }
             }
         } catch (e) { console.error("Error visión:", e); }
@@ -278,51 +182,71 @@ export function startVisionLoop() {
     }, 800);
 }
 
-const emotionBuffer = [];
-const EMOTION_MIN_CONFIDENCE = 0.38; // umbral base para emociones no-neutrales
+function handleNoFace() {
+    import('./follow.js').then(f => f.faceLost()).catch(() => {});
+    votes.push('-'); if (votes.length > VOTE_WINDOW) votes.shift();
+    if (!isIdleLike()) return;
+    RonState.framesWithoutFace = (RonState.framesWithoutFace || 0) + 1;
+    const f       = RonState.framesWithoutFace;
+    const hour    = new Date().getHours();
+    const isNight = hour >= 21 || hour < 7;
+    const canCall = RonState.currentUser && !RonState.isSilentMode && !isNight;
+    if (canCall && (Date.now() - lastCalloutTime > 25000)) {
+        if (calloutCount === 0 && f >= 45)      { calloutCount = 1; lastCalloutTime = Date.now(); callOutToUser(RonState.currentUser); }
+        else if (calloutCount === 1 && f >= 110) { calloutCount = 2; lastCalloutTime = Date.now(); callOutToUser(RonState.currentUser); }
+    }
+    if (f > 188) { changeState('SLEEPING'); setExpression('flat'); log("Ron dormido."); }
+}
 
-// Estado de "llamar cuando está ausente"
-let lastCalloutTime = 0;
-let calloutCount    = 0;
+// Emoción estable + nadie hablando hace un rato → Ron pregunta (vía IA, con contexto)
+const EMO_COOLDOWN = { feliz: 360000, triste: 180000, enfadado: 180000, miedo: 180000, sorprendido: 120000 };
+function maybeReactToEmotion(name, now) {
+    const emo = RonState.currentEmotion;
+    if (emo === 'neutral') { lastReactedEmotion = 'neutral'; return; }
+    if (emo === lastReactedEmotion) return;
+    if (RonState.isSilentMode || !isIdleLike()) return;
+    if (now - (RonState.lastInteractionTs || 0) < 6000) return;  // está hablando: las caras al hablar engañan
+    if (now < (emotionCooldown[emo] || 0)) return;
+    lastReactedEmotion = emo;
+    emotionCooldown[emo] = now + (EMO_COOLDOWN[emo] || 180000);
+    markProactive();
+    showMoodBubble(emo);
+    import('./ai.js').then(ai => ai.emotionCheckIn(name, emo)).catch(() => {});
+}
+
+// ── Emoción de la cara (suavizada) ───────────────────────────────────────────
+const emotionBuffer = [];
+const EMOTION_MIN_CONFIDENCE = 0.38;
+function updateEmotion(detection) {
+    const exp = detection.expressions;
+    let maxE = 'neutral', maxS = 0;
+    for (const [e, sc] of Object.entries(exp)) { if (sc > maxS) { maxS = sc; maxE = e; } }
+    const dict = { happy:'feliz', sad:'triste', angry:'enfadado', surprised:'sorprendido', fearful:'miedo', neutral:'neutral', disgusted:'neutral' };
+    let emotion = dict[maxE] || 'neutral';
+    // Las negativas exigen más confianza: una cara concentrada se lee como triste/enfadada
+    const minConf = { triste: 0.55, enfadado: 0.55, miedo: 0.55, feliz: 0.40, sorprendido: 0.45 };
+    if (emotion !== 'neutral' && maxS < (minConf[emotion] ?? EMOTION_MIN_CONFIDENCE)) emotion = 'neutral';
+    // Suavizado: últimos 5 frames (~4 s); una emoción solo cuenta si aparece en 3+
+    emotionBuffer.push(emotion);
+    if (emotionBuffer.length > 5) emotionBuffer.shift();
+    const counts = {};
+    emotionBuffer.forEach(e => counts[e] = (counts[e] || 0) + 1);
+    const [dominant, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    RonState.currentEmotion = (n >= 3) ? dominant : 'neutral';
+}
 
 // Ron la echa de menos y la llama por su nombre (comportamiento de la peli)
 async function callOutToUser(name) {
-    if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return;
+    if (!isIdleLike() || RonState.isSilentMode) return;
     markProactive();
     setExpression('thinking');
     const calls = [
         `¡Bip! ¿${name}? ¿Dónde te has metido? Mis sensores no te encuentran.`,
-        `¿${name}? ¡Vuelve! Te echo de menos... bueno, mis circuitos te echan de menos.`,
+        `¿${name}? ¡Vuelve! Mis circuitos te echan de menos.`,
         `¡Bip bop! ${name}, ¿sigues ahí? ¡Tengo cosas curiosas que contarte!`,
         `¿${name}? ¡Ping! ¡No me dejes solo con mis pensamientos raros de robot!`
     ];
     await speak(calls[Math.floor(Math.random() * calls.length)]);
-}
-
-function updateEmotion(detection) {
-    const exp = detection.expressions;
-    let maxE = 'neutral', maxS = 0;
-    for (const [e, s] of Object.entries(exp)) {
-        if (s > maxS) { maxS = s; maxE = e; }
-    }
-    const dict = { happy:'feliz', sad:'triste', angry:'enfadado', surprised:'sorprendido', fearful:'miedo', neutral:'neutral', disgusted:'neutral' };
-    let emotion = dict[maxE] || 'neutral';
-
-    // Umbral POR emoción. Las negativas (triste/enfadada/miedo) exigen más confianza
-    // porque una cara concentrada se lee fácilmente como triste o enfadada → falsos
-    // "¿estás triste?" que agobian. Sonreír y sorprenderse se detectan mejor y de forma
-    // más fiable, así que su listón es más bajo.
-    const minConf = { triste: 0.55, enfadado: 0.55, miedo: 0.55, feliz: 0.40, sorprendido: 0.45 };
-    if (emotion !== 'neutral' && maxS < (minConf[emotion] ?? EMOTION_MIN_CONFIDENCE)) emotion = 'neutral';
-
-    // Suavizado: acumula últimos 3 frames, reporta la emoción mayoritaria
-    emotionBuffer.push(emotion);
-    if (emotionBuffer.length > 3) emotionBuffer.shift();
-
-    const counts = {};
-    emotionBuffer.forEach(e => counts[e] = (counts[e] || 0) + 1);
-    const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-    RonState.currentEmotion = dominant;
 }
 
 export function captureOptimizedFrame() {
@@ -393,7 +317,7 @@ function trackFace(detection) {
 
 // Movimiento autónomo BLE
 setInterval(() => {
-    if (RonState.activityState === 'IDLE' && RonState.ble.isConnected) {
+    if (isIdleLike() && RonState.ble.isConnected) {
         const pan  = Math.floor(Math.random() * 60) + 60;
         const tilt = Math.floor(Math.random() * 40) + 70;
         sendMove(`P${pan}\n`);

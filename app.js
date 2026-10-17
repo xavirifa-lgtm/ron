@@ -1,4 +1,4 @@
-import { RonState, log, changeState } from './core.js';
+import { RonState, log, changeState, startProactiveLoop, isIdleLike } from './core.js';
 import { initUI, setChestIcon, setExpression, startBlinkCycle, checkNightMode, startDanceMode, stopDanceMode, startIdleGlitchLoop } from './ui.js';
 import { loadModels, startCamera, startVisionLoop, connectBLE } from './vision.js';
 import { startListening, speak } from './speech.js';
@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v25.21...");
+    log("Iniciando Ron v26.3...");
     initUI();
     setChestIcon('wifi');
 
@@ -20,6 +20,7 @@ async function preInit() {
         if (initStarted) return;
         initStarted = true;
         Sounds.resume();
+        import('./tts.js').then(t => t.unlockAudio()).catch(() => {});
         RonState.ui.bootScreen.classList.add('hidden');
         await init();
     };
@@ -28,18 +29,20 @@ async function preInit() {
         RonState.isMicEnabled = !RonState.isMicEnabled;
         RonState.ui.micToggleBtn.classList.toggle('off', !RonState.isMicEnabled);
         if (RonState.isMicEnabled && RonState.activityState === 'IDLE') startListening();
-        else if (!RonState.isMicEnabled && RonState.recognition) {
-            try { RonState.recognition.abort(); } catch(e) {}
+        else if (!RonState.isMicEnabled) {
+            if (RonState.recognition) { try { RonState.recognition.abort(); } catch(e) {} }
+            import('./whisper.js').then(w => w.stopWhisper()).catch(() => {});
         }
     };
 
-    RonState.ui.bleBtn.onclick = () => connectBLE();
 
     // Toda la pantalla es Ron — click en cualquier lado = cosquillas
     const faceEl = document.querySelector('.ron-container');
     if (faceEl) {
-        faceEl.addEventListener('click', () => {
-            if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
+        faceEl.addEventListener('click', (ev) => {
+            // Sin cosquillas al tocar botones, ajustes o paneles
+            if (ev.target.closest('button, input, select, label, .api-modal, .game-panel, #photo-panel')) return;
+            if (isIdleLike() && !RonState.isLearningFace) {
                 setExpression('happy');
                 Sounds.playBeep(900, 'sine', 0.08, 0.05);
                 setTimeout(() => Sounds.playBeep(1200, 'sine', 0.08, 0.05), 110);
@@ -63,8 +66,12 @@ async function init() {
     startBlinkCycle();
     startIdleGlitchLoop();
     startCuriosityLoop();
+    startProactiveLoop();
+    import('./bedtime.js').then(b => b.startBedtimeLoop());
+    // Pedir al navegador que no borre la memoria de Ron (caras, nombres, recuerdos)
+    try { navigator.storage?.persist?.().then(ok => log(`Almacenamiento persistente: ${ok ? 'sí' : 'no concedido'}`)); } catch (e) {}
     checkNightMode();
-    setInterval(checkNightMode, 3600000);
+    setInterval(checkNightMode, 300000);
     requestWakeLock();
 
     // Esperar voces Y hablar dentro del mismo async chain del click (requisito autoplay)
@@ -121,19 +128,83 @@ async function requestWakeLock() {
 }
 
 function setupInteractions() {
-    RonState.ui.saveBtn.onclick = () => {
-        const k = RonState.ui.apiKeyInput.value.trim();
-        if (k.length > 10) {
-            localStorage.setItem('ron_groq_key', k);
-            RonState.apiKey = k;
-            RonState.ui.apiModal.classList.add('hidden');
-            speak("¡Bip! Cerebro activado. Friendship.exe cargando al 5%.");
-        }
+    const $ = id => document.getElementById(id);
+    const fill = async () => {
+        const { RonConfig } = await import('./core.js');
+        $('groq-key-input').value       = RonState.apiKey || '';
+        $('cerebras-key-input').value   = RonConfig.cerebrasKey || '';
+        $('openrouter-key-input').value = RonConfig.openrouterKey || '';
+        $('bedtime-input').value        = RonConfig.bedtime;
+        $('waketime-input').value       = RonConfig.wakeTime;
+        $('initiative-input').value     = RonConfig.initiative;
+        $('stt-input').value            = RonConfig.sttEngine || 'whisper';
+        $('gemini-key-input').value     = RonConfig.geminiKey || '';
+        $('voice-engine-input').value   = RonConfig.voiceEngine || 'gemini';
+        $('robot-effect-input').checked = RonConfig.robotEffect !== false;
+        const { VOICES } = await import('./tts.js');
+        $('gemini-voice-input').innerHTML = Object.entries(VOICES).map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join('');
+        $('gemini-voice-input').value   = RonConfig.geminiVoice || 'Puck';
+        try {
+            const u = (await import('./llm.js')).usageToday();
+            const lines = Object.entries(u).map(([m, n]) => `${m}: ${n}`);
+            $('usage-info').textContent = lines.length ? 'Peticiones de hoy:\n' + lines.join('\n') : 'Sin peticiones hoy.';
+        } catch (e) {}
+    };
+    const open = () => { fill(); RonState.ui.apiModal.classList.remove('hidden'); };
+    const close = () => RonState.ui.apiModal.classList.add('hidden');
+
+    RonState.ui.saveBtn.onclick = async () => {
+        const k = $('groq-key-input').value.trim();
+        if (k.length <= 10) { $('groq-key-input').focus(); return; }
+        const firstTime = !RonState.apiKey;
+        localStorage.setItem('ron_groq_key', k);
+        RonState.apiKey = k;
+        const { saveConfig } = await import('./core.js');
+        saveConfig({
+            cerebrasKey:   $('cerebras-key-input').value.trim(),
+            openrouterKey: $('openrouter-key-input').value.trim(),
+            bedtime:       $('bedtime-input').value || '22:00',
+            wakeTime:      $('waketime-input').value || '07:30',
+            initiative:    $('initiative-input').value || 'alta',
+            sttEngine:     $('stt-input').value || 'whisper',
+            geminiKey:     $('gemini-key-input').value.trim(),
+            voiceEngine:   $('voice-engine-input').value || 'gemini',
+            geminiVoice:   $('gemini-voice-input').value || 'Puck',
+            robotEffect:   $('robot-effect-input').checked,
+        });
+        close();
+        checkNightMode();
+        // Aplicar el motor de escucha elegido
+        import('./whisper.js').then(w => w.stopWhisper()).finally(() => startListening());
+        if (firstTime) speak("¡Bip! Cerebro activado. Friendship.exe cargando al 5%.");
+        else log('Ajustes guardados.');
+    };
+    $('close-settings-btn').onclick = close;
+    // Probar la voz con lo que hay en el formulario (sin guardar)
+    $('test-voice-btn').onclick = async () => {
+        const { RonConfig } = await import('./core.js');
+        const prev = { ...RonConfig };
+        Object.assign(RonConfig, { geminiKey: $('gemini-key-input').value.trim(), voiceEngine: $('voice-engine-input').value,
+            geminiVoice: $('gemini-voice-input').value, robotEffect: $('robot-effect-input').checked });
+        const tts = await import('./tts.js'); tts.unlockAudio();
+        await speak('¡Bip! Hola, soy Ron, tu mejor amigo fuera de la caja.', { remember: false });
+        Object.assign(RonConfig, prev);
     };
     RonState.ui.apiKeyInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') RonState.ui.saveBtn.click();
     });
-    if (!RonState.apiKey) RonState.ui.apiModal.classList.remove('hidden');
+
+    // Pulsación larga (3 s) en 📡 → ajustes. Pulsación corta → conectar motores.
+    let pressTimer = null, longPressed = false;
+    const btn = RonState.ui.bleBtn;
+    const startPress = () => { longPressed = false; pressTimer = setTimeout(() => { longPressed = true; open(); }, 3000); };
+    const endPress = () => { clearTimeout(pressTimer); };
+    btn.addEventListener('pointerdown', startPress);
+    btn.addEventListener('pointerup', endPress);
+    btn.addEventListener('pointerleave', endPress);
+    btn.onclick = (e) => { if (longPressed) { e.preventDefault(); return; } connectBLE(); };
+
+    if (!RonState.apiKey) open();
 }
 
 function goFullscreen() {

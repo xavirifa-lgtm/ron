@@ -1,5 +1,5 @@
 // defender.js - Ron como defensor activo
-import { RonState, log, markProactive } from './core.js';
+import { RonState, log, markProactive, isIdleLike } from './core.js';
 import { speak } from './speech.js';
 import { setExpression } from './ui.js';
 
@@ -44,7 +44,7 @@ export function updateSadnessTracking(emotion, faceVisible) {
 // ── Modo defensor ────────────────────────────────────────────────────────────
 
 async function triggerDefenderMode() {
-    if (RonState.activityState !== 'IDLE' || RonState.isSilentMode) return;
+    if (!isIdleLike() || RonState.isSilentMode) return;
     markProactive();
 
     const name = RonState.currentUser || 'amiga';
@@ -60,7 +60,7 @@ async function triggerDefenderMode() {
     } else if (todayCount === 2) {
         await speak(`${name}, mis sensores detectan tristeza otra vez. ¿Jugamos a algo?`);
         setTimeout(() => {
-            if (RonState.activityState === 'IDLE' && !RonState.isSilentMode) {
+            if (isIdleLike() && !RonState.isSilentMode) {
                 import('./ai.js').then(ai => ai.triggerSpontaneous(
                     `${name} lleva un rato triste. Propón con mucho entusiasmo una actividad: juego, historia o canción.`
                 )).catch(() => {});
