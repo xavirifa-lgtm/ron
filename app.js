@@ -16,15 +16,35 @@ async function preInit() {
     };
 
     let initStarted = false;
-    RonState.ui.powerBtn.onclick = async () => {
-        if (initStarted) return;
-        initStarted = true;
-        Sounds.resume();
-        import('./tts.js').then(t => t.unlockAudio()).catch(() => {});
-        RonState.ui.bootScreen.classList.add('hidden');
-        import('./core.js').then(c => document.body.classList.toggle('diag', !!c.RonConfig.diagnostics));
-        await init();
-    };
+    
+    // Aseguramos que el botón responda de forma inmediata al toque
+    const powerBtn = RonState.ui.powerBtn || document.getElementById('power-btn');
+    if (powerBtn) {
+        powerBtn.onclick = async () => {
+            if (initStarted) return;
+            initStarted = true;
+            
+            // 1. Desbloquear audio y ocultar pantalla de inicio al instante
+            Sounds.resume();
+            try {
+                const tts = await import('./tts.js');
+                tts.unlockAudio();
+            } catch (e) {
+                log("Aviso TTS unlock: " + e.message);
+            }
+            
+            if (RonState.ui.bootScreen) {
+                RonState.ui.bootScreen.classList.add('hidden');
+            } else {
+                document.getElementById('boot-screen')?.classList.add('hidden');
+            }
+            
+            import('./core.js').then(c => document.body.classList.toggle('diag', !!c.RonConfig.diagnostics));
+            
+            // 2. Lanzar la inicialización principal
+            await init();
+        };
+    }
 
     RonState.ui.micToggleBtn.onclick = () => {
         RonState.isMicEnabled = !RonState.isMicEnabled;
@@ -48,14 +68,12 @@ async function preInit() {
                 const clickY = (ev.clientY - rect.top) / rect.height;
 
                 if (clickY < 0.35) {
-                    // ZONA SUPERIOR (Frente / Ojos)
                     setExpression('surprise');
                     Sounds.playBeep(1100, 'sine', 0.06, 0.08);
                     setTimeout(() => Sounds.playServoSound(), 80);
                     speak("¡Bip! ¡Cuidado con mis sensores ópticos!");
                 } 
                 else if (clickY >= 0.35 && clickY < 0.65) {
-                    // ZONA CENTRAL (Ojos / Cara - Cosquillas)
                     setExpression('happy');
                     Sounds.playBeep(900, 'sine', 0.08, 0.05);
                     setTimeout(() => Sounds.playBeep(1200, 'sine', 0.08, 0.05), 110);
@@ -67,7 +85,6 @@ async function preInit() {
                     speak(tickles[Math.floor(Math.random() * tickles.length)]);
                 } 
                 else {
-                    // ZONA INFERIOR (Boca / Procesamiento)
                     setExpression('thinking');
                     Sounds.playDataProcess();
                     speak("¡Bip bop! Estás tocando mi unidad de audio. ¿Quieres que te cuente algo?");
@@ -100,6 +117,7 @@ async function init() {
         "Mejor amigo fuera de la caja: listo."
     );
 
+    // Intentamos cargar la cámara de forma independiente para que no bloquee si falla
     try {
         log("Cargando modelos de visión...");
         await loadModels();
