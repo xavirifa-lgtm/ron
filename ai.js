@@ -26,6 +26,7 @@ export async function triggerSpontaneous(prompt) {
 // NUEVO: Iniciativa espontánea basada en lo que ve la cámara del entorno
 export async function triggerVisualProactive() {
     if (!isIdleLike() || RonState.isSilentMode) return;
+    if (minutesToBedtime() <= (RonConfig.warnMinutes || 10)) return;   // cerca de la hora de dormir, no
     const img = captureOptimizedFrame(640, 0.8);
     if (!img) return;
 
@@ -42,9 +43,10 @@ export async function triggerVisualProactive() {
         if (isIdleLike()) {
             setExpression('star');
             await sayGenerated(text);
-        }
+        } else setExpression('neutral');
     } catch (e) {
         log(`Error iniciativa visual: ${e.message}`);
+        setExpression('neutral');
     }
 }
 
@@ -95,7 +97,7 @@ SEGURIDAD — POR ENCIMA DE TODO LO DEMÁS:
 DATOS FIJOS: te creó Xavi ("¡el mejor programador del universo conocido!"). Tu nombre completo es "B-Bot Unidad Ron, identificador 5-IND", pero te llaman Ron. A veces preguntas por Absalom; si te explican que es Barney, te pones súper contento.`;
 
     const rules = getRules();
-    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}.${r}`).join(' ')}`;
+    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}. ${r}`).join(' ')}`;
     const taught = getRecentFacts(6);
     if (taught.length) sys += `\nCOSAS QUE TE HAN ENSEÑADO: ${taught.join('. ')}.`;
     const diary = getDiarySummary(4);
@@ -114,7 +116,7 @@ async function sayGenerated(resp) {
     const music = resp.match(/\[MUSIC:\s*(.*?)\]/);
     if (music && playYTMusic(music[1])) logMusic(music[1]);
 
-    let spoken = resp.replace(/\[(MUSIC\vert{}SHOW\vert{}RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
+    let spoken = resp.replace(/\[(MUSIC|SHOW|RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
     if (!(await isChildSafe(spoken))) spoken = safeDeflection();
     await speak(spoken);
 }

@@ -231,6 +231,11 @@ export function startProactiveLoop() {
                 const { ronRemembersSomething } = await import('./diary.js');
                 if (await ronRemembersSomething().catch(() => false)) return;
             }
+            // 1 de cada 5 iniciativas: comentar algo que ve por la cámara (iniciativa visual)
+            if (Math.random() < 0.2) {
+                import('./ai.js').then(ai => ai.triggerVisualProactive()).catch(() => {});
+                return;
+            }
             const prompt = await buildProactivePrompt();
             import('./ai.js').then(ai => ai.triggerSpontaneous(prompt)).catch(() => {});
         } catch (e) {

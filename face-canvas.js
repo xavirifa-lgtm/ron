@@ -149,7 +149,7 @@ function drawEye(cx, cy, R, e, side) {
 
     if (e === 'happy' || e === 'recognised') {
         const lift = 1 - blinkP * 0.6;
-        ctx.lineWidth = r * 0.42; ctx.lineCap = 'round'; ctx.strokeStyle = '#0d0d0d';
+        ctx.lineWidth = r * 0.42; ctx.lineCap = 'round'; ctx.strokeStyle = color();
         ctx.beginPath(); ctx.arc(0, r * 0.35, r * 0.68, Math.PI * 1.12, Math.PI * 1.88, false);
         ctx.save(); ctx.scale(1, lift); ctx.stroke(); ctx.restore();
     } else if (e === 'star') {
@@ -173,7 +173,7 @@ function drawEye(cx, cy, R, e, side) {
         const sy = Math.max(cur.eyeSY * (1 - blinkP * 0.94), 0.05);
         ctx.save(); ctx.scale(1, sy);
         
-        ctx.fillStyle = '#0d0d0d';
+        ctx.fillStyle = color();
         ctx.beginPath();
         const eyeW = r * 0.72;
         const eyeH = r * 1.28;

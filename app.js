@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v28.2...");
+    log("Iniciando Ron v28.3...");
     initUI();
     setChestIcon('wifi');
 
@@ -164,13 +164,18 @@ function setupInteractions() {
     const $ = id => document.getElementById(id);
     const fill = async () => {
         const { RonConfig } = await import('./core.js');
-        $('groq-key-input').value       = RonState.apiKey \vert{}\vert{} '';$('cerebras-key-input').value   = RonConfig.cerebrasKey || '';
-        $('openrouter-key-input').value = RonConfig.openrouterKey \vert{}\vert{} '';$('bedtime-input').value        = RonConfig.bedtime;
+        $('groq-key-input').value       = RonState.apiKey || '';
+        $('cerebras-key-input').value   = RonConfig.cerebrasKey || '';
+        $('openrouter-key-input').value = RonConfig.openrouterKey || '';
+        $('bedtime-input').value        = RonConfig.bedtime;
         $('waketime-input').value       = RonConfig.wakeTime;
         $('initiative-input').value     = RonConfig.initiative;
-        $('stt-input').value            = RonConfig.sttEngine \vert{}\vert{} 'whisper';$('gemini-key-input').value     = RonConfig.geminiKey || '';
-        $('voice-engine-input').value   = RonConfig.voiceEngine \vert{}\vert{} 'gemini';$('robot-effect-input').checked = RonConfig.robotEffect !== false;
-        $('listen-mode-input').value    = RonConfig.listenMode \vert{}\vert{} 'cara';$('captions-input').checked     = RonConfig.captions !== false;
+        $('stt-input').value            = RonConfig.sttEngine || 'whisper';
+        $('gemini-key-input').value     = RonConfig.geminiKey || '';
+        $('voice-engine-input').value   = RonConfig.voiceEngine || 'gemini';
+        $('robot-effect-input').checked = RonConfig.robotEffect !== false;
+        $('listen-mode-input').value    = RonConfig.listenMode || 'cara';
+        $('captions-input').checked     = RonConfig.captions !== false;
         $('diag-input').checked         = !!RonConfig.diagnostics;
         const { VOICES } = await import('./tts.js');
         $('gemini-voice-input').innerHTML = Object.entries(VOICES).map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join('');
