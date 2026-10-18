@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v28.1';
+const CACHE_NAME = 'ron-bot-v28.2';
 const ASSETS = [
   './',
   'index.html',
@@ -36,7 +36,6 @@ const ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      // allSettled: si un asset falta (p.ej. un icono), no aborta todo el install
       .then(cache => Promise.allSettled(ASSETS.map(a => cache.add(a))))
       .then(() => self.skipWaiting())
   );
@@ -54,7 +53,6 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const url = event.request.url;
-  // Solo cachear GET de la propia app. Las APIs de IA (POST) y los CDN externos van directos.
   if (event.request.method !== 'GET' || !url.startsWith(self.location.origin)) {
     return;
   }

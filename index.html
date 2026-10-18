@@ -4,12 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Ron B*Bot</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script>
-        // Registro LIMPIO del Service Worker — necesario para abrir como app instalada.
-        // (Antes se desregistraba en cada carga; eso rompía el arranque como PWA.)
-        // Las actualizaciones llegan igual: sw.js hace skipWaiting + clients.claim y
-        // borra las cachés viejas cuando cambia CACHE_NAME.
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js').then(reg => {
@@ -20,7 +15,7 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=28.1">
+    <link rel="stylesheet" href="styles.css?v=28.2">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,22 +26,19 @@
 <body>
     <div id="ron-app" class="ron-container">
         <div id="camera-flash" class="camera-flash"></div>
-        <!-- Canvas procedural de la cara — reemplaza el CSS face -->
+        <!-- Canvas procedural de la cara -->
         <canvas id="ron-face"></canvas>
-        <!-- Pantalla de Inicio -->
+        
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v28.1 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
+            <button id="power-btn">B-BOT v28.2 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
         </div>
 
         <!-- Botones de Control -->
         <button id="mic-toggle-btn" class="mic-toggle-btn">🎙️</button>
         <button id="ble-connect-btn" class="ble-btn">📡</button>
 
-
-
-
-        <!-- Cámara: NO usar display:none (Android congela el vídeo oculto). Invisible pero vivo. -->
+        <!-- Cámara: invisible pero viva -->
         <video id="webcam" autoplay playsinline muted style="position:fixed; top:0; left:0; width:4px; height:4px; opacity:0.01; pointer-events:none; z-index:-1;"></video>
         
         <!-- Configuración de API -->
@@ -100,7 +92,7 @@
         <!-- Capa de Efectos de Fondo (Glitch) -->
         <div id="glitch-overlay" class="glitch-overlay"></div>
 
-        <!-- Reproductor Invisible (v17.1 - Estilo Chronobeats) -->
+        <!-- Reproductor Invisible (Estilo Chronobeats) -->
         <div id="music-container" style="position: absolute; left: -999px; top: -999px; width: 200px; height: 200px; overflow: hidden; opacity: 0.01; pointer-events: none;">
             <div id="ron-yt-player"></div>
         </div>
@@ -116,7 +108,7 @@
                     <path id="mouth-path" d="M 25 35 Q 50 50 75 35" />
                 </svg>
             </div>
-            <!-- Iconos del Pecho (v13.0) -->
+            <!-- Iconos del Pecho -->
             <div id="chest-icon-container" class="chest-icon-container"></div>
         </div>
 
@@ -130,9 +122,9 @@
             </div>
         </div>
         
-        <!-- UI de Control (Invisible por defecto) -->
+        <!-- UI de Control -->
         <div id="debug-info"></div>
-        <!-- Subtítulos: lo que Ron ha oído / lo que dice -->
+        <!-- Subtítulos -->
         <div id="caption" class="caption"></div>
         
         <!-- Panel de Selfie (Polaroid) -->
@@ -151,10 +143,10 @@
         <!-- Burbuja de estado de ánimo -->
         <div id="mood-bubble" class="mood-bubble hidden"></div>
 
-        <!-- Wrapper de cara (para efectos) -->
+        <!-- Wrapper de cara -->
         <div id="face-wrapper"></div>
     </div>
-    <script>const CACHE_NAME = 'ron-bot-v28.1';</script>
-    <script type="module" src="app.js?v=28.1"></script>
+    <script>const CACHE_NAME = 'ron-bot-v28.2';</script>
+    <script type="module" src="app.js?v=28.2"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v28.1...");
+    log("Iniciando Ron v28.2...");
     initUI();
     setChestIcon('wifi');
 
@@ -36,25 +36,42 @@ async function preInit() {
         }
     };
 
-
-    // Toda la pantalla es Ron — click en cualquier lado = cosquillas
+    // ZONAS TÁCTILES AVANZADAS EN LA CARA DE RON
     const faceEl = document.querySelector('.ron-container');
     if (faceEl) {
         faceEl.addEventListener('click', (ev) => {
-            // Sin cosquillas al tocar botones, ajustes o paneles
             if (ev.target.closest('button, input, select, label, .api-modal, .game-panel, #photo-panel')) return;
-            // Mientras Ron habla, tocarle lo calla y se pone a escuchar (como interrumpir a un amigo)
             if (RonState.activityState === 'SPEAKING') { import('./speech.js').then(s => s.interruptSpeaking()); return; }
+            
             if (RonState.activityState === 'IDLE' && !RonState.isLearningFace) {
-                setExpression('happy');
-                Sounds.playBeep(900, 'sine', 0.08, 0.05);
-                setTimeout(() => Sounds.playBeep(1200, 'sine', 0.08, 0.05), 110);
-                const tickles = [
-                    "¡Bip! ¡Mis sensores táctiles detectan cosquillas!",
-                    "¡Bop! ¡Error de cosquillas! ¿Por qué hacen eso los humanos?",
-                    "¡Ñiiic! ¡Sistema de risa activado involuntariamente!"
-                ];
-                speak(tickles[Math.floor(Math.random() * tickles.length)]);
+                const rect = faceEl.getBoundingClientRect();
+                const clickY = (ev.clientY - rect.top) / rect.height;
+
+                if (clickY < 0.35) {
+                    // ZONA SUPERIOR (Frente / Ojos)
+                    setExpression('surprise');
+                    Sounds.playBeep(1100, 'sine', 0.06, 0.08);
+                    setTimeout(() => Sounds.playServoSound(), 80);
+                    speak("¡Bip! ¡Cuidado con mis sensores ópticos!");
+                } 
+                else if (clickY >= 0.35 && clickY < 0.65) {
+                    // ZONA CENTRAL (Ojos / Cara - Cosquillas)
+                    setExpression('happy');
+                    Sounds.playBeep(900, 'sine', 0.08, 0.05);
+                    setTimeout(() => Sounds.playBeep(1200, 'sine', 0.08, 0.05), 110);
+                    const tickles = [
+                        "¡Bip! ¡Mis sensores táctiles detectan cosquillas en la cara!",
+                        "¡Bop! ¡Error de cosquillas! ¿Por qué hacéis eso los humanos?",
+                        "¡Ñiiic! ¡Sistema de risa activado involuntariamente!"
+                    ];
+                    speak(tickles[Math.floor(Math.random() * tickles.length)]);
+                } 
+                else {
+                    // ZONA INFERIOR (Boca / Procesamiento)
+                    setExpression('thinking');
+                    Sounds.playDataProcess();
+                    speak("¡Bip bop! Estás tocando mi unidad de audio. ¿Quieres que te cuente algo?");
+                }
             }
         });
     }
@@ -63,7 +80,6 @@ async function preInit() {
 }
 
 async function init() {
-    // PASO 1: Arrancar UI y voz SIEMPRE — independiente de la cámara
     changeState('IDLE');
     setExpression('neutral');
     startBlinkCycle();
@@ -71,13 +87,11 @@ async function init() {
     startCuriosityLoop();
     startProactiveLoop();
     import('./bedtime.js').then(b => b.startBedtimeLoop());
-    // Pedir al navegador que no borre la memoria de Ron (caras, nombres, recuerdos)
     try { navigator.storage?.persist?.().then(ok => log(`Almacenamiento persistente: ${ok ? 'sí' : 'no concedido'}`)); } catch (e) {}
     checkNightMode();
     setInterval(checkNightMode, 300000);
     requestWakeLock();
 
-    // Esperar voces Y hablar dentro del mismo async chain del click (requisito autoplay)
     await waitForVoices();
     speak(
         "¡Bip! B-Bot Unidad Ron, identificador 5-IND iniciando. " +
@@ -86,7 +100,6 @@ async function init() {
         "Mejor amigo fuera de la caja: listo."
     );
 
-    // PASO 2: Cámara y visión — si fallan, Ron sigue funcionando
     try {
         log("Cargando modelos de visión...");
         await loadModels();
@@ -103,7 +116,6 @@ async function init() {
     goFullscreen();
 }
 
-// Resuelve en cuanto speechSynthesis tiene voces cargadas (máx 3s de espera)
 function waitForVoices() {
     return new Promise(resolve => {
         if (window.speechSynthesis.getVoices().length > 0) return resolve();
@@ -134,18 +146,13 @@ function setupInteractions() {
     const $ = id => document.getElementById(id);
     const fill = async () => {
         const { RonConfig } = await import('./core.js');
-        $('groq-key-input').value       = RonState.apiKey || '';
-        $('cerebras-key-input').value   = RonConfig.cerebrasKey || '';
-        $('openrouter-key-input').value = RonConfig.openrouterKey || '';
-        $('bedtime-input').value        = RonConfig.bedtime;
+        $('groq-key-input').value       = RonState.apiKey \vert{}\vert{} '';$('cerebras-key-input').value   = RonConfig.cerebrasKey || '';
+        $('openrouter-key-input').value = RonConfig.openrouterKey \vert{}\vert{} '';$('bedtime-input').value        = RonConfig.bedtime;
         $('waketime-input').value       = RonConfig.wakeTime;
         $('initiative-input').value     = RonConfig.initiative;
-        $('stt-input').value            = RonConfig.sttEngine || 'whisper';
-        $('gemini-key-input').value     = RonConfig.geminiKey || '';
-        $('voice-engine-input').value   = RonConfig.voiceEngine || 'gemini';
-        $('robot-effect-input').checked = RonConfig.robotEffect !== false;
-        $('listen-mode-input').value    = RonConfig.listenMode || 'cara';
-        $('captions-input').checked     = RonConfig.captions !== false;
+        $('stt-input').value            = RonConfig.sttEngine \vert{}\vert{} 'whisper';$('gemini-key-input').value     = RonConfig.geminiKey || '';
+        $('voice-engine-input').value   = RonConfig.voiceEngine \vert{}\vert{} 'gemini';$('robot-effect-input').checked = RonConfig.robotEffect !== false;
+        $('listen-mode-input').value    = RonConfig.listenMode \vert{}\vert{} 'cara';$('captions-input').checked     = RonConfig.captions !== false;
         $('diag-input').checked         = !!RonConfig.diagnostics;
         const { VOICES } = await import('./tts.js');
         $('gemini-voice-input').innerHTML = Object.entries(VOICES).map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join('');
@@ -184,18 +191,17 @@ function setupInteractions() {
         document.body.classList.toggle('diag', $('diag-input').checked);
         close();
         checkNightMode();
-        // Aplicar el motor de escucha elegido
         import('./whisper.js').then(w => w.stopWhisper()).finally(() => startListening());
         if (firstTime) speak("¡Bip! Cerebro activado. Friendship.exe cargando al 5%.");
         else log('Ajustes guardados.');
     };
     $('close-settings-btn').onclick = close;
-    // Probar la voz con lo que hay en el formulario (sin guardar)
+    
     $('test-voice-btn').onclick = async () => {
         const { RonConfig } = await import('./core.js');
         const prev = { ...RonConfig };
-        Object.assign(RonConfig, { geminiKey: $('gemini-key-input').value.trim(), voiceEngine: $('voice-engine-input').value,
-            geminiVoice: $('gemini-voice-input').value, robotEffect: $('robot-effect-input').checked });
+        Object.assign(RonConfig, { geminiKey: $('gemini-key-input').value.trim(), voiceEngine:$('voice-engine-input').value,
+            geminiVoice: $('gemini-voice-input').value, robotEffect:$('robot-effect-input').checked });
         const tts = await import('./tts.js'); tts.unlockAudio();
         const out = $('test-voice-result');
         out.textContent = 'Probando…';
@@ -211,7 +217,6 @@ function setupInteractions() {
         if (e.key === 'Enter') RonState.ui.saveBtn.click();
     });
 
-    // Pulsación larga (3 s) en 📡 → ajustes. Pulsación corta → conectar motores.
     let pressTimer = null, longPressed = false;
     const btn = RonState.ui.bleBtn;
     const startPress = () => { longPressed = false; pressTimer = setTimeout(() => { longPressed = true; open(); }, 3000); };

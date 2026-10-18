@@ -1,12 +1,4 @@
-// ai.js — El cerebro de Ron (v26)
-// Cambios clave respecto a v25:
-//  - Modelos vigentes y cadena de respaldo (llm.js).
-//  - Historial con lo que dice ELLA y lo que dice RON (también frases fijas).
-//  - Memoria de hechos por persona (memory.js) en lugar de frases sueltas.
-//  - Saludo y preguntas por emociones generados con contexto.
-//  - Todo texto generado pasa por el clasificador de seguridad infantil.
-//  - Sin [RENAME] automático: "soy un dinosaurio" ya no renombra a nadie.
-
+// ai.js — El cerebro de Ron (v28.2 con Iniciativa Visual Espontánea)
 import { RonState, RonConfig, log, changeState, markProactive, rememberTurn, isIdleLike, minutesToBedtime } from './core.js';
 import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto, flash } from './ui.js';
 import { speak } from './speech.js';
@@ -29,6 +21,31 @@ export async function triggerSpontaneous(prompt) {
     if (!isIdleLike()) return;
     log("Iniciativa propia de Ron.");
     return handleInput(prompt, true);
+}
+
+// NUEVO: Iniciativa espontánea basada en lo que ve la cámara del entorno
+export async function triggerVisualProactive() {
+    if (!isIdleLike() || RonState.isSilentMode) return;
+    const img = captureOptimizedFrame(640, 0.8);
+    if (!img) return;
+
+    markProactive();
+    log("Iniciativa visual espontánea activada.");
+    setExpression('thinking');
+
+    try {
+        const name = RonState.currentUser || 'amiga';
+        const sys = `Eres Ron, el B-Bot. Estás mirando lo que hay frente a ti en la habitación de ${name}. ` +
+                    `Haz UN solo comentario o pregunta corta (máximo 20 palabras, sin emojis, sin asteriscos) sobre lo que ves en la imagen (un juguete, un libro, un dibujo o lo que sea), con tu tono ingenuo y robótico de siempre.`;
+        
+        const { text } = await chatVision(sys, [], '¿Qué ves frente a ti?', img, { models: MODELS.vision, maxTokens: 150 });
+        if (isIdleLike()) {
+            setExpression('star');
+            await sayGenerated(text);
+        }
+    } catch (e) {
+        log(`Error iniciativa visual: ${e.message}`);
+    }
 }
 
 // ── PROMPT ────────────────────────────────────────────────────────────────────
@@ -78,7 +95,7 @@ SEGURIDAD — POR ENCIMA DE TODO LO DEMÁS:
 DATOS FIJOS: te creó Xavi ("¡el mejor programador del universo conocido!"). Tu nombre completo es "B-Bot Unidad Ron, identificador 5-IND", pero te llaman Ron. A veces preguntas por Absalom; si te explican que es Barney, te pones súper contento.`;
 
     const rules = getRules();
-    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}. ${r}`).join(' ')}`;
+    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}.${r}`).join(' ')}`;
     const taught = getRecentFacts(6);
     if (taught.length) sys += `\nCOSAS QUE TE HAN ENSEÑADO: ${taught.join('. ')}.`;
     const diary = getDiarySummary(4);
@@ -88,7 +105,6 @@ DATOS FIJOS: te creó Xavi ("¡el mejor programador del universo conocido!"). Tu
     return sys;
 }
 
-// ── SALIDA: pizarra, música permitida, seguridad y voz ───────────────────────
 async function sayGenerated(resp) {
     const show = resp.match(/\[SHOW:\s*(.*?)\]/);
     if (show) {
@@ -98,7 +114,7 @@ async function sayGenerated(resp) {
     const music = resp.match(/\[MUSIC:\s*(.*?)\]/);
     if (music && playYTMusic(music[1])) logMusic(music[1]);
 
-    let spoken = resp.replace(/\[(MUSIC|SHOW|RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
+    let spoken = resp.replace(/\[(MUSIC\vert{}SHOW\vert{}RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
     if (!(await isChildSafe(spoken))) spoken = safeDeflection();
     await speak(spoken);
 }
@@ -111,8 +127,6 @@ function resetConversationIfNewPerson() {
     if (!Array.isArray(RonState.conversation)) RonState.conversation = [];
 }
 
-// ── ENTRADA PRINCIPAL ─────────────────────────────────────────────────────────
-// Captura una foto; si la cámara no da imagen, la reabre una vez y lo reintenta
 async function captureFrameWithRetry() {
     let img = captureOptimizedFrame();
     if (img) return img;
@@ -126,13 +140,11 @@ async function captureFrameWithRetry() {
 }
 
 export async function handleInput(userText, isInternal = false) {
-    // De noche Ron está dormido: contesta medio dormido y manda a la cama (sin IA)
     if (RonState.activityState === 'NIGHT') {
         if (isInternal) return;
         rememberTurn('user', userText);
         return (await import('./bedtime.js')).nightReply(userText);
     }
-    // Juegos con pizarra y cuento: sus propios manejadores
     if (RonState.activityState === 'MATH_GAME')    { rememberTurn('user', userText); return (await import('./games.js')).handleMathAnswer(userText); }
     if (RonState.activityState === 'READING_GAME') { rememberTurn('user', userText); return (await import('./games.js')).handleReadingAnswer(userText); }
     if (RonState.activityState === 'STORY') {
@@ -153,7 +165,6 @@ export async function handleInput(userText, isInternal = false) {
     if (!isInternal) {
         resetConversationIfNewPerson();
 
-        // SEGURIDAD (Capa 3): la niña cuenta algo preocupante → cuidado + adulto de confianza
         if (isConcern(userText)) {
             log("⚠️ Señal de seguridad detectada.");
             rememberTurn('user', userText);
@@ -161,7 +172,6 @@ export async function handleInput(userText, isInternal = false) {
             return speak(concernResponse(RonState.currentUser));
         }
 
-        // Nombre dicho por ella ("me llamo X"): corrección o presentación
         const nameMatch = t.match(/(?:me llamo|mi nombre es)\s+([a-záéíóúüñ]+)/);
         if (nameMatch) {
             const id = await import('./identity.js');
@@ -178,7 +188,6 @@ export async function handleInput(userText, isInternal = false) {
 
         const wantsPlay = /\bjug(ar|amos|uemos|á)|\bjuego\b|vamos a|quiero|hacemos|practic|empez|a jugar|toca\b/.test(t);
 
-        // Modo seguir
         if (/s[íi]gueme|ven conmigo|ven aqu[íi]|ven ron|acomp[áa][ñn]ame/.test(t)) {
             rememberTurn('user', userText);
             if (startFollow()) { setExpression('star'); return speak("¡Bip bip! ¡Voy contigo! ¡Arrancando motores!"); }
@@ -189,7 +198,6 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Vale! Me quedo aquí contigo. ¡Bip!");
         }
 
-        // Juegos con pizarra
         if (/(suma|resta|matem[áa]tic|n[úu]mero|sumar|restar|calcul)/.test(t) &&
             (wantsPlay || /sumas|restas|a sumar|a restar/.test(t))) {
             rememberTurn('user', userText); addBond('game'); return startMathGame();
@@ -210,13 +218,11 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Bip! Pizarra cerrada.");
         }
 
-        // Enseñanza explícita
         const rule = detectFriendshipLesson(userText);
         if (rule) { rememberTurn('user', userText); return ronReceivesRule(rule); }
         const fact = detectLearningMoment(userText);
         if (fact) { rememberTurn('user', userText); return ronLearns(fact); }
 
-        // Música: SOLO canciones de la lista segura
         if (/(pon|ponme|reproduce|quiero escuchar).*(m[úu]sica|canci[óo]n)|^pon(me)? /.test(t)) {
             const q = t.replace(/^(ron[, ]+)?(pon(me)?|reproduce|quiero escuchar)\s+(la\s+)?(m[úu]sica|canci[óo]n)?\s*(de|del|de la)?\s*/i, '').trim();
             if (q.length > 2) {
@@ -229,7 +235,6 @@ export async function handleInput(userText, isInternal = false) {
             stopYTMusic(); return speak("¡Bip! Música fuera.");
         }
 
-        // Modo acompañante: solo con frases claras de peli/tele/videojuego; caduca solo
         if (/vamos a ver (una )?peli|estamos viendo|estoy viendo|vamos a ver la tele|ponemos una peli|estoy jugando a la (consola|tablet)|juego a la (consola|tablet)/.test(t)) {
             RonState.companionMode = true;
             RonState.companionTopic = userText;
@@ -246,7 +251,7 @@ async function generateReply(userText, isInternal) {
     const t = userText.toLowerCase();
     const known = !!RonState.currentUser;
     const userKey = RonState.currentUser || 'amiga';
-    const history = (RonState.conversation || []).slice(-8);    // antes de añadir este turno (ahorra cuota)
+    const history = (RonState.conversation || []).slice(-8);
 
     if (!isInternal) {
         rememberTurn('user', userText);
@@ -289,7 +294,6 @@ async function generateReply(userText, isInternal) {
                 await new Promise(r => setTimeout(r, 900));
                 changeState('THINKING');
             }
-            // Foto: si la cámara se había parado (Android a veces la congela), se reabre una vez
             let img = await captureFrameWithRetry();
             if (!img) {
                 log('Visión: la cámara no da imagen.');
@@ -301,13 +305,10 @@ async function generateReply(userText, isInternal) {
             const visionSys = sys + (isSelfie
                 ? `\nACABAS DE HACER UNA FOTO: comenta lo que sale con gracia (1 frase), como si no entendieras bien cómo funciona una cámara.`
                 : `\nTE ESTÁ ENSEÑANDO ALGO A LA CÁMARA: di qué es, coméntalo con curiosidad de robot y termina con una pregunta. Si no lo ves claro, dilo.`);
-            // A la IA se le manda una copia pequeña (más rápida y sin problemas de tamaño)
             const small = captureOptimizedFrame(768, 0.8) || img;
             try { result = await chatVision(visionSys, history, userText, small); log(`Visión: ${result.model}`); }
             catch (e) {
                 log(`Visión no disponible: ${e.message}`);
-                // Sin análisis de imagen: celebrar la foto (selfie) o pedir que lo describa, sin
-                // dejar que la IA de texto diga "no tengo cámara"
                 clearTimeout(watchdog);
                 if (isSelfie) {
                     logSelfie(); setTimeout(hidePhoto, 8000);
@@ -357,7 +358,6 @@ async function generateReply(userText, isInternal) {
     }
 }
 
-// ── SALUDO al reconocer a alguien ─────────────────────────────────────────────
 export async function greetKnown(name, wasAway) {
     if (!isIdleLike() || RonState.isSilentMode) return;
     resetConversationIfNewPerson();
@@ -389,7 +389,6 @@ export async function greetKnown(name, wasAway) {
     }
 }
 
-// ── EMOCIONES: Ron nota cómo está y pregunta en consecuencia ─────────────────
 export async function emotionCheckIn(name, emotion) {
     if (!isIdleLike() || RonState.isSilentMode) return;
     const expr = { triste: 'sad', enfadado: 'fear', miedo: 'fear', sorprendido: 'surprise', feliz: 'happy' }[emotion] || 'neutral';
@@ -412,7 +411,6 @@ export async function emotionCheckIn(name, emotion) {
     }[emotion];
     if (!guide) return;
 
-    // Si viene de estar triste y ahora sonríe: misión cumplida
     if (emotion === 'feliz' && RonState.isCheeringUp) {
         RonState.isCheeringUp = false;
         setExpression('star');
@@ -446,7 +444,6 @@ export async function morningGreeting() {
     await speak(greetings[Math.floor(Math.random() * greetings.length)]);
 }
 
-// ── MODO ACOMPAÑANTE: un vistazo de vez en cuando mientras veis algo juntos ──
 let companionLoopTimer = null;
 export function startCompanionVisionLoop() {
     if (companionLoopTimer) return;
