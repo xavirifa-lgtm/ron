@@ -1,26 +1,18 @@
-// face-canvas.js — Cara de Ron dibujada con Canvas (diseño propio B-Bot, v27)
-// Ojos redondos negros con brillos, cejas que expresan la emoción y boca que se mueve
-// con el volumen REAL de la voz de Gemini (o con un oscilador si habla el navegador).
-// Todas las transiciones entre expresiones son suaves (interpolación por fotograma).
+// face-canvas.js — Cara de Ron dibujada con Canvas (estilo B-Bot de la película)
 import { RonState } from './core.js';
 import { voiceLevel } from './tts.js';
 
 let canvas, ctx, W, H;
 
-// ── Estado interno ────────────────────────────────────────────────────────
 let blinkP = 0, blinkDir = 0, blinkWait = 2500 + Math.random() * 3000;
 let eyeX = 0, eyeY = 0, eyeTargX = 0, eyeTargY = 0;
-let sacT = 2 + Math.random() * 3;           // micro-movimientos de mirada en reposo
+let sacT = 2 + Math.random() * 3;
 let expr = 'neutral';
-let ec = { r: 18, g: 20, b: 24 };           // color de ojos/boca/cejas
+let ec = { r: 18, g: 20, b: 24 };
 let t = 0, speakT = 0, danceT = 0, mouthOpen = 0;
 let glitches = [];
 let lastTs = 0;
 
-// Parámetros animables por expresión (se interpolan → transiciones suaves)
-//  eyeS: escala del ojo · eyeSY: aplastamiento vertical · browY: altura de cejas (+ = arriba)
-//  browTilt: inclinación (+ = extremo interior arriba, triste/preocupado) · smile: curva de boca
-//  mouthW: anchura de boca · blush: rubor de mejillas
 const TARGETS = {
     neutral:    { eyeS: 1.00, eyeSY: 1.00, browY: 0.00, browTilt: 0.00, smile: 0.55, mouthW: 1.00, blush: 0.15 },
     happy:      { eyeS: 1.00, eyeSY: 1.00, browY: 0.18, browTilt: -0.05, smile: 1.00, mouthW: 1.15, blush: 0.55 },
@@ -35,7 +27,6 @@ const TARGETS = {
 };
 const cur = { ...TARGETS.neutral };
 
-// ── Init ──────────────────────────────────────────────────────────────────
 export function initCanvas() {
     canvas = document.getElementById('ron-face');
     if (!canvas) return;
@@ -46,7 +37,7 @@ export function initCanvas() {
 }
 
 function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);   // nitidez en pantallas densas
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -70,7 +61,6 @@ function tick(dt) {
     const k = Math.min(1, dt * 9);
     for (const p in tg) cur[p] += (tg[p] - cur[p]) * k;
 
-    // Mirada: sigue la cara detectada; en reposo hace pequeños movimientos naturales
     sacT -= dt;
     if (sacT <= 0 && RonState.activityState !== 'SPEAKING') {
         sacT = 1.5 + Math.random() * 3.5;
@@ -79,7 +69,6 @@ function tick(dt) {
     eyeX += (eyeTargX - eyeX) * Math.min(1, dt * 12);
     eyeY += (eyeTargY - eyeY) * Math.min(1, dt * 12);
 
-    // Parpadeo (a veces doble)
     if (blinkDir === 0) {
         blinkWait -= dt * 1000;
         if (blinkWait <= 0) { blinkDir = 1; blinkWait = Math.random() < 0.2 ? 180 : 2200 + Math.random() * 4500; }
@@ -91,7 +80,6 @@ function tick(dt) {
         if (blinkP <= 0) blinkDir = 0;
     }
 
-    // Boca: volumen real de la voz de Gemini; si no hay, sílabas simuladas
     let target = 0;
     if (RonState.activityState === 'SPEAKING') {
         const lvl = voiceLevel();
@@ -104,13 +92,12 @@ function tick(dt) {
     glitches = glitches.filter(g => (g.life -= dt) > 0);
 }
 
-// ── Layout ────────────────────────────────────────────────────────────────
 function layout() {
-    const R = Math.min(W * 0.13, H * 0.15, 110);             // radio del ojo
-    const gap = Math.min(W * 0.62, R * 4.4);
+    const R = Math.min(W * 0.14, H * 0.16, 115);
+    const gap = Math.min(W * 0.58, R * 3.8);
     const bob = Math.sin(t * 1.4) * R * 0.04 + (isDance() ? Math.sin(danceT) * R * 0.18 : 0);
     const cy = H * 0.44 + bob;
-    return { R, lx: W / 2 - gap / 2, rx: W / 2 + gap / 2, cy, my: cy + R * 1.75, mw: R * 1.4 };
+    return { R, lx: W / 2 - gap / 2, rx: W / 2 + gap / 2, cy, my: cy + R * 1.8, mw: R * 1.25 };
 }
 
 function color(a = 1) {
@@ -118,7 +105,6 @@ function color(a = 1) {
     return `rgba(${ec.r},${ec.g},${ec.b},${a})`;
 }
 
-// ── Render ────────────────────────────────────────────────────────────────
 function render() {
     ctx.clearRect(0, 0, W, H);
     const L = layout();
@@ -143,7 +129,6 @@ function render() {
     }
 }
 
-// ── Mejillas ──────────────────────────────────────────────────────────────
 function drawBlush(L) {
     if (cur.blush < 0.03 || isNight()) return;
     for (const side of [-1, 1]) {
@@ -157,33 +142,27 @@ function drawBlush(L) {
     }
 }
 
-// ── Ojos ──────────────────────────────────────────────────────────────────
 function drawEye(cx, cy, R, e, side) {
     ctx.save();
     ctx.translate(cx, cy);
     const r = R * cur.eyeS;
 
     if (e === 'happy' || e === 'recognised') {
-        // Ojo sonriente: arco grueso hacia arriba (^)
         const lift = 1 - blinkP * 0.6;
-        ctx.lineWidth = r * 0.36; ctx.lineCap = 'round'; ctx.strokeStyle = color();
-        ctx.beginPath(); ctx.arc(0, r * 0.35, r * 0.72, Math.PI * 1.13, Math.PI * 1.87, false);
+        ctx.lineWidth = r * 0.42; ctx.lineCap = 'round'; ctx.strokeStyle = '#0d0d0d';
+        ctx.beginPath(); ctx.arc(0, r * 0.35, r * 0.68, Math.PI * 1.12, Math.PI * 1.88, false);
         ctx.save(); ctx.scale(1, lift); ctx.stroke(); ctx.restore();
     } else if (e === 'star') {
-        // Destello de 4 puntas que late
         const s = r * 1.15 * (1 + Math.sin(t * 7) * 0.06);
         ctx.rotate(Math.sin(t * 2) * 0.12);
         ctx.fillStyle = color();
         ctx.beginPath();
         for (let i = 0; i < 4; i++) {
             const a = i * Math.PI / 2 - Math.PI / 2;
-            const b = a + Math.PI / 4;
             ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
             ctx.quadraticCurveTo(0, 0, Math.cos(a + Math.PI / 2) * s, Math.sin(a + Math.PI / 2) * s);
-            void b;
         }
         ctx.closePath(); ctx.fill();
-        highlight(r * 0.55, false);
     } else if (e === 'glitch') {
         ctx.fillStyle = color();
         ctx.fillRect(-r, -r, r * 2, r * 2);
@@ -191,43 +170,39 @@ function drawEye(cx, cy, R, e, side) {
         for (let y = -r + 3; y < r; y += 6) if (Math.random() > 0.45) ctx.fillRect(-r, y, r * 2 * (0.3 + Math.random() * 0.7), 2.5);
         ctx.restore();
     } else {
-        // Ojo redondo normal con párpado (parpadeo y expresión)
         const sy = Math.max(cur.eyeSY * (1 - blinkP * 0.94), 0.05);
-        if (e === 'thinking') ctx.translate(side * r * 0.08, -r * 0.18);   // mira hacia arriba al pensar
         ctx.save(); ctx.scale(1, sy);
-        ctx.fillStyle = color();
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-        if (sy > 0.35) highlight(r, e === 'sad' || e === 'fear', sy);
-        if (e === 'sad') {    // lagrimita brillante en el borde inferior
-            ctx.fillStyle = 'rgba(255,255,255,0.9)';
-            ctx.beginPath(); ctx.ellipse(side * -r * 0.15, r * sy * 0.62, r * 0.16, r * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+        
+        ctx.fillStyle = '#0d0d0d';
+        ctx.beginPath();
+        const eyeW = r * 0.72;
+        const eyeH = r * 1.28;
+        const cornerRadius = eyeW * 0.5;
+        if (ctx.roundRect) {
+            ctx.roundRect(-eyeW / 2, -eyeH / 2, eyeW, eyeH, cornerRadius);
+        } else {
+            ctx.rect(-eyeW / 2, -eyeH / 2, eyeW, eyeH);
         }
+        ctx.fill();
+
+        if (sy > 0.35 && !isNight()) {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.beginPath();
+            ctx.ellipse(0, -eyeH * 0.38, eyeW * 0.45, eyeH * 0.12, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
     }
     ctx.restore();
 }
 
-// Brillos blancos que dan vida al ojo
-function highlight(r, wet = false, sy = 1) {
-    if (isNight()) return;
-    ctx.save();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.beginPath(); ctx.arc(-r * 0.32, -r * 0.34 * sy, r * (wet ? 0.32 : 0.27), 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.beginPath(); ctx.arc(r * 0.3, r * 0.28 * sy, r * 0.11, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-}
-
-// ── Cejas ─────────────────────────────────────────────────────────────────
 function drawBrow(cx, cy, R, e, side) {
-    if (e === 'flat') return;                          // dormido: sin cejas
+    if (e === 'flat') return;
     let y = cy - R * (1.45 + cur.browY * 0.6);
     let tilt = cur.browTilt;
     if (e === 'thinking') { tilt = side < 0 ? -0.25 : 0.3; y -= side > 0 ? R * 0.15 : 0; }
     if (e === 'glitch') y += (Math.random() - 0.5) * R * 0.15;
     const len = R * 1.05, th = R * 0.2;
-    // side=-1 (izquierdo): el extremo interior es el derecho. tilt + → interior arriba
     const ang = side < 0 ? -tilt * 0.6 : tilt * 0.6;
     ctx.save();
     ctx.translate(cx, y);
@@ -235,15 +210,14 @@ function drawBrow(cx, cy, R, e, side) {
     ctx.strokeStyle = color(); ctx.lineWidth = th; ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(-len / 2, th * 0.15);
-    ctx.quadraticCurveTo(0, -th * 0.55, len / 2, th * 0.15);   // ceja ligeramente arqueada
+    ctx.quadraticCurveTo(0, -th * 0.55, len / 2, th * 0.15);
     ctx.stroke();
     ctx.restore();
 }
 
-// ── Boca ──────────────────────────────────────────────────────────────────
 function drawMouth(cx, cy, w, e) {
     const hw = (w / 2) * cur.mouthW;
-    const smile = cur.smile * hw * 0.55;              // + sonrisa, − tristeza
+    const smile = cur.smile * hw * 0.55;
     const open = mouthOpen;
     ctx.save();
     ctx.strokeStyle = color(); ctx.fillStyle = color();
@@ -256,13 +230,11 @@ function drawMouth(cx, cy, w, e) {
     } else if (e === 'surprise' && open < 0.15) {
         ctx.beginPath(); ctx.ellipse(cx, cy + hw * 0.1, hw * 0.42, hw * 0.52, 0, 0, Math.PI * 2); ctx.fill();
     } else if (open < 0.08 && !(e === 'star' || e === 'recognised')) {
-        // Cerrada: curva simple
         ctx.beginPath();
-        ctx.moveTo(cx - hw, cy - smile * 0.25);
-        ctx.quadraticCurveTo(cx, cy + smile, cx + hw, cy - smile * 0.25);
+        ctx.moveTo(cx - hw * 0.9, cy - smile * 0.15);
+        ctx.quadraticCurveTo(cx, cy + smile * 0.9, cx + hw * 0.9, cy - smile * 0.15);
         ctx.stroke();
     } else {
-        // Abierta: forma de "D" (alegre) o invertida (triste) que se abre con la voz
         const o = (e === 'star' || e === 'recognised') ? Math.max(open, 0.45) : open;
         const depth = hw * (0.25 + o * 0.85);
         const top = cy - smile * 0.25;
@@ -278,7 +250,6 @@ function drawMouth(cx, cy, w, e) {
             ctx.quadraticCurveTo(cx, cy + depth * 0.7, cx - hw * 0.8, cy + depth * 0.4);
         }
         ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Lengua: solo si abre bastante y es alegre (detalle que da simpatía)
         if (o > 0.35 && cur.smile >= 0 && !isNight()) {
             ctx.save(); ctx.clip();
             ctx.fillStyle = 'rgba(255,120,140,0.9)'; ctx.shadowBlur = 0;
@@ -289,7 +260,6 @@ function drawMouth(cx, cy, w, e) {
     ctx.restore();
 }
 
-// ── API pública (la misma que antes: ui.js no cambia) ─────────────────────
 export function canvasSetExpression(exp) { expr = TARGETS[exp] ? exp : 'neutral'; }
 
 export function canvasSetEyeColor(hex) {
@@ -321,7 +291,6 @@ export function canvasAddGlitch(count = 4, dur = 0.15) {
     }
 }
 
-// Solo para la página de pruebas de expresiones
 export function _debugSet({ open, blink, time } = {}) {
     if (open !== undefined) mouthOpen = open;
     if (blink !== undefined) { blinkP = blink; blinkDir = 0; blinkWait = 1e9; }
