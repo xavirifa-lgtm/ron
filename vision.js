@@ -1,7 +1,11 @@
+// vision.js v28.4 — Reconocimiento Multi-Persona, Buffer Continuo de Caras,
+// Espejo de Expresiones en Vivo, Reacción "Peekaboo" y Cola BLE Protegida.
+
 import { RonState, log, changeState, markProactive, isIdleLike } from './core.js';
 import { setExpression, showMoodBubble, celebrateFaceRecognition } from './ui.js';
 import { speak } from './speech.js';
 import { updateSadnessTracking } from './defender.js';
+import * as Sounds from './sounds.js';
 
 export async function loadModels() {
     const URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
@@ -17,7 +21,6 @@ export async function loadModels() {
 export async function startCamera() {
     let stream;
     try {
-        // Forzar cámara FRONTAL (exact) — para selfies y para reconocerte a ti, no lo de detrás
         stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: { exact: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } }
         });
@@ -29,29 +32,30 @@ export async function startCamera() {
     }
     const v = RonState.ui.video;
     v.srcObject = stream;
-    // BUG FIX v26: antes se esperaba 'loadedmetadata' DESPUÉS de play(), cuando ese
-    // evento ya había ocurrido → la promesa no se resolvía nunca y el bucle de
-    // reconocimiento facial no llegaba a arrancar. Ahora se espera antes, y solo si hace falta.
     if (v.readyState < 1) {
         await new Promise(res => v.addEventListener('loadedmetadata', res, { once: true }));
     }
     await v.play();
 }
 
-// ── Parámetros de reconocimiento ─────────────────────────────────────────────
-// Distancia euclídea de face-api: menor = más parecido.
-const MATCH_MAX     = 0.58;   // por debajo: es esa persona
-const UNKNOWN_MIN   = 0.64;   // por encima: es alguien desconocido
-const SAMPLE_MAX    = 0.42;   // solo coincidencias MUY seguras añaden muestras
-const VOTE_WINDOW   = 6;      // frames (~5 s) para decidir identidad
-const GREET_AFTER_MS = 120000;// saludar si no la veía desde hace 2 min
+const MATCH_MAX      = 0.58;
+const UNKNOWN_MIN    = 0.64;
+const SAMPLE_MAX     = 0.40;
+const VOTE_WINDOW    = 5;
+const GREET_AFTER_MS = 120000;
 
 let lastCalloutTime = 0;
 let calloutCount    = 0;
-const votes = [];             // últimas decisiones: nombre | '?' (desconocido) | '~' (dudoso)
+const votes = [];
 let lastPersistSeen = 0;
 let lastReactedEmotion = 'neutral';
-const emotionCooldown = {};   // emoción → timestamp hasta el que no se repite
+const emotionCooldown = {};
+let continuousFaceMs = 0;
+let lastNagTime = 0;
+let lastGroupGreetMs = 0;
+let lastPeekabooMs = 0;
+let lastMirrorMs = 0;
+let prevFaceRatio = 0;
 
 function largestFace(detections) {
     return detections.reduce((a, b) =>
@@ -65,9 +69,9 @@ function vote(v) {
     votes.forEach(x => counts[x] = (counts[x] || 0) + 1);
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (!top) return null;
-    if (top[0] === '?' && top[1] >= 5) return '?';
+    if (top[0] === '?' && top[1] >= 4) return '?';
     if (!['?', '~', '-'].includes(top[0]) && top[1] >= 3) return top[0];
-    return null;   // aún no hay decisión estable
+    return null;
 }
 
 function lastSeenOf(name) {
@@ -82,7 +86,8 @@ function markSeen(name, now) {
     RonState.userLastSeen[name] = now;
     if (now - lastPersistSeen > 30000 && RonState.userStats[name]) {
         RonState.userStats[name].lastSeenTs = now;
-        localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+        try { localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats)); } catch (e) {}
+        import('./identity.js').then(id => id.vaultSet && id.vaultSet('ron_user_stats', RonState.userStats)).catch(() => {});
         lastPersistSeen = now;
     }
 }
@@ -99,16 +104,26 @@ export function startVisionLoop() {
                 .withFaceExpressions()
                 .withFaceDescriptors();
 
-            if (RonState.activityState === 'NIGHT') return;   // dormido: no saluda ni pregunta
+            if (RonState.activityState === 'NIGHT') return;
             const now  = Date.now();
-            const d    = detections.length ? largestFace(detections) : null;   // la persona más cercana
+            const d    = detections.length ? largestFace(detections) : null;
             const vw   = RonState.ui.video.videoWidth || 640;
             const id   = await import('./identity.js');
 
-            if (d) updateEmotion(d);
+            if (d) {
+                updateEmotion(d);
+                continuousFaceMs += 800;
+                if (continuousFaceMs > 35 * 60000 && (now - lastNagTime > 20 * 60000) && isIdleLike()) {
+                    lastNagTime = now;
+                    nagToMove();
+                }
+            } else {
+                continuousFaceMs = 0;
+                prevFaceRatio = 0;
+            }
+
             updateSadnessTracking(RonState.currentEmotion, !!d);
 
-            // Aprendizaje de nombre en curso: recoger muestras de ESA cara y vigilar caducidad
             if (RonState.nameFlow) {
                 if (id.nameFlowExpired()) { log("Aprendizaje de nombre caducado."); id.cancelNameFlow(true); }
                 else if (RonState.isLearningFace && d) {
@@ -119,7 +134,6 @@ export function startVisionLoop() {
                 return;
             }
 
-            // Escondite
             if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
                 if (d) { changeState('IDLE'); setExpression('star'); speak("¡TE PILLÉ! ¡Bip bip! ¡Eres increíble escondiéndote!"); }
                 return;
@@ -127,7 +141,6 @@ export function startVisionLoop() {
 
             if (!d) { handleNoFace(); return; }
 
-            // Despertar: NO saludar genérico; el saludo por nombre llega al reconocerla
             if (RonState.activityState === 'SLEEPING') {
                 changeState('IDLE');
                 setExpression('happy');
@@ -136,13 +149,58 @@ export function startVisionLoop() {
             }
 
             RonState.framesWithoutFace = 0;
-            RonState.faceSeenTs = now;          // está delante: se le puede hablar sin decir "Ron"
+            RonState.faceSeenTs = now;
             calloutCount = 0;
-            RonState.lastDescriptor = Array.from(d.descriptor);
+            const curDesc = Array.from(d.descriptor);
+            RonState.lastDescriptor = curDesc;
+
             trackFace(d);
             import('./follow.js').then(f => f.updateFollow(d.detection.box, vw, RonState.ui.video.videoHeight)).catch(() => {});
 
-            // ── Reconocimiento con votación (evita confundir por un frame malo) ──
+            const busy = ['THINKING','SPEAKING','LISTENING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY','CHALLENGE'].includes(RonState.activityState)
+                || now - (RonState.lastHeardTs || 0) < 5000;
+
+            const curRatio = d.detection.box.width / vw;
+            if (!busy && isIdleLike() && !RonState.isSilentMode && prevFaceRatio > 0.12 && curRatio > 0.44 && (curRatio - prevFaceRatio > 0.14) && (now - lastPeekabooMs > 90000)) {
+                lastPeekabooMs = now;
+                markProactive();
+                setExpression('surprise');
+                Sounds.playBeep(1200, 'sine', 0.08, 0.08);
+                sendMove('T70\n');
+                const who = RonState.currentUser || 'humana';
+                speak(`¡Uy, qué susto, ${who}! ¡Estás tan cerca que te veo hasta las pestañas! ¡Bip!`);
+                prevFaceRatio = curRatio;
+                return;
+            }
+            prevFaceRatio = curRatio;
+
+            if (detections.length >= 2 && !busy && isIdleLike() && !RonState.isSilentMode && (now - lastGroupGreetMs > 240000)) {
+                const knownPresent = [];
+                let unknownCount = 0;
+                for (const det of detections) {
+                    const m = id.matchFace(det.descriptor);
+                    if (m && m.distance < MATCH_MAX) {
+                        if (!knownPresent.includes(m.label)) knownPresent.push(m.label);
+                    } else if (!m || m.distance >= UNKNOWN_MIN) {
+                        unknownCount++;
+                    }
+                }
+                if (knownPresent.length >= 2) {
+                    lastGroupGreetMs = now;
+                    markProactive();
+                    setExpression('star');
+                    Sounds.playFaceRecognitionSound();
+                    speak(`¡Bip bip! ¡Mis sensores ven a ${knownPresent.slice(0, 2).join(' y a ')} juntos! ¡El equipo al completo!`);
+                    return;
+                } else if (knownPresent.length === 1 && unknownCount >= 1 && (now > (RonState.learnCooldownUntil || 0))) {
+                    lastGroupGreetMs = now;
+                    markProactive();
+                    setExpression('happy');
+                    speak(`¡Bip! ¡Hola ${knownPresent[0]}! Veo que tienes compañía. ¿Cómo se llama la persona que está contigo?`);
+                    return;
+                }
+            }
+
             const best = id.matchFace(d.descriptor);
             let v = '?';
             if (best && best.distance < MATCH_MAX) v = best.label;
@@ -150,12 +208,13 @@ export function startVisionLoop() {
             const stable = vote(v);
             if (best) log(`Cara: ${best.label} d=${best.distance.toFixed(3)} → ${stable || '…'}`);
 
-            // Muestras extra solo con coincidencia MUY segura (no contamina con otras personas)
-            if (best && best.distance < SAMPLE_MAX && Math.random() < 0.15) id.addSamples(best.label, [Array.from(d.descriptor)]);
+            if (v === '?') {
+                if (!Array.isArray(RonState.recentUnknownDescriptors)) RonState.recentUnknownDescriptors = [];
+                RonState.recentUnknownDescriptors.push(curDesc);
+                if (RonState.recentUnknownDescriptors.length > 10) RonState.recentUnknownDescriptors.shift();
+            }
 
-            // "Ocupado" también si ella está hablando o acaba de hablar: no pisarle la frase con un saludo
-            const busy = ['THINKING','SPEAKING','LISTENING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY'].includes(RonState.activityState)
-                || now - (RonState.lastHeardTs || 0) < 5000;
+            if (best && best.distance < SAMPLE_MAX && Math.random() < 0.15) id.addSamples(best.label, [curDesc]);
 
             if (stable && stable !== '?') {
                 const name = stable;
@@ -166,23 +225,41 @@ export function startVisionLoop() {
                     markSeen(name, now);
                     markProactive();
                     celebrateFaceRecognition();
+                    Sounds.playFaceRecognitionSound();
                     import('./ai.js').then(ai => ai.greetKnown(name, absentLong)).catch(() => {});
                 } else {
                     markSeen(name, now);
                 }
-                if (!busy) maybeReactToEmotion(name, now);
+                if (!busy) {
+                    if (d.expressions?.surprised > 0.78 && (now - lastMirrorMs > 60000) && isIdleLike()) {
+                        lastMirrorMs = now;
+                        setExpression('surprise');
+                        Sounds.playBeep(980, 'sine', 0.07, 0.06);
+                    }
+                    maybeReactToEmotion(name, now);
+                }
             } else if (stable === '?') {
-                // Persona desconocida y cerca → preguntar su nombre (con enfriamiento)
-                const bigEnough = d.detection.box.width / vw > 0.12;
+                const bigEnough = curRatio > 0.12;
                 if (!busy && bigEnough && !RonState.isSilentMode && now > (RonState.learnCooldownUntil || 0)) {
                     RonState.currentUser = null;
                     votes.length = 0;
-                    id.startLearning(Array.from(d.descriptor));
+                    id.startLearning(curDesc);
                 }
             }
         } catch (e) { console.error("Error visión:", e); }
         finally { processing = false; }
     }, 800);
+}
+
+function nagToMove() {
+    const name = RonState.currentUser || 'amiga';
+    setExpression('thinking');
+    const nags = [
+        `¡Bip! ${name}, ¡llevas mucho rato quieta! Mis sensores exigen que te levantes a dar tres saltos.`,
+        `¡Alerta de sofá! ${name}, ¡o te mueves un poco o mis circuitos se oxidan de verte quieta!`,
+        `¡Bop! Mis cálculos dicen que toca estirar las piernas. ¿Hacemos una carrera rápida hasta la puerta?`
+    ];
+    speak(nags[Math.floor(Math.random() * nags.length)]);
 }
 
 function handleNoFace() {
@@ -198,17 +275,20 @@ function handleNoFace() {
         if (calloutCount === 0 && f >= 45)      { calloutCount = 1; lastCalloutTime = Date.now(); callOutToUser(RonState.currentUser); }
         else if (calloutCount === 1 && f >= 110) { calloutCount = 2; lastCalloutTime = Date.now(); callOutToUser(RonState.currentUser); }
     }
+    if (f === 140) {
+        setExpression('flat');
+        sendMove('T115\n');
+    }
     if (f > 188) { changeState('SLEEPING'); setExpression('flat'); log("Ron dormido."); }
 }
 
-// Emoción estable + nadie hablando hace un rato → Ron pregunta (vía IA, con contexto)
 const EMO_COOLDOWN = { feliz: 360000, triste: 180000, enfadado: 180000, miedo: 180000, sorprendido: 120000 };
 function maybeReactToEmotion(name, now) {
     const emo = RonState.currentEmotion;
     if (emo === 'neutral') { lastReactedEmotion = 'neutral'; return; }
     if (emo === lastReactedEmotion) return;
     if (RonState.isSilentMode || !isIdleLike()) return;
-    if (now - (RonState.lastInteractionTs || 0) < 6000) return;  // está hablando: las caras al hablar engañan
+    if (now - (RonState.lastInteractionTs || 0) < 6000) return;
     if (now < (emotionCooldown[emo] || 0)) return;
     lastReactedEmotion = emo;
     emotionCooldown[emo] = now + (EMO_COOLDOWN[emo] || 180000);
@@ -217,7 +297,6 @@ function maybeReactToEmotion(name, now) {
     import('./ai.js').then(ai => ai.emotionCheckIn(name, emo)).catch(() => {});
 }
 
-// ── Emoción de la cara (suavizada) ───────────────────────────────────────────
 const emotionBuffer = [];
 const EMOTION_MIN_CONFIDENCE = 0.38;
 function updateEmotion(detection) {
@@ -226,10 +305,8 @@ function updateEmotion(detection) {
     for (const [e, sc] of Object.entries(exp)) { if (sc > maxS) { maxS = sc; maxE = e; } }
     const dict = { happy:'feliz', sad:'triste', angry:'enfadado', surprised:'sorprendido', fearful:'miedo', neutral:'neutral', disgusted:'neutral' };
     let emotion = dict[maxE] || 'neutral';
-    // Las negativas exigen más confianza: una cara concentrada se lee como triste/enfadada
     const minConf = { triste: 0.55, enfadado: 0.55, miedo: 0.55, feliz: 0.40, sorprendido: 0.45 };
     if (emotion !== 'neutral' && maxS < (minConf[emotion] ?? EMOTION_MIN_CONFIDENCE)) emotion = 'neutral';
-    // Suavizado: últimos 5 frames (~4 s); una emoción solo cuenta si aparece en 3+
     emotionBuffer.push(emotion);
     if (emotionBuffer.length > 5) emotionBuffer.shift();
     const counts = {};
@@ -238,7 +315,6 @@ function updateEmotion(detection) {
     RonState.currentEmotion = (n >= 3) ? dominant : 'neutral';
 }
 
-// Ron la echa de menos y la llama por su nombre (comportamiento de la peli)
 async function callOutToUser(name) {
     if (!isIdleLike() || RonState.isSilentMode) return;
     markProactive();
@@ -253,7 +329,6 @@ async function callOutToUser(name) {
 }
 
 export function captureOptimizedFrame(MAX = 1280, quality = 0.92) {
-    // Guard: si la cámara no está disponible (o el vídeo se ha parado), devolver null
     const vid = RonState.ui.video;
     if (!vid || !vid.videoWidth || vid.readyState < 2) return null;
     const tr = vid.srcObject && vid.srcObject.getVideoTracks && vid.srcObject.getVideoTracks()[0];
@@ -269,7 +344,6 @@ export function captureOptimizedFrame(MAX = 1280, quality = 0.92) {
     return canvas.toDataURL('image/jpeg', quality);
 }
 
-// Reabrir la cámara si Android la ha parado (p. ej. tras volver de segundo plano)
 export async function restartCamera() {
     const vid = RonState.ui.video;
     try { vid && vid.srcObject && vid.srcObject.getTracks().forEach(t => t.stop()); } catch (e) {}
@@ -294,18 +368,35 @@ export async function connectBLE() {
     } catch (e) { log(`Error BLE: ${e.message}`); }
 }
 
+let bleBusy = false;
+let bleQueue = [];
+
 export async function sendMove(cmd) {
     if (!RonState.ble.isConnected || !RonState.ble.characteristic) return;
-    try {
-        await RonState.ble.characteristic.writeValue(new TextEncoder().encode(cmd));
-    } catch (e) {
-        log("BLE desconectado: " + e.message);
-        RonState.ble.isConnected = false;
-        import('./ui.js').then(ui => ui.setChestIcon('warning'));
+    bleQueue.push(cmd);
+    if (bleQueue.length > 5) bleQueue.shift();
+    if (bleBusy) return;
+    bleBusy = true;
+    while (bleQueue.length > 0 && RonState.ble.isConnected) {
+        const nextCmd = bleQueue.shift();
+        try {
+            const data = new TextEncoder().encode(nextCmd);
+            if (RonState.ble.characteristic.writeValueWithoutResponse) {
+                await RonState.ble.characteristic.writeValueWithoutResponse(data);
+            } else {
+                await RonState.ble.characteristic.writeValue(data);
+            }
+        } catch (e) {
+            if (!/in progress/i.test(e.message)) {
+                log("BLE desconectado: " + e.message);
+                RonState.ble.isConnected = false;
+                import('./ui.js').then(ui => ui.setChestIcon('warning'));
+            }
+        }
     }
+    bleBusy = false;
 }
 
-// Envía velocidades de motor al ESP-32 para el modo seguir: M<izq>,<der>
 export function sendDrive(left, right) {
     const l = Math.max(-255, Math.min(255, Math.round(left  || 0)));
     const r = Math.max(-255, Math.min(255, Math.round(right || 0)));
@@ -318,17 +409,20 @@ function trackFace(detection) {
     const errY = ((box.y + box.height / 2) / RonState.ui.video.videoHeight) - 0.5;
     import('./ui.js').then(ui => ui.shiftEyes(errX, errY));
     if (!RonState.ble.isConnected) return;
-    if (Math.abs(errX) > 0.1) {
-        RonState.ble.lastPan = Math.max(0, Math.min(180, RonState.ble.lastPan - errX * 20));
-        sendMove(`P${Math.round(RonState.ble.lastPan)}\n`);
-    }
+    
+    import('./follow.js').then(f => {
+        if (!f.isFollowing() && Math.abs(errX) > 0.1) {
+            RonState.ble.lastPan = Math.max(0, Math.min(180, RonState.ble.lastPan - errX * 20));
+            sendMove(`P${Math.round(RonState.ble.lastPan)}\n`);
+        }
+    }).catch(() => {});
+
     if (Math.abs(errY) > 0.1) {
         RonState.ble.lastTilt = Math.max(0, Math.min(180, RonState.ble.lastTilt + errY * 20));
         sendMove(`T${Math.round(RonState.ble.lastTilt)}\n`);
     }
 }
 
-// Movimiento autónomo BLE
 setInterval(() => {
     if (isIdleLike() && RonState.ble.isConnected) {
         const pan  = Math.floor(Math.random() * 60) + 60;

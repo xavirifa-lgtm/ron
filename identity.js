@@ -1,17 +1,13 @@
-// identity.js — Caras conocidas y nombres, guardados SOLO en este dispositivo.
-// Flujo: cara desconocida estable → Ron pregunta el nombre → lo CONFIRMA ("¿Te
-// llamas Lucía?") → guarda varias muestras de la cara bajo ese nombre.
-// Cambios respecto a versiones anteriores:
-//  - Ya no borra caras de otras personas por parecerse (hermanos, padres).
-//  - Ya no renombra a nadie porque diga "soy un dinosaurio" jugando.
-//  - Si nadie contesta, el modo aprendizaje caduca y Ron sigue funcionando.
+// identity.js — Caras conocidas y nombres blindados con Doble Bóveda (localStorage + IndexedDB)
+// y sistema de Anclas Permanentes (8 muestras fijas + 10 adaptativas por persona).
 
 import { RonState, log } from './core.js';
 import { speak } from './speech.js';
 
 const FACES_KEY = 'ron_known_faces';
-const MAX_SAMPLES = 15;
-const LEARN_TIMEOUT_MS = 30000;
+const ANCHOR_SAMPLES = 8;
+const ADAPTIVE_SAMPLES = 10;
+const LEARN_TIMEOUT_MS = 35000;
 const MAX_ATTEMPTS = 3;
 
 const NOT_NAMES = new Set(['si','sí','no','vale','hola','adios','adiós','nada','ron','bip','que','qué',
@@ -19,11 +15,68 @@ const NOT_NAMES = new Set(['si','sí','no','vale','hola','adios','adiós','nada'
     'robot','niña','niño','amiga','amigo','papa','papá','mama','mamá','gracias','perdon','perdón']);
 const STOP_AFTER = new Set(['y','de','del','que','tengo','años','vivo','soy','estoy','porque','pero','con','en']);
 
-function save() { localStorage.setItem(FACES_KEY, JSON.stringify(RonState.knownFaces)); }
+// ── BÓVEDA PERMANENTE INDEXEDDB ───────────────────────────────────────────────
+const DB_NAME = 'RonPermanentVault';
+const STORE_NAME = 'kv';
+
+function openVault() {
+    return new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) return reject(new Error('Sin IndexedDB'));
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function vaultSet(key, val) {
+    try {
+        const db = await openVault();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(val, key);
+    } catch (e) {}
+}
+
+export async function vaultGet(key) {
+    try {
+        const db = await openVault();
+        return await new Promise((resolve) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const req = tx.objectStore(STORE_NAME).get(key);
+            req.onsuccess = () => resolve(req.result ?? null);
+            req.onerror = () => resolve(null);
+        });
+    } catch (e) { return null; }
+}
+
+(async function restoreFacesFromVault() {
+    try {
+        const savedFaces = await vaultGet(FACES_KEY);
+        if (Array.isArray(savedFaces) && savedFaces.length > (RonState.knownFaces?.length || 0)) {
+            RonState.knownFaces = savedFaces;
+            localStorage.setItem(FACES_KEY, JSON.stringify(savedFaces));
+            log(`Bóveda: restauradas ${savedFaces.length} caras conocidas.`);
+        } else if (RonState.knownFaces?.length > 0) {
+            await vaultSet(FACES_KEY, RonState.knownFaces);
+        }
+        const savedStats = await vaultGet('ron_user_stats');
+        if (savedStats && Object.keys(savedStats).length > Object.keys(RonState.userStats || {}).length) {
+            RonState.userStats = savedStats;
+            localStorage.setItem('ron_user_stats', JSON.stringify(savedStats));
+        }
+    } catch (e) {}
+})();
+
+function save() {
+    try { localStorage.setItem(FACES_KEY, JSON.stringify(RonState.knownFaces)); } catch (e) {}
+    vaultSet(FACES_KEY, RonState.knownFaces);
+}
 
 function cap(w) { return w.charAt(0).toUpperCase() + w.slice(1); }
 
-// Extrae un nombre de lo que dijo la niña. Devuelve null si no hay uno claro.
 export function extractName(text) {
     if (!text) return null;
     const t = text.toLowerCase().replace(/[.,!¡?¿;:"]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -35,7 +88,7 @@ export function extractName(text) {
         if (m[2] && !STOP_AFTER.has(m[2]) && !NOT_NAMES.has(m[2]) && t.split(' ').length <= 6) words.push(m[2]);
     } else {
         const ws = t.split(' ').filter(w => w && !NOT_NAMES.has(w));
-        if (ws.length === 0 || ws.length > 2) return null;   // frase larga sin "me llamo": no es un nombre
+        if (ws.length === 0 || ws.length > 2) return null;
         words = ws;
     }
     words = words.filter(w => /^[a-záéíóúüñ]{2,15}$/.test(w) && !NOT_NAMES.has(w));
@@ -43,19 +96,18 @@ export function extractName(text) {
     return words.map(cap).join(' ');
 }
 
-// Ojo: \b no funciona tras letras acentuadas ("sí"), por eso el fin de palabra es explícito
 const END = String.raw`(?=$|[\s,.!¡?¿])`;
 const YES_RE = new RegExp(String.raw`^\s*(s[ií]|claro|vale|eso|exacto|correcto|afirmativo)` + END, 'i');
 const NO_RE  = new RegExp(String.raw`^\s*(no|nop|que no)` + END, 'i');
 export function isYes(text) { return YES_RE.test(text); }
 export function isNo(text)  { return NO_RE.test(text); }
 
-// Busca la mejor coincidencia sin modificar nada. { label, distance } o null.
 export function matchFace(descriptor) {
     if (!RonState.knownFaces.length || typeof faceapi === 'undefined') return null;
     let best = null;
     for (const f of RonState.knownFaces) {
-        for (const dd of (f.descriptors || [f.descriptor])) {
+        const allDescriptors = f.descriptors || (f.descriptor ? [f.descriptor] : []);
+        for (const dd of allDescriptors) {
             const d = faceapi.euclideanDistance(descriptor, new Float32Array(dd));
             if (!best || d < best.distance) best = { label: f.label, distance: d };
         }
@@ -63,43 +115,62 @@ export function matchFace(descriptor) {
     return best;
 }
 
-// Añade muestras a una persona (por nombre). Nunca borra a otras personas.
 export function addSamples(name, descriptors) {
     let entry = RonState.knownFaces.find(f => f.label.toLowerCase() === name.toLowerCase());
-    if (!entry) { entry = { label: name, descriptors: [] }; RonState.knownFaces.push(entry); }
-    entry.descriptors = [...(entry.descriptors || (entry.descriptor ? [entry.descriptor] : [])), ...descriptors].slice(-MAX_SAMPLES);
+    if (!entry) {
+        entry = { label: name, anchors: [], adaptive: [], descriptors: [] };
+        RonState.knownFaces.push(entry);
+    }
+    if (!Array.isArray(entry.anchors)) {
+        const existing = entry.descriptors || (entry.descriptor ? [entry.descriptor] : []);
+        entry.anchors = existing.slice(0, ANCHOR_SAMPLES);
+        entry.adaptive = existing.slice(ANCHOR_SAMPLES, ANCHOR_SAMPLES + ADAPTIVE_SAMPLES);
+    }
+
+    for (const desc of descriptors) {
+        if (entry.anchors.length < ANCHOR_SAMPLES) {
+            entry.anchors.push(desc);
+        } else {
+            entry.adaptive.push(desc);
+            if (entry.adaptive.length > ADAPTIVE_SAMPLES) entry.adaptive.shift();
+        }
+    }
+
+    entry.descriptors = [...entry.anchors, ...entry.adaptive];
     delete entry.descriptor;
     save();
-    log(`Cara de ${name}: ${entry.descriptors.length} muestras.`);
+    log(`Cara de ${entry.label}: ${entry.anchors.length} fijas + ${entry.adaptive.length} adaptativas.`);
 }
 
 function ensureStats(name) {
     if (!RonState.userStats[name]) RonState.userStats[name] = { likes: [], dislikes: [], history: [] };
-    localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats));
+    try { localStorage.setItem('ron_user_stats', JSON.stringify(RonState.userStats)); } catch (e) {}
+    vaultSet('ron_user_stats', RonState.userStats);
 }
 
-// ── Flujo de aprendizaje ─────────────────────────────────────────────────────
 export function startLearning(firstDescriptor) {
     RonState.isLearningFace = true;
-    RonState.learningDescriptors = firstDescriptor ? [firstDescriptor] : [];
+    const pool = (RonState.recentUnknownDescriptors || []).slice(-6);
+    if (firstDescriptor) pool.push(firstDescriptor);
+    RonState.learningDescriptors = pool;
     RonState.nameFlow = { mode: 'learn', pending: null, attempts: 0, startedAt: Date.now() };
     import('./ui.js').then(ui => ui.startScanningUI());
     speak("¡Bip bip! ¡Un humano nuevo! Yo soy Ron. ¿Cómo te llamas?");
 }
 
-// Corrección: "no me llamo Ana, me llamo Lucía" con alguien ya reconocido
 export function startRename(newName) {
     RonState.nameFlow = { mode: 'rename', pending: newName, attempts: 0, startedAt: Date.now() };
     return speak(`¡Bip! ¿Entonces te llamas ${newName}? Dime sí o no.`);
 }
 
-// Ella dice su nombre sin que Ron pregunte ("me llamo Lucía") y Ron aún no la conoce
 export function volunteerName(name, descriptor) {
     RonState.isLearningFace = true;
-    RonState.learningDescriptors = descriptor ? [descriptor] : [];
+    const pool = (RonState.recentUnknownDescriptors || []).slice(-6);
+    if (descriptor) pool.push(descriptor);
+    RonState.learningDescriptors = pool;
     RonState.nameFlow = { mode: 'learn', pending: name, attempts: 0, startedAt: Date.now() };
     import('./ui.js').then(ui => ui.startScanningUI());
-    return speak(`¡Bip! ¿Te llamas ${name}? Dime sí o no, y mírame para que guarde tu cara.`);
+    return speak(`¡Bip! ¿Te llamas ${name}? Dime sí o no, y mírame un segundo para guardar tu cara para siempre.`);
 }
 
 export function cancelNameFlow(sayIt = false) {
@@ -107,26 +178,23 @@ export function cancelNameFlow(sayIt = false) {
     RonState.isLearningFace = false;
     RonState.learningDescriptors = [];
     RonState.nameFlow = null;
-    RonState.learnCooldownUntil = Date.now() + 120000;   // no volver a preguntar en 2 min
+    RonState.learnCooldownUntil = Date.now() + 90000;
     import('./ui.js').then(ui => ui.stopScanningUI());
-    if (sayIt && wasLearning) speak("¡Vale! Ya me dirás tu nombre luego. ¡Bip!");
+    if (sayIt && wasLearning) speak("¡Vale! Cuando quieras me dices cómo te llamas. ¡Bip!");
 }
 
 export function nameFlowExpired() {
     return RonState.nameFlow && (Date.now() - RonState.nameFlow.startedAt > LEARN_TIMEOUT_MS);
 }
 
-// Respuesta de la niña mientras Ron está aprendiendo o confirmando un nombre
 export async function handleNameReply(text) {
     const flow = RonState.nameFlow;
     if (!flow) return false;
-    flow.startedAt = Date.now(); // está contestando: no caducar
+    flow.startedAt = Date.now();
 
     if (flow.pending && isYes(text)) { await commitName(flow.pending); return true; }
 
     const heard = extractName(text);
-    // Frase larga que no es un nombre (quiere jugar, cuenta algo...): no forzar,
-    // dejar el nombre para luego y que Ron conteste con normalidad.
     const words = text.trim().split(/\s+/).length;
     if (!heard && !isNo(text) && words > 4) {
         log('Nombre: frase larga sin nombre → se deja para luego.');
@@ -136,7 +204,7 @@ export async function handleNameReply(text) {
     if (flow.pending && isNo(text) && !heard) {
         flow.pending = null;
         flow.attempts++;
-        if (flow.attempts >= MAX_ATTEMPTS) { cancelNameFlow(); await speak("¡Bip! Mis oídos fallan hoy. ¡Me lo dices luego!"); return true; }
+        if (flow.attempts >= MAX_ATTEMPTS) { cancelNameFlow(); await speak("¡Bip! Mis micrófonos fallan hoy. ¡Me lo dices en un ratito!"); return true; }
         await speak("¡Uy, error de audio! ¿Cómo te llamas? Dímelo despacito.");
         return true;
     }
@@ -146,7 +214,7 @@ export async function handleNameReply(text) {
         return true;
     }
     flow.attempts++;
-    if (flow.attempts >= MAX_ATTEMPTS) { cancelNameFlow(); await speak("¡Bip! No lo he pillado. ¡Ya me lo dirás luego!"); return true; }
+    if (flow.attempts >= MAX_ATTEMPTS) { cancelNameFlow(); await speak("¡Bip! No lo he pillado bien. ¡Luego me lo cuentas!"); return true; }
     await speak(flow.pending ? `¿Sí o no? ¿Te llamas ${flow.pending}?` : "¡Bip! No lo he entendido. Di: me llamo, y tu nombre.");
     return true;
 }
@@ -154,12 +222,15 @@ export async function handleNameReply(text) {
 async function commitName(name) {
     const flow = RonState.nameFlow;
     if (flow.mode === 'learn') {
-        const samples = (RonState.learningDescriptors || []).slice(-10);
+        const samples = [
+            ...(RonState.recentUnknownDescriptors || []),
+            ...(RonState.learningDescriptors || [])
+        ].slice(-12);
         if (!samples.length && RonState.lastDescriptor) samples.push(RonState.lastDescriptor);
-        if (!samples.length) { cancelNameFlow(); return speak("¡Bip! No pude ver bien tu cara. ¡Mírame y lo intentamos otra vez!"); }
+        if (!samples.length) { cancelNameRef: cancelNameFlow(); return speak("¡Bip! No pude ver bien tu cara. ¡Mírame de frente y lo intentamos otra vez!"); }
         addSamples(name, samples);
+        RonState.recentUnknownDescriptors = [];
     } else {
-        // Renombrar a la persona actual: mover sus muestras y su memoria
         const old = RonState.currentUser;
         const entry = RonState.knownFaces.find(f => f.label === old);
         if (entry && !RonState.knownFaces.find(f => f.label === name)) entry.label = name;
@@ -182,6 +253,6 @@ async function commitName(name) {
     import('./ui.js').then(ui => ui.stopScanningUI());
     import('./sounds.js').then(s => s.playMemorySaveSound && s.playMemorySaveSound()).catch(() => {});
     return speak(flow.mode === 'learn'
-        ? `¡Bip! ¡Encantado, ${name}! Tu cara está guardada en mi memoria. La próxima vez te reconoceré.`
+        ? `¡Bip bip! ¡Encantado, ${name}! Ya tengo tu cara grabada para siempre en mi memoria blindada.`
         : `¡Hecho! A partir de ahora eres ${name}. ¡Bip!`);
 }

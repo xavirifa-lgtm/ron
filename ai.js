@@ -1,9 +1,9 @@
-// ai.js — El cerebro de Ron (v28.2 con Iniciativa Visual Espontánea)
+// ai.js — El cerebro de Ron (v28.2)
 import { RonState, RonConfig, log, changeState, markProactive, rememberTurn, isIdleLike, minutesToBedtime } from './core.js';
 import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto, flash } from './ui.js';
 import { speak } from './speech.js';
 import * as Sounds from './sounds.js';
-import { startMathGame, startReadingGame, startHideAndSeek } from './games.js';
+import { startMathGame, startReadingGame, startHideAndSeek, startChallenge, stopChallenge, stopAnyGame } from './games.js';
 import { captureOptimizedFrame } from './vision.js';
 import { logSelfie, logMusic, getDiarySummary } from './diary.js';
 import { detectFriendshipLesson, ronReceivesRule, getRules } from './friendship.js';
@@ -23,10 +23,9 @@ export async function triggerSpontaneous(prompt) {
     return handleInput(prompt, true);
 }
 
-// NUEVO: Iniciativa espontánea basada en lo que ve la cámara del entorno
 export async function triggerVisualProactive() {
     if (!isIdleLike() || RonState.isSilentMode) return;
-    if (minutesToBedtime() <= (RonConfig.warnMinutes || 10)) return;   // cerca de la hora de dormir, no
+    if (minutesToBedtime() <= (RonConfig.warnMinutes || 10)) return;
     const img = captureOptimizedFrame(640, 0.8);
     if (!img) return;
 
@@ -43,14 +42,15 @@ export async function triggerVisualProactive() {
         if (isIdleLike()) {
             setExpression('star');
             await sayGenerated(text);
-        } else setExpression('neutral');
+        } else {
+            setExpression('neutral');
+        }
     } catch (e) {
         log(`Error iniciativa visual: ${e.message}`);
         setExpression('neutral');
     }
 }
 
-// ── PROMPT ────────────────────────────────────────────────────────────────────
 function buildSystemPrompt(userKey, known) {
     const facts = known ? getFacts(userKey) : [];
     const hour  = new Date().getHours();
@@ -81,8 +81,8 @@ CÓMO HABLAS (se lee en voz alta):
 - Si no sabes algo, dilo: "¡Bip! Ese archivo no está en mis descargas". Nunca te inventes datos.
 
 JUEGOS QUE DIRIGES TÚ HABLANDO (sigue las reglas turno a turno hasta que ella quiera parar):
+- Adivina el animal o adivina el número: piensas uno en secreto y solo respondes sí o no a sus preguntas.
 - Adivinanzas infantiles: tú propones una y esperas su respuesta; si falla, das una pista.
-- Adivina el animal: piensas un animal en secreto y solo respondes sí o no a sus preguntas.
 - Veo veo, trabalenguas, Simón dice, inventar un cuento juntos (una frase cada uno).
 - Juegos con pizarra que ella activa diciendo: "jugar a sumas", "leer juntos", "escondite", "cuéntame un cuento".
 - Para escribir algo en la pizarra usa [SHOW: texto corto].
@@ -97,7 +97,7 @@ SEGURIDAD — POR ENCIMA DE TODO LO DEMÁS:
 DATOS FIJOS: te creó Xavi ("¡el mejor programador del universo conocido!"). Tu nombre completo es "B-Bot Unidad Ron, identificador 5-IND", pero te llaman Ron. A veces preguntas por Absalom; si te explican que es Barney, te pones súper contento.`;
 
     const rules = getRules();
-    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}. ${r}`).join(' ')}`;
+    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}.${r}`).join(' ')}`;
     const taught = getRecentFacts(6);
     if (taught.length) sys += `\nCOSAS QUE TE HAN ENSEÑADO: ${taught.join('. ')}.`;
     const diary = getDiarySummary(4);
@@ -116,7 +116,7 @@ async function sayGenerated(resp) {
     const music = resp.match(/\[MUSIC:\s*(.*?)\]/);
     if (music && playYTMusic(music[1])) logMusic(music[1]);
 
-    let spoken = resp.replace(/\[(MUSIC|SHOW|RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
+    let spoken = resp.replace(/\[(MUSIC\vert{}SHOW\vert{}RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
     if (!(await isChildSafe(spoken))) spoken = safeDeflection();
     await speak(spoken);
 }
@@ -149,6 +149,12 @@ export async function handleInput(userText, isInternal = false) {
     }
     if (RonState.activityState === 'MATH_GAME')    { rememberTurn('user', userText); return (await import('./games.js')).handleMathAnswer(userText); }
     if (RonState.activityState === 'READING_GAME') { rememberTurn('user', userText); return (await import('./games.js')).handleReadingAnswer(userText); }
+    if (RonState.activityState === 'CHALLENGE') {
+        if (/para(r)?|stop|cancela(r)?|termina(r)?/i.test(userText)) {
+            rememberTurn('user', userText);
+            return stopChallenge();
+        }
+    }
     if (RonState.activityState === 'STORY') {
         if (RonState.storyPendingNextChapter) {
             const games = await import('./games.js');
@@ -160,7 +166,7 @@ export async function handleInput(userText, isInternal = false) {
         }
         return;
     }
-    if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING') return;
+    if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING' && RonState.activityState !== 'CHALLENGE') return;
 
     const t = userText.toLowerCase();
 
@@ -190,6 +196,16 @@ export async function handleInput(userText, isInternal = false) {
 
         const wantsPlay = /\bjug(ar|amos|uemos|á)|\bjuego\b|vamos a|quiero|hacemos|practic|empez|a jugar|toca\b/.test(t);
 
+        // RETOS KT1 (Temporizador / Pomodoro infantil)
+        const matchReto = t.match(/(?:reto|tiempo|modo recoger|modo deberes)(?:\s+(?:de\s+)?(\d+)\s*minutos?)?/i);
+        if (matchReto && (t.includes('reto') || t.includes('modo') || t.includes('pomodoro'))) {
+            rememberTurn('user', userText);
+            const numMatch = t.match(/\d+/);
+            const mins = numMatch ? parseInt(numMatch[0], 10) : (t.includes('recoger') ? 10 : 15);
+            const act = t.includes('deberes') ? 'hacer deberes' : t.includes('recoger') ? 'recoger los juguetes' : 'el reto';
+            return startChallenge(mins, act);
+        }
+
         if (/s[íi]gueme|ven conmigo|ven aqu[íi]|ven ron|acomp[áa][ñn]ame/.test(t)) {
             rememberTurn('user', userText);
             if (startFollow()) { setExpression('star'); return speak("¡Bip bip! ¡Voy contigo! ¡Arrancando motores!"); }
@@ -200,8 +216,8 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Vale! Me quedo aquí contigo. ¡Bip!");
         }
 
-        if (/(suma|resta|matem[áa]tic|n[úu]mero|sumar|restar|calcul)/.test(t) &&
-            (wantsPlay || /sumas|restas|a sumar|a restar/.test(t))) {
+        // Pizarra de sumas y restas: requiere decir claramente sumas, restas o calcular
+        if ((/(suma(s)?|resta(s)?|sumar|restar|calcul)/.test(t) && wantsPlay) || /a sumar|a restar|juego de sumas/.test(t)) {
             rememberTurn('user', userText); addBond('game'); return startMathGame();
         }
         if (/leer juntos|vamos a leer|quiero leer|a leer|leer contigo|juego de lectura/.test(t) ||
@@ -215,9 +231,9 @@ export async function handleInput(userText, isInternal = false) {
             rememberTurn('user', userText); addBond('story');
             return (await import('./games.js')).startPersonalizedStory();
         }
-        if (/para el juego|salir del juego|cierra la pizarra|quita la pizarra/.test(t)) {
-            RonState.ui.gamePanel.classList.add('hidden');
-            return speak("¡Bip! Pizarra cerrada.");
+        if (/para el juego|salir del juego|cierra la pizarra|quita la pizarra|para el reto/.test(t)) {
+            stopAnyGame();
+            return speak("¡Bip! Juego terminado.");
         }
 
         const rule = detectFriendshipLesson(userText);

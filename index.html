@@ -15,7 +15,7 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=28.3">
+    <link rel="stylesheet" href="styles.css?v=28.4">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,7 +31,7 @@
         
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v28.3 [OFFLINE] - ARRANCAR SISTEMA MANUAL</button>
+            <button id="power-btn">B-BOT v28.4 - ARRANCAR SISTEMA</button>
         </div>
 
         <!-- Botones de Control -->
@@ -83,9 +83,21 @@
                 </label><br><br>
                 <label><input type="checkbox" id="captions-input"> Subtítulos (lo que oye y lo que dice)</label><br>
                 <label><input type="checkbox" id="diag-input"> Diagnóstico en pantalla (registro técnico)</label><br><br>
+
+                <!-- Copia de seguridad de caras y recuerdos -->
+                <div style="border-top:1px solid #ddd;padding-top:10px;margin-bottom:10px">
+                    <strong style="font-size:13px">Memoria Permanente (Caras y Recuerdos)</strong>
+                    <div style="display:flex;gap:8px;margin-top:6px">
+                        <button id="export-memory-btn" type="button" style="background:#0a6aa8;font-size:13px;padding:8px">💾 Exportar</button>
+                        <button id="import-memory-btn" type="button" style="background:#4b5563;font-size:13px;padding:8px">📂 Restaurar</button>
+                        <input type="file" id="import-memory-file" accept=".json" style="display:none">
+                    </div>
+                    <div id="backup-status" style="font-size:12px;color:#0a6aa8;margin-top:4px"></div>
+                </div>
+
                 <div id="usage-info" style="font-size:12px;color:#555;white-space:pre-line"></div><br>
                 <button id="save-api-key">Guardar</button>
-                <button id="close-settings-btn" type="button">Cerrar</button>
+                <button id="close-settings-btn" type="button" style="margin-top:6px;background:#6b7280">Cerrar</button>
             </div>
         </div>
 
@@ -146,7 +158,54 @@
         <!-- Wrapper de cara -->
         <div id="face-wrapper"></div>
     </div>
-    <script>const CACHE_NAME = 'ron-bot-v28.3';</script>
-    <script type="module" src="app.js?v=28.3"></script>
+    <script>
+        const CACHE_NAME = 'ron-bot-v28.4';
+        // Lógica de exportación e importación de caras y recuerdos
+        window.addEventListener('DOMContentLoaded', () => {
+            const expBtn = document.getElementById('export-memory-btn');
+            const impBtn = document.getElementById('import-memory-btn');
+            const impFile = document.getElementById('import-memory-file');
+            const status = document.getElementById('backup-status');
+            const KEYS = ['ron_known_faces', 'ron_memory_v1', 'ron_user_stats', 'ron_diary', 'ron_bond', 'ron_friendship_rules', 'ron_learnt_facts'];
+
+            if (expBtn) expBtn.onclick = () => {
+                const dump = { ts: new Date().toISOString(), data: {} };
+                KEYS.forEach(k => {
+                    try { dump.data[k] = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
+                });
+                const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `memoria_ron_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                status.textContent = '✅ Copia de seguridad descargada.';
+            };
+
+            if (impBtn && impFile) {
+                impBtn.onclick = () => impFile.click();
+                impFile.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    try {
+                        const text = await file.text();
+                        const parsed = JSON.parse(text);
+                        if (!parsed || !parsed.data) throw new Error('Formato inválido');
+                        const idMod = await import('./identity.js');
+                        for (const k of KEYS) {
+                            if (parsed.data[k] !== undefined && parsed.data[k] !== null) {
+                                localStorage.setItem(k, JSON.stringify(parsed.data[k]));
+                                if (idMod.vaultSet) await idMod.vaultSet(k, parsed.data[k]);
+                            }
+                        }
+                        status.textContent = '✅ Memoria restaurada. Recargando…';
+                        setTimeout(() => location.reload(), 1200);
+                    } catch (err) {
+                        status.textContent = '❌ Error al restaurar: ' + err.message;
+                    }
+                };
+            }
+        });
+    </script>
+    <script type="module" src="app.js?v=28.4"></script>
 </body>
 </html>

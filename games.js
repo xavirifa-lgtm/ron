@@ -10,8 +10,47 @@ let currentAnswer  = null;
 let targetPhrase   = null;
 let storyChapter   = 0;
 let storyChapters  = [];
+let challengeTimer = null;
 
 const userName = () => RonState.currentUser || 'amiga';
+
+// ── CERRAR CUALQUIER JUEGO LIMPIAMENTE (Evita congelar Ron al pulsar la X) ───
+export function stopAnyGame() {
+    if (RonState.ui?.gamePanel) RonState.ui.gamePanel.classList.add('hidden');
+    currentAnswer = null;
+    targetPhrase = null;
+    if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
+    if (['MATH_GAME', 'READING_GAME', 'CHALLENGE'].includes(RonState.activityState)) {
+        changeState('IDLE');
+        setExpression('happy');
+    }
+}
+
+// ── RETOS INFANTILES / POMODORO (Estilo KT1) ─────────────────────────────────
+export async function startChallenge(minutes = 10, activity = "recoger") {
+    if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
+    
+    changeState('CHALLENGE');
+    setExpression('thinking');
+    logGame(`reto de ${minutes} min para ${activity}`);
+
+    await speak(`¡Bip! Reto B-Bot activado. Tienes ${minutes} minutos para ${activity}. ¡Mis sensores te vigilan! ¡A por ello!`);
+    if (RonState.activityState === 'IDLE') changeState('CHALLENGE');
+
+    challengeTimer = setTimeout(async () => {
+        challengeTimer = null;
+        changeState('IDLE');
+        setExpression('star');
+        await speak(`¡TIEMPO! ¡Bip bip bip! ¡Reto de ${activity} completado! ¡Eres una campeona, ${userName()}!`);
+    }, minutes * 60000);
+}
+
+export async function stopChallenge() {
+    if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
+    changeState('IDLE');
+    setExpression('happy');
+    await speak("¡Reto cancelado! Descanso de circuitos activado. ¡Bip!");
+}
 
 // ── SUMAS Y RESTAS ────────────────────────────────────────────────────────────
 export async function startMathGame() {
@@ -35,14 +74,12 @@ export async function startMathGame() {
         `<span style="font-size:clamp(16px,4.5vw,26px);line-height:1.9">` +
         `${e.repeat(Math.min(n1, 12))} ${isSum ? '+' : '−'} ${e.repeat(Math.min(n2, 12))}</span>`;
     await speak(`¡Bip! Reto matemático: ¿Cuánto es ${n1} ${isSum ? 'más' : 'menos'} ${n2}?`);
-    // Restaurar estado MATH_GAME tras el speak (que lo pone IDLE)
     if (RonState.activityState === 'IDLE') changeState('MATH_GAME');
 }
 
 export async function handleMathAnswer(text) {
-    if (/salir|para(r)?|stop/i.test(text)) {
-        RonState.ui.gamePanel.classList.add('hidden');
-        changeState('IDLE');
+    if (/salir|para(r)?|stop|cierra|cancel/i.test(text)) {
+        stopAnyGame();
         return speak("¡Entendido! Guardando la pizarra.");
     }
     const t = text.toLowerCase();
@@ -81,17 +118,14 @@ export async function startReadingGame() {
     RonState.ui.gamePanel.classList.remove('hidden');
     RonState.ui.gameText.innerText = targetPhrase;
     await speak(`¡Bip! ¡A leer! ¿Qué pone aquí, ${userName()}?`);
-    // Restaurar estado READING_GAME tras el speak
     if (RonState.activityState === 'IDLE') changeState('READING_GAME');
 }
 
 export async function handleReadingAnswer(text) {
-    if (/salir|para(r)?|stop/i.test(text)) {
-        RonState.ui.gamePanel.classList.add('hidden');
-        changeState('IDLE');
+    if (/salir|para(r)?|stop|cierra|cancel/i.test(text)) {
+        stopAnyGame();
         return speak("Vale, guardo los libros en mi disco duro.");
     }
-    // "Ahora tú" / "léelo tú" / "te toca" → Ron lee EL MISMO texto en voz alta
     if (/ahora t(ú|u)|lee(lo)? t(ú|u)|te toca|léelo|leelo|lee tú|tu turno/i.test(text)) {
         setExpression('star');
         await speak(`¡Bip! Me toca. Dice así: ${targetPhrase}.`);
@@ -166,7 +200,6 @@ export async function startPersonalizedStory() {
             { models: MODELS.chat, maxTokens: 1400, temperature: 0.9, timeoutMs: 15000 });
         storyChapters = storyRaw.split('|||').map(s => s.trim()).filter(Boolean);
         if (storyChapters.length === 0) throw new Error('Historia vacía');
-        // SEGURIDAD: el cuento entero pasa por el clasificador antes de leerlo
         if (!(await isChildSafe(storyRaw))) {
             resetStory(); changeState('IDLE');
             return speak('¡Bip! A ese cuento se le han cruzado los cables. ¡Te cuento otro mejor en un ratito!');
@@ -174,7 +207,6 @@ export async function startPersonalizedStory() {
 
         storyChapter = 0;
         await speak(`¡Bip bip! ¡Hora de la historia! "La gran aventura de ${name} y Ron". ¡Empezamos!`);
-        // Restaurar STORY tras el speak de intro (que lo pone IDLE)
         if (RonState.activityState === 'IDLE') changeState('STORY');
         await narrateNextChapter();
 
@@ -200,12 +232,10 @@ async function narrateNextChapter() {
     showStoryPanel(chapter);
     storyChapter++;
     await speak(chapter);
-    // Restaurar STORY tras el speak (que lo pone IDLE)
     if (RonState.activityState === 'IDLE') changeState('STORY');
 
     if (storyChapter < storyChapters.length) {
         await speak("¿Continuamos con el siguiente capítulo?");
-        // Restaurar STORY de nuevo para que handleInput lo detecte correctamente
         if (RonState.activityState === 'IDLE') changeState('STORY');
         RonState.storyPendingNextChapter = true;
     } else {
@@ -225,7 +255,6 @@ export async function continueStory() {
     return true;
 }
 
-// ── PREGUNTA DEL DÍA ─────────────────────────────────────────────────────────
 export function doMorningCheck() {
     const name = userName();
     const questions = [

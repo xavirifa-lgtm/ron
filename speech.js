@@ -3,25 +3,24 @@ import { setExpression, updateMouth, shiftEyes, showCaption } from './ui.js';
 import { handleInput } from './ai.js';
 import * as Sounds from './sounds.js';
 
-// ── Configuración del bucle de conversación (v28) ────────────────────────────
-const MIC_ALLOWED_STATES = ['IDLE', 'SLEEPING', 'STORY', 'MATH_GAME', 'READING_GAME', 'NIGHT'];
-const RESTART_DELAY = 700;    // ms de silencio tras hablar antes de re-escuchar (anti-eco)
-const CONV_WINDOW   = 25000;  // ms de "charla libre" sin decir "Ron" tras cada respuesta
-const FACE_RECENT   = 6000;   // si la ha visto hace menos de esto, está delante: no hace falta "Ron"
-const ECHO_GUARD_MS = 400;    // ignorar lo "oído" justo tras terminar de hablar (era su propia voz)
-// "Ron" y cómo lo escribe a veces el reconocimiento con voz de niña
+// Incluye CHALLENGE en los estados donde el micro tiene permiso para escuchar
+const MIC_ALLOWED_STATES = ['IDLE', 'SLEEPING', 'STORY', 'MATH_GAME', 'READING_GAME', 'CHALLENGE', 'NIGHT'];
+const RESTART_DELAY = 700;
+const CONV_WINDOW   = 25000;
+const FACE_RECENT   = 6000;
+const ECHO_GUARD_MS = 400;
 const WAKE_RE = /\b(ron|rom|ronn|rhon|roon|ronnie|rony|ronny)\b/i;
 
 let convTimeout        = null;
 let activeMouthInterval = null;
-let listenTimer        = null;  // single-flight: solo un re-arranque de micro pendiente a la vez
+let listenTimer        = null;
 let recognitionStarting = false;
 let recognitionStartTs  = 0;
 let quickEndCount       = 0;
-let speakSeq           = 0;     // turno: si llega otra frase, gana la última
+let speakSeq           = 0;
 let ttsWatchdog        = null;
 let ttsKeepAlive       = null;
-let currentFinish      = null;  // para poder cortar a Ron (tocar la pantalla)
+let currentFinish      = null;
 
 function scheduleListen(delay = RESTART_DELAY) {
     if (listenTimer) { clearTimeout(listenTimer); listenTimer = null; }
@@ -34,15 +33,15 @@ function faceIsHere() {
     return Date.now() - (RonState.faceSeenTs || 0) < FACE_RECENT;
 }
 
-// ¿Hace falta decir "Ron" ahora mismo?
 export function needsWakeWord() {
     const st = RonState.activityState;
     if (['MATH_GAME', 'READING_GAME'].includes(st)) return false;
     if (st === 'STORY' && RonState.storyPendingNextChapter) return false;
+    if (st === 'CHALLENGE') return true;
     if (RonState.nameFlow) return false;
-    if (st === 'NIGHT' || st === 'SLEEPING') return true;          // dormido: solo con su nombre
-    if (!RonState.isWaitingForWakeWord) return false;               // ventana de charla abierta
-    if ((RonConfig.listenMode || 'cara') === 'cara' && faceIsHere()) return false;  // la tiene delante
+    if (st === 'NIGHT' || st === 'SLEEPING') return true;
+    if (!RonState.isWaitingForWakeWord) return false;
+    if ((RonConfig.listenMode || 'cara') === 'cara' && faceIsHere()) return false;
     return true;
 }
 
@@ -55,7 +54,6 @@ function openConversationWindow() {
     }, CONV_WINDOW);
 }
 
-// "¿Sí?" sin palabras: pitido ascendente + ojos abiertos. Instantáneo (no gasta voz).
 function attentionChirp() {
     Sounds.playBeep(660, 'sine', 0.07, 0.06);
     setTimeout(() => Sounds.playBeep(990, 'sine', 0.09, 0.06), 90);
@@ -64,7 +62,6 @@ function attentionChirp() {
     showCaption('Te escucho…', 'hint');
 }
 
-// ── Lo que se ha oído (venga del navegador o de Whisper) ─────────────────────
 export function processTranscript(rawText) {
     let text = (rawText || '').trim();
     if (!text || text.length < 2) return;
@@ -72,7 +69,6 @@ export function processTranscript(rawText) {
     RonState.lastHeardTs = Date.now();
     log(`Oído: ${text}`);
 
-    // Respuesta al nombre: tiene prioridad y no necesita palabra clave
     if (RonState.nameFlow) {
         showCaption(text, 'heard');
         if (convTimeout) clearTimeout(convTimeout);
@@ -87,10 +83,9 @@ export function processTranscript(rawText) {
     const saidRon = WAKE_RE.test(t);
     if (needsWakeWord()) {
         if (!saidRon) {
-            showCaption(text, 'ignored');                    // lo ha oído, pero espera "Ron"
+            showCaption(text, 'ignored');
             return;
         }
-        // Dormido por no ver a nadie: "Ron" lo despierta
         if (RonState.activityState === 'SLEEPING') {
             changeState('IDLE');
             setExpression('happy');
@@ -105,7 +100,7 @@ export function processTranscript(rawText) {
         changeState('IDLE');
     }
     showCaption(text, 'heard');
-    if (!['IDLE', 'LISTENING', 'STORY', 'MATH_GAME', 'READING_GAME', 'NIGHT'].includes(RonState.activityState)) {
+    if (!['IDLE', 'LISTENING', 'STORY', 'MATH_GAME', 'READING_GAME', 'CHALLENGE', 'NIGHT'].includes(RonState.activityState)) {
         log(`(Ignorado: Ron estaba ${RonState.activityState})`);
         return;
     }
@@ -113,21 +108,20 @@ export function processTranscript(rawText) {
     handleInput(text);
 }
 
-// ── Motor de escucha ─────────────────────────────────────────────────────────
 async function useWhisper() {
     try { return (await import('./whisper.js')).whisperAvailable(); } catch (e) { return false; }
 }
 
 export function startListening() {
     if (!RonState.isMicEnabled) return;
-    if (RonState.activityState === 'LISTENING') return;          // ya está oyendo
+    if (RonState.activityState === 'LISTENING') return;
     if (!MIC_ALLOWED_STATES.includes(RonState.activityState)) { scheduleListen(500); return; }
     if (window.speechSynthesis && window.speechSynthesis.speaking) { scheduleListen(300); return; }
     if (RonState.isRecognitionActive || recognitionStarting) return;
     useWhisper().then(async whisper => {
         if (whisper) {
             const w = await import('./whisper.js');
-            if (await w.ensureWhisper()) return;          // Whisper escucha de forma continua
+            if (await w.ensureWhisper()) return;
         } else {
             import('./whisper.js').then(w => w.stopWhisper()).catch(() => {});
         }
@@ -144,7 +138,7 @@ function startBrowserRecognition() {
     recognitionStarting = true;
     RonState.recognition = new SpeechRecognition();
     RonState.recognition.lang           = 'es-ES';
-    RonState.recognition.continuous     = false;  // más estable en Android Chrome
+    RonState.recognition.continuous     = false;
     RonState.recognition.interimResults = false;
     RonState.recognition.maxAlternatives = 3;
 
@@ -160,7 +154,6 @@ function startBrowserRecognition() {
         let text = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
             if (!e.results[i].isFinal) continue;
-            // Si alguna alternativa contiene "Ron", usar esa (el navegador a veces oye "bon", "son"...)
             const alts = Array.from(e.results[i]).map(a => a.transcript);
             text += (needsWakeWord() && alts.find(a => WAKE_RE.test(a))) || alts[0];
         }
@@ -200,7 +193,6 @@ function startBrowserRecognition() {
     }
 }
 
-// ── Cortar a Ron (tocar la pantalla mientras habla) ──────────────────────────
 export function interruptSpeaking() {
     if (RonState.activityState !== 'SPEAKING' || !currentFinish) return false;
     speakSeq++;
@@ -212,7 +204,6 @@ export function interruptSpeaking() {
     return true;
 }
 
-// ── Voz del navegador como promesa (con vigilante y keep-alive de Android) ───
 function browserSay(text) {
     return new Promise(resolve => {
         if (!window.speechSynthesis) return resolve();
@@ -249,7 +240,6 @@ function playClip(tts, clip) {
     });
 }
 
-// ── HABLAR ────────────────────────────────────────────────────────────────────
 export function speak(text, { remember = true } = {}) {
     if (remember && text && String(text).trim()) rememberTurn('assistant', text);
     return new Promise(async (resolve) => {
@@ -262,8 +252,6 @@ export function speak(text, { remember = true } = {}) {
         text = String(text).trim();
         const mySeq = ++speakSeq;
 
-        // Voz de Gemini: pedir la PRIMERA frase y el resto en paralelo; empezar a hablar
-        // en cuanto llega la primera. Si falla o tarda → voz del navegador.
         let tts = null, first = null, restP = null, parts = [text];
         try {
             tts = await import('./tts.js');
@@ -289,13 +277,14 @@ export function speak(text, { remember = true } = {}) {
         if (RonState.recognition) { try { RonState.recognition.abort(); } catch (e) {} }
         if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
 
-        const restState = RonState.activityState === 'NIGHT' ? 'NIGHT' : 'IDLE';
+        const restState = RonState.activityState === 'NIGHT' ? 'NIGHT' 
+                        : RonState.activityState === 'CHALLENGE' ? 'CHALLENGE' 
+                        : 'IDLE';
         changeState('SPEAKING');
         if (restState === 'NIGHT') setExpression('flat');
         else if (!['happy', 'star', 'sad', 'surprise', 'recognised'].includes(RonState.expressionState)) setExpression('neutral');
         showCaption(text, 'ron');
 
-        // Compatibilidad con la boca SVG antigua (oculta) y mirada viva al hablar
         activeMouthInterval = setInterval(() => {
             if (RonState.activityState === 'SPEAKING') shiftEyes();
             else { clearInterval(activeMouthInterval); activeMouthInterval = null; }
@@ -313,7 +302,7 @@ export function speak(text, { remember = true } = {}) {
             RonState.lastSpeakEndTs = Date.now();
             changeState(restState);
             if (restState === 'NIGHT') { RonState.isWaitingForWakeWord = true; setExpression('flat'); }
-            else openConversationWindow();       // tras hablar, se le puede contestar sin "Ron"
+            else openConversationWindow();
             scheduleListen(RESTART_DELAY);
             resolve();
         };
@@ -328,7 +317,7 @@ export function speak(text, { remember = true } = {}) {
                 const rest = await restP;
                 if (mySeq !== speakSeq || finished) return resolve();
                 if (rest) await playClip(tts, rest);
-                else await browserSay(parts[1]);      // el resto no llegó: que no se quede a medias
+                else await browserSay(parts[1]);
             }
         } else {
             await browserSay(text);

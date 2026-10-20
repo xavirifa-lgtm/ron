@@ -4,6 +4,7 @@ import {
     initCanvas, canvasSetExpression, canvasSetEyeColor,
     canvasShiftEyes, canvasTriggerBlink, canvasAddGlitch
 } from './face-canvas.js';
+import { stopAnyGame } from './games.js';
 
 let glitchInterval  = null;
 let moodBubbleTimer = null;
@@ -37,11 +38,10 @@ export function initUI() {
         moodBubble:     document.getElementById('mood-bubble'),
         faceWrapper:    document.getElementById('face-wrapper'),
         closeGameBtn:   document.getElementById('close-game-btn'),
-        // status-dot y battery-fill eliminados — sin barra de estado visible
     };
 
     if (RonState.ui.closeGameBtn) {
-        RonState.ui.closeGameBtn.onclick = () => RonState.ui.gamePanel.classList.add('hidden');
+        RonState.ui.closeGameBtn.onclick = () => stopAnyGame();
     }
 
     initCanvas();
@@ -83,8 +83,6 @@ export function handleStateChange(newState) {
     }
 }
 
-// ── Subtítulos: lo que Ron ha oído y lo que dice ─────────────────────────────
-// kind: 'heard' (te ha entendido) · 'ignored' (oído, pero esperaba "Ron") · 'ron' · 'hint'
 let captionTimer = null;
 export function showCaption(text, kind = 'heard') {
     const el = document.getElementById('caption');
@@ -109,7 +107,6 @@ export function showCaption(text, kind = 'heard') {
     captionTimer = setTimeout(() => el.classList.remove('show'), kind === 'ron' ? Math.min(9000, 2500 + short.length * 60) : 4500);
 }
 
-// Anillo del botón del micro que se mueve con el volumen (para ver que te oye)
 setInterval(async () => {
     const btn = RonState.ui?.micToggleBtn;
     if (!btn) return;
@@ -137,7 +134,6 @@ export function shiftEyes(errX = null, errY = null) {
             if (el) el.style.transform = `translate(${mx}px,${my}px)`;
         });
     }
-    // (Se quitó el beep aleatorio al mover los ojos — añadía ruido innecesario)
 }
 
 export function setChestIcon(type, value = null) {
@@ -228,7 +224,6 @@ export function setChestIcon(type, value = null) {
     }
 }
 
-// ── Expresiones ───────────────────────────────────────────────────────────────
 export function setExpression(exp) {
     RonState.expressionState = exp;
     canvasSetExpression(exp);
@@ -286,10 +281,37 @@ export function setExpression(exp) {
             setChestIcon('face');
             break;
     }
+
+    // Gestos físicos automáticos con los servos Pan/Tilt
+    import('./vision.js').then(({ sendMove }) => {
+        if (!RonState.ble?.isConnected) return;
+        switch (exp) {
+            case 'happy':
+            case 'star':
+            case 'recognised':
+                sendMove(`T${Math.min(130, (RonState.ble.lastTilt || 90) - 12)}\n`);
+                break;
+            case 'sad':
+                sendMove(`T125\n`);
+                break;
+            case 'thinking':
+                sendMove(`T70\n`);
+                sendMove(`P${(RonState.ble.lastPan || 90) + (Math.random() > 0.5 ? 18 : -18)}\n`);
+                break;
+            case 'surprise':
+                sendMove(`P90\n`);
+                sendMove(`T85\n`);
+                break;
+            case 'flat':
+                sendMove(`P90\n`);
+                sendMove(`T130\n`);
+                break;
+        }
+    }).catch(() => {});
 }
 
 export function startDanceMode() {
-    if (danceInterval) return false; // ya bailando
+    if (danceInterval) return false;
     document.body.classList.add('dance-mode');
     setChestIcon('music');
     setExpression('star');
@@ -337,28 +359,21 @@ export function startBlinkCycle() {
     blink();
 }
 
-// Glitches durante IDLE — sutiles, espaciados y CASI SIEMPRE SILENCIOSOS.
-// Antes sonaba cada 8–30s (estática/zumbidos/beeps) y hacía que Ron pareciera roto.
-// Ahora: cada 25–70s, visual la mayoría de veces, sonido muy de vez en cuando y suave.
 export function startIdleGlitchLoop() {
     const tick = () => {
-        const delay = 25000 + Math.random() * 45000; // cada 25–70 s
+        const delay = 25000 + Math.random() * 45000;
         setTimeout(() => {
-            // Solo si Ron está tranquilo y sin hablar/escuchar activamente
             if (RonState.activityState !== 'IDLE' || RonState.isRecognitionActive) { tick(); return; }
             const r = Math.random();
-            const withSound = Math.random() < 0.15; // sonido solo 15% de las veces
+            const withSound = Math.random() < 0.15;
 
             if (r < 0.5) {
-                // Parpadeo glitch doble (visual)
                 canvasTriggerBlink();
                 setTimeout(() => canvasTriggerBlink(), 90);
             } else if (r < 0.8) {
-                // Micro-estática visual breve
                 canvasAddGlitch(4, 0.10);
                 if (withSound) import('./sounds.js').then(s => s.playStatic(0.05, 0.03));
             } else {
-                // Temblor de ojos leve
                 canvasShiftEyes((Math.random() - 0.5) * 0.3, 0);
                 setTimeout(() => canvasShiftEyes(0, 0), 100);
             }
@@ -435,7 +450,6 @@ export function stopScanningUI() {
 }
 
 export function checkNightMode() {
-    // Cara nocturna desde 1 h antes de dormir hasta la hora de despertar
     if (isBedtime() || minutesToBedtime() <= 60) {
         document.body.classList.add('night-mode');
         setEyeColor('#00d4ff');
