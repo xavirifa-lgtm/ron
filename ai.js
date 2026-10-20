@@ -1,4 +1,4 @@
-// ai.js — El cerebro de Ron (v28.2)
+// ai.js — El cerebro de Ron (v28.5 - Sin errores de regex + Re-escaneo facial por voz)
 import { RonState, RonConfig, log, changeState, markProactive, rememberTurn, isIdleLike, minutesToBedtime } from './core.js';
 import { triggerSafetyGlitch, setExpression, showPhoto, hidePhoto, flash } from './ui.js';
 import { speak } from './speech.js';
@@ -116,7 +116,13 @@ async function sayGenerated(resp) {
     const music = resp.match(/\[MUSIC:\s*(.*?)\]/);
     if (music && playYTMusic(music[1])) logMusic(music[1]);
 
-    let spoken = resp.replace(/\[(MUSIC\vert{}SHOW\vert{}RENAME):.*?\]/g, '').replace(/[*_#]/g, '').trim() || '¡Bip!';
+    // Limpieza segura de etiquetas sin usar expresiones corruptas
+    let spoken = resp
+        .replace(/\[MUSIC:.*?\]/gi, '')
+        .replace(/\[SHOW:.*?\]/gi, '')
+        .replace(/\[RENAME:.*?\]/gi, '')
+        .replace(/[*_#]/g, '')
+        .trim() || '¡Bip!';
     if (!(await isChildSafe(spoken))) spoken = safeDeflection();
     await speak(spoken);
 }
@@ -180,23 +186,38 @@ export async function handleInput(userText, isInternal = false) {
             return speak(concernResponse(RonState.currentUser));
         }
 
-        const nameMatch = t.match(/(?:me llamo|mi nombre es)\s+([a-záéíóúüñ]+)/);
+        // Comando por voz para re-escanear o aprender la cara en el acto: "aprende mi cara" / "no me reconoces"
+        if (/aprende (bien )?mi cara|escan[ée]a(me| mi cara)|no me reconoces|recuerda mi cara/.test(t)) {
+            rememberTurn('user', userText);
+            const id = await import('./identity.js');
+            if (RonState.currentUser && RonState.lastDescriptor) {
+                id.addSamples(RonState.currentUser, [RonState.lastDescriptor]);
+                setExpression('star');
+                return speak(`¡Bip bip! He actualizado el escáner con tu cara ahora mismo, ${RonState.currentUser}. ¡Cada vez te veo mejor!`);
+            }
+            return id.startLearning(RonState.lastDescriptor);
+        }
+
+        // Presentación o cambio de nombre ("me llamo X" / "soy X")
+        const nameMatch = t.match(/(?:me llamo|mi nombre es|soy)\s+([a-záéíóúüñ]+)/);
         if (nameMatch) {
             const id = await import('./identity.js');
             const name = id.extractName(userText);
-            if (name && RonState.currentUser && name.toLowerCase() !== RonState.currentUser.toLowerCase()) {
+            if (name) {
                 rememberTurn('user', userText);
-                return id.startRename(name);
-            }
-            if (name && !RonState.currentUser && RonState.lastDescriptor) {
-                rememberTurn('user', userText);
-                return id.volunteerName(name, RonState.lastDescriptor);
+                // Si no había nadie reconocido, o si dice llamarse de otra forma, aprender muestras
+                if (!RonState.currentUser) {
+                    return id.volunteerName(name, RonState.lastDescriptor);
+                } else if (name.toLowerCase() !== RonState.currentUser.toLowerCase()) {
+                    return id.volunteerName(name, RonState.lastDescriptor);
+                } else if (RonState.lastDescriptor) {
+                    id.addSamples(name, [RonState.lastDescriptor]);
+                }
             }
         }
 
         const wantsPlay = /\bjug(ar|amos|uemos|á)|\bjuego\b|vamos a|quiero|hacemos|practic|empez|a jugar|toca\b/.test(t);
 
-        // RETOS KT1 (Temporizador / Pomodoro infantil)
         const matchReto = t.match(/(?:reto|tiempo|modo recoger|modo deberes)(?:\s+(?:de\s+)?(\d+)\s*minutos?)?/i);
         if (matchReto && (t.includes('reto') || t.includes('modo') || t.includes('pomodoro'))) {
             rememberTurn('user', userText);
@@ -216,7 +237,6 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Vale! Me quedo aquí contigo. ¡Bip!");
         }
 
-        // Pizarra de sumas y restas: requiere decir claramente sumas, restas o calcular
         if ((/(suma(s)?|resta(s)?|sumar|restar|calcul)/.test(t) && wantsPlay) || /a sumar|a restar|juego de sumas/.test(t)) {
             rememberTurn('user', userText); addBond('game'); return startMathGame();
         }

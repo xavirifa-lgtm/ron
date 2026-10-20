@@ -15,7 +15,7 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=28.4">
+    <link rel="stylesheet" href="styles.css?v=28.5">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,15 +31,15 @@
         
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v28.4 - ARRANCAR SISTEMA</button>
+            <button id="power-btn">B-BOT v28.5 - ARRANCAR SISTEMA</button>
         </div>
 
         <!-- Botones de Control -->
         <button id="mic-toggle-btn" class="mic-toggle-btn">🎙️</button>
         <button id="ble-connect-btn" class="ble-btn">📡</button>
 
-        <!-- Cámara: invisible pero viva -->
-        <video id="webcam" autoplay playsinline muted style="position:fixed; top:0; left:0; width:4px; height:4px; opacity:0.01; pointer-events:none; z-index:-1;"></video>
+        <!-- Cámara: 160x120px (evita que Android degrade la textura de vídeo) pero invisible -->
+        <video id="webcam" autoplay playsinline muted style="position:fixed; top:0; left:0; width:160px; height:120px; opacity:0.01; pointer-events:none; z-index:-1;"></video>
         
         <!-- Configuración de API -->
         <div id="api-modal" class="api-modal hidden">
@@ -84,12 +84,14 @@
                 <label><input type="checkbox" id="captions-input"> Subtítulos (lo que oye y lo que dice)</label><br>
                 <label><input type="checkbox" id="diag-input"> Diagnóstico en pantalla (registro técnico)</label><br><br>
 
-                <!-- Copia de seguridad de caras y recuerdos -->
+                <!-- Copia de seguridad y gestión de caras -->
                 <div style="border-top:1px solid #ddd;padding-top:10px;margin-bottom:10px">
                     <strong style="font-size:13px">Memoria Permanente (Caras y Recuerdos)</strong>
-                    <div style="display:flex;gap:8px;margin-top:6px">
-                        <button id="export-memory-btn" type="button" style="background:#0a6aa8;font-size:13px;padding:8px">💾 Exportar</button>
-                        <button id="import-memory-btn" type="button" style="background:#4b5563;font-size:13px;padding:8px">📂 Restaurar</button>
+                    <div id="known-faces-list" style="font-size:12px;color:#333;margin:6px 0"></div>
+                    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+                        <button id="export-memory-btn" type="button" style="background:#0a6aa8;font-size:12px;padding:7px;flex:1">💾 Exportar</button>
+                        <button id="import-memory-btn" type="button" style="background:#4b5563;font-size:12px;padding:7px;flex:1">📂 Restaurar</button>
+                        <button id="reset-faces-btn" type="button" style="background:#dc2626;font-size:12px;padding:7px;flex:1">🔄 Re-escanear caras</button>
                         <input type="file" id="import-memory-file" accept=".json" style="display:none">
                     </div>
                     <div id="backup-status" style="font-size:12px;color:#0a6aa8;margin-top:4px"></div>
@@ -159,14 +161,40 @@
         <div id="face-wrapper"></div>
     </div>
     <script>
-        const CACHE_NAME = 'ron-bot-v28.4';
-        // Lógica de exportación e importación de caras y recuerdos
+        const CACHE_NAME = 'ron-bot-v28.5';
         window.addEventListener('DOMContentLoaded', () => {
             const expBtn = document.getElementById('export-memory-btn');
             const impBtn = document.getElementById('import-memory-btn');
+            const resetFacesBtn = document.getElementById('reset-faces-btn');
             const impFile = document.getElementById('import-memory-file');
             const status = document.getElementById('backup-status');
+            const facesList = document.getElementById('known-faces-list');
             const KEYS = ['ron_known_faces', 'ron_memory_v1', 'ron_user_stats', 'ron_diary', 'ron_bond', 'ron_friendship_rules', 'ron_learnt_facts'];
+
+            function updateFacesCount() {
+                try {
+                    const faces = JSON.parse(localStorage.getItem('ron_known_faces') || '[]');
+                    facesList.textContent = faces.length
+                        ? 'Caras guardadas: ' + faces.map(f => `${f.label} (${(f.descriptors || []).length})`).join(', ')
+                        : 'Ninguna cara guardada todavía.';
+                } catch (e) {}
+            }
+            setInterval(updateFacesCount, 2000);
+            updateFacesCount();
+
+            if (resetFacesBtn) resetFacesBtn.onclick = async () => {
+                if (!confirm('¿Borrar solo las muestras de caras para volver a escanearlas con mejor luz? (Los recuerdos, diario y amistad NO se borran)')) return;
+                localStorage.removeItem('ron_known_faces');
+                try {
+                    const idMod = await import('./identity.js');
+                    if (idMod.vaultSet) await idMod.vaultSet('ron_known_faces', []);
+                    const { RonState } = await import('./core.js');
+                    RonState.knownFaces = [];
+                    RonState.currentUser = null;
+                } catch (e) {}
+                updateFacesCount();
+                status.textContent = '✅ Caras limpiadas. Ponte frente a Ron con buena luz para escanear de nuevo.';
+            };
 
             if (expBtn) expBtn.onclick = () => {
                 const dump = { ts: new Date().toISOString(), data: {} };
@@ -206,6 +234,6 @@
             }
         });
     </script>
-    <script type="module" src="app.js?v=28.4"></script>
+    <script type="module" src="app.js?v=28.5"></script>
 </body>
 </html>
