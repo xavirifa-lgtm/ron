@@ -75,6 +75,15 @@ function save() {
     vaultSet(FACES_KEY, RonState.knownFaces);
 }
 
+// Muestras recientes de "desconocido" que se parecen a la cara de referencia
+// (evita guardar en tu ficha la cara de otra persona que pasó antes por delante)
+function similarRecent(ref, maxDist = 0.55) {
+    const recent = RonState.recentUnknownDescriptors || [];
+    if (!ref || typeof faceapi === 'undefined') return [];
+    const r = new Float32Array(ref);
+    return recent.filter(d => faceapi.euclideanDistance(r, new Float32Array(d)) < maxDist);
+}
+
 function cap(w) { return w.charAt(0).toUpperCase() + w.slice(1); }
 
 export function extractName(text) {
@@ -115,6 +124,18 @@ export function matchFace(descriptor) {
     return best;
 }
 
+// Distancia mínima a cada persona guardada (modo calibración)
+export function distancesTo(descriptor) {
+    if (!RonState.knownFaces.length || typeof faceapi === 'undefined') return [];
+    return RonState.knownFaces.map(f => {
+        let min = Infinity;
+        for (const dd of (f.descriptors || (f.descriptor ? [f.descriptor] : []))) {
+            min = Math.min(min, faceapi.euclideanDistance(descriptor, new Float32Array(dd)));
+        }
+        return { label: f.label, distance: +min.toFixed(3), samples: (f.descriptors || []).length };
+    }).sort((a, b) => a.distance - b.distance);
+}
+
 export function addSamples(name, descriptors) {
     let entry = RonState.knownFaces.find(f => f.label.toLowerCase() === name.toLowerCase());
     if (!entry) {
@@ -150,7 +171,7 @@ function ensureStats(name) {
 
 export function startLearning(firstDescriptor) {
     RonState.isLearningFace = true;
-    const pool = (RonState.recentUnknownDescriptors || []).slice(-6);
+    const pool = similarRecent(firstDescriptor).slice(-6);
     if (firstDescriptor) pool.push(firstDescriptor);
     RonState.learningDescriptors = pool;
     RonState.nameFlow = { mode: 'learn', pending: null, attempts: 0, startedAt: Date.now() };
@@ -165,7 +186,7 @@ export function startRename(newName) {
 
 export function volunteerName(name, descriptor) {
     RonState.isLearningFace = true;
-    const pool = (RonState.recentUnknownDescriptors || []).slice(-6);
+    const pool = similarRecent(descriptor).slice(-6);
     if (descriptor) pool.push(descriptor);
     RonState.learningDescriptors = pool;
     RonState.nameFlow = { mode: 'learn', pending: name, attempts: 0, startedAt: Date.now() };
@@ -222,12 +243,11 @@ export async function handleNameReply(text) {
 async function commitName(name) {
     const flow = RonState.nameFlow;
     if (flow.mode === 'learn') {
-        const samples = [
-            ...(RonState.recentUnknownDescriptors || []),
-            ...(RonState.learningDescriptors || [])
-        ].slice(-12);
+        const learned = RonState.learningDescriptors || [];
+        const samples = [...new Set([...similarRecent(learned[0]), ...learned].map(d => JSON.stringify(d)))]
+            .map(d => JSON.parse(d)).slice(-12);
         if (!samples.length && RonState.lastDescriptor) samples.push(RonState.lastDescriptor);
-        if (!samples.length) { cancelNameRef: cancelNameFlow(); return speak("¡Bip! No pude ver bien tu cara. ¡Mírame de frente y lo intentamos otra vez!"); }
+        if (!samples.length) { cancelNameFlow(); return speak("¡Bip! No pude ver bien tu cara. ¡Mírame de frente y lo intentamos otra vez!"); }
         addSamples(name, samples);
         RonState.recentUnknownDescriptors = [];
     } else {

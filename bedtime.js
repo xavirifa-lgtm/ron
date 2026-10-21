@@ -60,6 +60,7 @@ async function tick() {
 }
 
 async function goToSleep(name) {
+    try { (await import('./games.js')).stopAnyGame(); } catch (e) {}
     log('Hora de dormir.');
     try { (await import('./follow.js')).stopFollow(); } catch (e) {}
     try { (await import('./music.js')).stopYTMusic(); } catch (e) {}

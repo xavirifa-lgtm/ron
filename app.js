@@ -6,7 +6,7 @@ import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
 async function preInit() {
-    log("Iniciando Ron v28.3...");
+    log("Iniciando Ron v29.0...");
     initUI();
     setChestIcon('wifi');
 
@@ -177,6 +177,7 @@ function setupInteractions() {
         $('listen-mode-input').value    = RonConfig.listenMode || 'cara';
         $('captions-input').checked     = RonConfig.captions !== false;
         $('diag-input').checked         = !!RonConfig.diagnostics;
+        $('quality-gate-input').checked = RonConfig.faceQualityGate !== false;
         const { VOICES } = await import('./tts.js');
         $('gemini-voice-input').innerHTML = Object.entries(VOICES).map(([v, d]) => `<option value="${v}">${v} — ${d}</option>`).join('');
         $('gemini-voice-input').value   = RonConfig.geminiVoice || 'Puck';
@@ -186,8 +187,53 @@ function setupInteractions() {
             $('usage-info').textContent = lines.length ? 'Peticiones de hoy:\n' + lines.join('\n') : 'Sin peticiones hoy.';
         } catch (e) {}
     };
-    const open = () => { fill(); RonState.ui.apiModal.classList.remove('hidden'); };
-    const close = () => RonState.ui.apiModal.classList.add('hidden');
+    // ── Calibración en directo (solo mientras Ajustes está abierto) ──
+    let calibTimer = null;
+    const fmt = (v, d = 2) => v == null ? '–' : (typeof v === 'number' ? v.toFixed(d) : v);
+    const renderCalib = async () => {
+        try {
+            const v = await import('./vision.js');
+            const dbg = v.getVisionDebug();
+            const q = dbg.quality;
+            const lines = [`Cámara: ${dbg.camera} · Exposición: ${dbg.exposure}`];
+            if (!dbg.fresh || !q) lines.push('No veo ninguna cara ahora mismo.');
+            else {
+                const m = q.m;
+                lines.push(`Cara: ${m.sizePx} px · nitidez ${fmt(m.sharp, 0)} · giro ${fmt(m.yaw)} · ojos ${fmt(m.ear)} · luz ${fmt(m.lum)} · detección ${fmt(m.score)}`);
+                lines.push(q.ok ? `✅ Imagen buena (promedio de ${dbg.avgFrames} fotogramas)` : `⚠️ Imagen descartada: ${q.reasons.join(', ')}`);
+                if (dbg.distances?.length) {
+                    lines.push('Distancias: ' + dbg.distances.slice(0, 4).map(x => `${x.label} ${x.distance.toFixed(2)} (${x.samples} muestras)`).join(' · '));
+                    const best = dbg.distances[0];
+                    lines.push(best.distance < dbg.thresholds.MATCH_MAX ? `→ Te reconoce como ${best.label}` : best.distance < dbg.thresholds.UNKNOWN_MIN ? '→ Duda (zona gris)' : '→ No te reconoce');
+                } else if (q.ok) lines.push('Aún no hay caras guardadas.');
+            }
+            $('calib-live').textContent = lines.join('\n');
+        } catch (e) { $('calib-live').textContent = 'Calibración no disponible: ' + e.message; }
+    };
+    const fillPeople = () => {
+        const sel = $('calib-person'); const cur = sel.value;
+        sel.innerHTML = (RonState.knownFaces || []).map(f => `<option value="${f.label}">${f.label}</option>`).join('') || '<option value="">(nadie guardado)</option>';
+        if (cur) sel.value = cur;
+    };
+    $('calib-save-btn').onclick = async () => {
+        const v = await import('./vision.js');
+        const r = await v.saveCurrentSample($('calib-person').value);
+        $('calib-status').textContent = (r.ok ? '✅ ' : '❌ ') + r.msg;
+    };
+    $('quality-gate-input').onchange = async () => {
+        const { saveConfig } = await import('./core.js');
+        saveConfig({ faceQualityGate: $('quality-gate-input').checked });
+    };
+
+    const open = () => {
+        fill(); fillPeople(); RonState.ui.apiModal.classList.remove('hidden');
+        if (calibTimer) clearInterval(calibTimer);
+        renderCalib(); calibTimer = setInterval(renderCalib, 500);
+    };
+    const close = () => {
+        RonState.ui.apiModal.classList.add('hidden');
+        if (calibTimer) { clearInterval(calibTimer); calibTimer = null; }
+    };
 
     RonState.ui.saveBtn.onclick = async () => {
         const k = $('groq-key-input').value.trim();
@@ -210,6 +256,7 @@ function setupInteractions() {
             listenMode:    $('listen-mode-input').value || 'cara',
             captions:      $('captions-input').checked,
             diagnostics:   $('diag-input').checked,
+            faceQualityGate: $('quality-gate-input').checked,
         });
         document.body.classList.toggle('diag', $('diag-input').checked);
         close();

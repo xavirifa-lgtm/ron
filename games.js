@@ -20,6 +20,7 @@ export function stopAnyGame() {
     currentAnswer = null;
     targetPhrase = null;
     if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
+    RonState.challengeActive = false;
     if (['MATH_GAME', 'READING_GAME', 'CHALLENGE'].includes(RonState.activityState)) {
         changeState('IDLE');
         setExpression('happy');
@@ -30,6 +31,7 @@ export function stopAnyGame() {
 export async function startChallenge(minutes = 10, activity = "recoger") {
     if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
     
+    RonState.challengeActive = true;
     changeState('CHALLENGE');
     setExpression('thinking');
     logGame(`reto de ${minutes} min para ${activity}`);
@@ -39,7 +41,14 @@ export async function startChallenge(minutes = 10, activity = "recoger") {
 
     challengeTimer = setTimeout(async () => {
         challengeTimer = null;
-        changeState('IDLE');
+        RonState.challengeActive = false;
+        // De noche o en mitad de otro juego no se interrumpe nada
+        if (RonState.activityState === 'NIGHT') return;
+        for (let i = 0; i < 12 && ['SPEAKING', 'THINKING', 'MATH_GAME', 'READING_GAME', 'STORY'].includes(RonState.activityState); i++) {
+            await new Promise(r => setTimeout(r, 5000));
+        }
+        if (RonState.activityState === 'CHALLENGE') changeState('IDLE');
+        if (!['IDLE', 'LISTENING'].includes(RonState.activityState)) return;
         setExpression('star');
         await speak(`¡TIEMPO! ¡Bip bip bip! ¡Reto de ${activity} completado! ¡Eres una campeona, ${userName()}!`);
     }, minutes * 60000);
@@ -47,6 +56,7 @@ export async function startChallenge(minutes = 10, activity = "recoger") {
 
 export async function stopChallenge() {
     if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
+    RonState.challengeActive = false;
     changeState('IDLE');
     setExpression('happy');
     await speak("¡Reto cancelado! Descanso de circuitos activado. ¡Bip!");

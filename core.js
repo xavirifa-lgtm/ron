@@ -14,6 +14,7 @@ const DEFAULT_CONFIG = {
     listenMode: 'cara',      // cara: sin decir "Ron" si te ve delante · ron: siempre con "Ron"
     captions: true,          // subtítulos en pantalla
     diagnostics: false,      // registro técnico en pantalla
+    faceQualityGate: true,   // solo fotogramas buenos para reconocer caras
     cerebrasKey: '',         // opcional: segundo proveedor de IA
     openrouterKey: '',       // opcional: tercer proveedor de IA
 };

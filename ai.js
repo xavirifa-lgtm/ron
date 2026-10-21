@@ -97,7 +97,7 @@ SEGURIDAD — POR ENCIMA DE TODO LO DEMÁS:
 DATOS FIJOS: te creó Xavi ("¡el mejor programador del universo conocido!"). Tu nombre completo es "B-Bot Unidad Ron, identificador 5-IND", pero te llaman Ron. A veces preguntas por Absalom; si te explican que es Barney, te pones súper contento.`;
 
     const rules = getRules();
-    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}.${r}`).join(' ')}`;
+    if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}. ${r}`).join(' ')}`;
     const taught = getRecentFacts(6);
     if (taught.length) sys += `\nCOSAS QUE TE HAN ENSEÑADO: ${taught.join('. ')}.`;
     const diary = getDiarySummary(4);
@@ -147,6 +147,17 @@ async function captureFrameWithRetry() {
     return img;
 }
 
+// "Soy Laia" sí; "soy feliz", "soy un dinosaurio", "soy la mejor" no.
+// Whisper y el navegador escriben los nombres propios con mayúscula: se usa como señal.
+const NOT_SOY_NAMES = /^(yo|tu|tú|su|mi|un|una|el|la|los|las|muy|más|mas|de|del|ya|así|asi|muy|super|súper|feliz|mayor|pequeña|pequeño|grande|buena|bueno|mala|malo|rápida|rápido|lista|listo|campeona|campeón|fuerte|valiente|princesa|robot|humana|humano|niña|niño|amiga|amigo)$/i;
+function matchSoyName(raw) {
+    const m = String(raw || '').match(/(?:^|[\s,¡¿])[Ss]oy\s+([A-ZÁÉÍÓÚÑ][a-záéíóúüñ]{1,14})(?=$|[\s,.!?])/);
+    if (!m || NOT_SOY_NAMES.test(m[1])) return null;
+    const after = raw.slice(raw.indexOf(m[0]) + m[0].length).trim().split(/\s+/).filter(Boolean);
+    if (after.length > 3) return null;                  // frase larga: "soy Laia y tengo..." → mejor con "me llamo"
+    return { soyName: m[1] };
+}
+
 export async function handleInput(userText, isInternal = false) {
     if (RonState.activityState === 'NIGHT') {
         if (isInternal) return;
@@ -156,7 +167,7 @@ export async function handleInput(userText, isInternal = false) {
     if (RonState.activityState === 'MATH_GAME')    { rememberTurn('user', userText); return (await import('./games.js')).handleMathAnswer(userText); }
     if (RonState.activityState === 'READING_GAME') { rememberTurn('user', userText); return (await import('./games.js')).handleReadingAnswer(userText); }
     if (RonState.activityState === 'CHALLENGE') {
-        if (/para(r)?|stop|cancela(r)?|termina(r)?/i.test(userText)) {
+        if (/\b(para(r)? (el|ya)|stop|cancela(r)?|termina(r)?|ya he (terminado|acabado)|he acabado)\b/i.test(userText)) {
             rememberTurn('user', userText);
             return stopChallenge();
         }
@@ -199,10 +210,10 @@ export async function handleInput(userText, isInternal = false) {
         }
 
         // Presentación o cambio de nombre ("me llamo X" / "soy X")
-        const nameMatch = t.match(/(?:me llamo|mi nombre es|soy)\s+([a-záéíóúüñ]+)/);
+        const nameMatch = t.match(/(?:me llamo|mi nombre es)\s+([a-záéíóúüñ]+)/) || matchSoyName(userText);
         if (nameMatch) {
             const id = await import('./identity.js');
-            const name = id.extractName(userText);
+            const name = nameMatch.soyName || id.extractName(userText);
             if (name) {
                 rememberTurn('user', userText);
                 // Si no había nadie reconocido, o si dice llamarse de otra forma, aprender muestras
@@ -218,11 +229,11 @@ export async function handleInput(userText, isInternal = false) {
 
         const wantsPlay = /\bjug(ar|amos|uemos|á)|\bjuego\b|vamos a|quiero|hacemos|practic|empez|a jugar|toca\b/.test(t);
 
-        const matchReto = t.match(/(?:reto|tiempo|modo recoger|modo deberes)(?:\s+(?:de\s+)?(\d+)\s*minutos?)?/i);
-        if (matchReto && (t.includes('reto') || t.includes('modo') || t.includes('pomodoro'))) {
+        const matchReto = /\b(reto|pomodoro|modo recoger|modo deberes)\b/.test(t) && !/para(r)? el reto|cancela/.test(t);
+        if (matchReto) {
             rememberTurn('user', userText);
-            const numMatch = t.match(/\d+/);
-            const mins = numMatch ? parseInt(numMatch[0], 10) : (t.includes('recoger') ? 10 : 15);
+            const numMatch = t.match(/\b(\d{1,2})\s*min/) || t.match(/\b(\d{1,2})\b/);
+            const mins = Math.min(60, Math.max(1, numMatch ? parseInt(numMatch[1], 10) : (t.includes('recoger') ? 10 : 15)));
             const act = t.includes('deberes') ? 'hacer deberes' : t.includes('recoger') ? 'recoger los juguetes' : 'el reto';
             return startChallenge(mins, act);
         }
@@ -237,7 +248,7 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Vale! Me quedo aquí contigo. ¡Bip!");
         }
 
-        if ((/(suma(s)?|resta(s)?|sumar|restar|calcul)/.test(t) && wantsPlay) || /a sumar|a restar|juego de sumas/.test(t)) {
+        if ((/(suma(s)?|resta(s)?|sumar|restar|calcul|matem[áa]tic)/.test(t) && wantsPlay) || /a sumar|a restar|juego de sumas|juego de matem[áa]ticas/.test(t)) {
             rememberTurn('user', userText); addBond('game'); return startMathGame();
         }
         if (/leer juntos|vamos a leer|quiero leer|a leer|leer contigo|juego de lectura/.test(t) ||

@@ -1,11 +1,23 @@
-// vision.js v28.5 — Pre-procesado de iluminación en Canvas, Reconocimiento Instantáneo,
-// Filtro de Calidad de Muestras (>0.65), Multi-Persona y Cola BLE Protegida.
+// vision.js v29 — Calidad de imagen para reconocer mejor:
+//  · cámara a 1280×720 (más píxeles en la cara cuando está lejos)
+//  · exposición medida en la cara si la cámara lo admite (contraluz)
+//  · luz corregida según la cara (no un filtro fijo a toda la imagen)
+//  · solo fotogramas buenos (tamaño, nitidez, de frente, ojos abiertos, luz) votan,
+//    aprenden y se promedian (3-4 fotogramas → menos ruido)
+// + Multi-persona, peekaboo y cola BLE (Xavi, v28.5).
 
-import { RonState, log, changeState, markProactive, isIdleLike } from './core.js';
+import { RonState, RonConfig, log, changeState, markProactive, isIdleLike } from './core.js';
 import { setExpression, showMoodBubble, celebrateFaceRecognition } from './ui.js';
 import { speak } from './speech.js';
 import { updateSadnessTracking } from './defender.js';
 import * as Sounds from './sounds.js';
+import { assess, DescriptorAverager } from './facequality.js';
+
+// Estado visible en el modo calibración de Ajustes
+RonState.visionDebug = { camera: '-', exposure: 'sin comprobar', quality: null, distances: [], avgFrames: 0, updated: 0 };
+const averager = new DescriptorAverager(4, 2500, 0.5);
+let lastGoodAvg = null;          // último descriptor promediado de buena calidad (para "guardar muestra")
+let lastFaceLum = null;          // luz de la cara en el último fotograma (para la corrección)
 
 // Canvas intermedio para normalizar luz y contraste antes de pasar a face-api
 let procCanvas = null;
@@ -20,8 +32,8 @@ export async function loadModels() {
         faceapi.nets.faceExpressionNet.loadFromUri(URL)
     ]);
     procCanvas = document.createElement('canvas');
-    procCanvas.width = 640;
-    procCanvas.height = 480;
+    procCanvas.width = 1280;
+    procCanvas.height = 720;
     procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
     log("Modelos de visión y normalizador óptico cargados.");
 }
@@ -32,15 +44,15 @@ export async function startCamera() {
         stream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: { exact: "user" },
-                width: { ideal: 640 },
-                height: { ideal: 480 },
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
                 frameRate: { ideal: 30 }
             }
         });
     } catch (e) {
         log("Frontal exacta no disponible, usando cámara genérica: " + e.message);
         stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
         });
     }
     const v = RonState.ui.video;
@@ -49,6 +61,60 @@ export async function startCamera() {
         await new Promise(res => v.addEventListener('loadedmetadata', res, { once: true }));
     }
     await v.play();
+    RonState.visionDebug.camera = `${v.videoWidth}×${v.videoHeight}`;
+    setupExposure(stream.getVideoTracks()[0]);
+}
+
+// ── Exposición medida en la cara ──────────────────────────────────────────────
+// Chrome en Android permite pedir a la cámara un "punto de interés" para medir la luz
+// y una compensación de exposición. Depende de cada cámara: se comprueba y, si no lo
+// admite, se usa solo la corrección por software.
+let expo = { track: null, poi: false, comp: null, lastApply: 0, lastPoint: null, failures: 0, value: 0 };
+function setupExposure(track) {
+    expo = { track, poi: false, comp: null, lastApply: 0, lastPoint: null, failures: 0, value: 0 };
+    let caps = {};
+    try { caps = track?.getCapabilities?.() || {}; } catch (e) {}
+    const supported = navigator.mediaDevices.getSupportedConstraints?.() || {};
+    expo.poi = !!supported.pointsOfInterest && Array.isArray(caps.exposureMode) && caps.exposureMode.includes('continuous');
+    if (caps.exposureCompensation && caps.exposureCompensation.max > caps.exposureCompensation.min) {
+        expo.comp = caps.exposureCompensation;
+        try { expo.value = track.getSettings().exposureCompensation ?? 0; } catch (e) {}
+    }
+    const parts = [];
+    if (expo.poi) parts.push('medida en la cara');
+    if (expo.comp) parts.push(`compensación ${expo.comp.min}…${expo.comp.max}`);
+    RonState.visionDebug.exposure = parts.length ? parts.join(' + ') : 'la cámara no lo admite (solo corrección por software)';
+    log(`Exposición: ${RonState.visionDebug.exposure}.`);
+}
+
+async function exposeForFace(box, vw, vh, lum) {
+    const t = expo.track;
+    if (!t || t.readyState !== 'live' || expo.failures >= 3) return;
+    const now = Date.now();
+    if (now - expo.lastApply < 1500) return;
+    const adv = {};
+    if (expo.poi) {
+        const p = { x: Math.min(1, Math.max(0, (box.x + box.width / 2) / vw)), y: Math.min(1, Math.max(0, (box.y + box.height * 0.45) / vh)) };
+        if (!expo.lastPoint || Math.hypot(p.x - expo.lastPoint.x, p.y - expo.lastPoint.y) > 0.06) {
+            adv.exposureMode = 'continuous';
+            adv.pointsOfInterest = [p];
+            expo.lastPoint = p;
+        }
+    }
+    if (expo.comp && lum != null) {
+        const step = expo.comp.step || 0.33;
+        let v = expo.value;
+        if (lum < 0.32) v += step; else if (lum > 0.72) v -= step;
+        v = Math.min(expo.comp.max, Math.max(expo.comp.min, v));
+        if (v !== expo.value) { adv.exposureCompensation = v; expo.value = v; }
+    }
+    if (!Object.keys(adv).length) return;
+    expo.lastApply = now;
+    try { await t.applyConstraints({ advanced: [adv] }); expo.failures = 0; }
+    catch (e) {
+        expo.failures++;
+        if (expo.failures >= 3) { RonState.visionDebug.exposure = `no se pudo ajustar (${e.name})`; log('Exposición: la cámara rechaza el ajuste; se desactiva.'); }
+    }
 }
 
 // Umbrales calibrados para cámaras frontales móviles con luz de interior
@@ -118,7 +184,17 @@ function getNormalizedInput() {
         procCanvas.width = vw;
         procCanvas.height = vh;
     }
-    procCtx.filter = 'contrast(1.12) brightness(1.06)';
+    // Corrección según la luz de la CARA del fotograma anterior (no un filtro fijo):
+    // cara oscura → más brillo; normal → imagen intacta. Si la cámara ya corrige
+    // la exposición sobre la cara, el software apenas actúa.
+    let f = 'none';
+    if (lastFaceLum != null && lastFaceLum < 0.38) {
+        const b = Math.min(1.7, 0.45 / Math.max(lastFaceLum, 0.12));
+        f = `brightness(${b.toFixed(2)}) contrast(1.08)`;
+    } else if (lastFaceLum != null && lastFaceLum > 0.8) {
+        f = 'brightness(0.9)';
+    }
+    procCtx.filter = f;
     procCtx.drawImage(vid, 0, 0, vw, vh);
     procCtx.filter = 'none';
     return procCanvas;
@@ -156,6 +232,27 @@ export function startVisionLoop() {
             } else {
                 continuousFaceMs = 0;
                 prevFaceRatio = 0;
+                RonState.recentUnknownDescriptors = [];
+                averager.reset();
+                lastGoodAvg = null;
+                RonState.visionDebug.quality = null;
+                RonState.visionDebug.distances = [];
+            }
+
+            // Calidad del fotograma (se mide sobre la imagen ORIGINAL, sin la corrección)
+            const gate = RonConfig.faceQualityGate !== false;
+            const qa = d ? assess(RonState.ui.video, d) : null;
+            if (qa) {
+                if (qa.m.lum != null) lastFaceLum = qa.m.lum;
+                exposeForFace(d.detection.box, RonState.ui.video.videoWidth || vw, RonState.ui.video.videoHeight || vh, qa.m.lum);
+            }
+            const goodFrame = !!qa && (!gate || qa.ok);
+            const avgDesc = (d && goodFrame) ? averager.push(d.descriptor, now) : null;
+            if (d) {
+                RonState.visionDebug.quality = qa;
+                RonState.visionDebug.avgFrames = averager.count;
+                RonState.visionDebug.updated = now;
+                if (avgDesc) lastGoodAvg = avgDesc;
             }
 
             updateSadnessTracking(RonState.currentEmotion, !!d);
@@ -163,11 +260,13 @@ export function startVisionLoop() {
             // Aprendizaje activo: solo guarda descriptores nítidos y bien centrados
             if (RonState.nameFlow) {
                 if (id.nameFlowExpired()) { log("Aprendizaje de nombre caducado."); id.cancelNameFlow(true); }
-                else if (RonState.isLearningFace && d && d.detection.score >= 0.55) {
+                else if (RonState.isLearningFace && d && goodFrame) {
+                    // Solo fotogramas buenos; se guarda el promedio (más estable que uno suelto)
+                    const sample = avgDesc || Array.from(d.descriptor);
                     const first = RonState.learningDescriptors?.[0];
-                    const same  = !first || faceapi.euclideanDistance(d.descriptor, new Float32Array(first)) < 0.62;
+                    const same  = !first || faceapi.euclideanDistance(new Float32Array(sample), new Float32Array(first)) < 0.62;
                     if (same && RonState.learningDescriptors.length < 14) {
-                        RonState.learningDescriptors.push(Array.from(d.descriptor));
+                        RonState.learningDescriptors.push(sample);
                     }
                 }
                 return;
@@ -190,8 +289,9 @@ export function startVisionLoop() {
             RonState.framesWithoutFace = 0;
             RonState.faceSeenTs = now;
             calloutCount = 0;
-            const curDesc = Array.from(d.descriptor);
-            const faceQualityOk = d.detection.score >= MIN_FACE_SCORE;
+            // Para reconocer y aprender se usa el PROMEDIO de los últimos fotogramas buenos
+            const faceQualityOk = goodFrame && d.detection.score >= MIN_FACE_SCORE;
+            const curDesc = avgDesc || Array.from(d.descriptor);
             if (faceQualityOk) RonState.lastDescriptor = curDesc;
 
             trackFace(d, vw, vh);
@@ -245,12 +345,19 @@ export function startVisionLoop() {
             }
 
             // ── Reconocimiento principal con votación ──
-            const best = id.matchFace(d.descriptor);
+            // Un fotograma malo (movido, de lado, ojos cerrados...) no vota: antes votaba
+            // "desconocida" y hacía que Ron dudara de alguien a quien conoce.
+            if (!goodFrame) {
+                if (qa) log(`Cara: fotograma descartado (${qa.reasons.join(', ')})`);
+                return;
+            }
+            const best = id.matchFace(new Float32Array(curDesc));
+            RonState.visionDebug.distances = id.distancesTo ? id.distancesTo(new Float32Array(curDesc)) : [];
             let v = '?';
             if (best && best.distance < MATCH_MAX) v = best.label;
             else if (best && best.distance < UNKNOWN_MIN) v = '~';
             const stable = vote(v);
-            if (best) log(`Cara: ${best.label} (dist=${best.distance.toFixed(2)}, cal=${d.detection.score.toFixed(2)}) →${stable || '…'}`);
+            if (best) log(`Cara: ${best.label} (dist=${best.distance.toFixed(2)}, cal=${d.detection.score.toFixed(2)}, ${averager.count} fot.) →${stable || '…'}`);
 
             // Solo guardamos en el buffer desconocidos con buena calidad de imagen
             if (v === '?' && faceQualityOk) {
@@ -270,7 +377,46 @@ export function startVisionLoop() {
                 const changed = RonState.currentUser !== name;
                 if (changed) {
                     RonState.currentUser = name;
-                    log(`Usuario activo reconocido: ${name}`); celebrateFaceRecognition(); Sounds.playFaceRecognitionSound(); } if ((changed \vert{}\vert{} absentLong) && !busy && !RonState.isSilentMode) { markSeen(name, now); markProactive(); import('./ai.js').then(ai => ai.greetKnown(name, absentLong)).catch(() => {}); } else { markSeen(name, now); } if (!busy) { if (d.expressions?.surprised > 0.78 && (now - lastMirrorMs > 60000) && isIdleLike()) { lastMirrorMs = now; setExpression('surprise'); Sounds.playBeep(980, 'sine', 0.07, 0.06); } maybeReactToEmotion(name, now); } } else if (stable === '?') { const bigEnough = curRatio > 0.11; if (!busy && bigEnough && faceQualityOk && !RonState.isSilentMode && now > (RonState.learnCooldownUntil \vert{}\vert{} 0)) { RonState.currentUser = null; votes.length = 0; id.startLearning(curDesc); } } } catch (e) { console.error("Error visión:", e); } finally { processing = false; } }, 650); }  function nagToMove() { const name = RonState.currentUser \vert{}\vert{} 'amiga'; setExpression('thinking'); const nags = [ `¡Bip! ${name}, ¡llevas mucho rato quieta! Mis sensores exigen que te levantes a dar tres saltos.`,
+                    log(`Usuario activo reconocido: ${name}`);
+                    // Celebrar solo si Ron está libre (si dos personas se alternan, no pitar cada vez)
+                    if (!busy) { celebrateFaceRecognition(); Sounds.playFaceRecognitionSound(); }
+                }
+                if ((changed || absentLong) && !busy && !RonState.isSilentMode) {
+                    markSeen(name, now);
+                    markProactive();
+                    import('./ai.js').then(ai => ai.greetKnown(name, absentLong)).catch(() => {});
+                } else {
+                    markSeen(name, now);
+                }
+                if (!busy) {
+                    if (d.expressions?.surprised > 0.78 && (now - lastMirrorMs > 60000) && isIdleLike()) {
+                        lastMirrorMs = now;
+                        setExpression('surprise');
+                        Sounds.playBeep(980, 'sine', 0.07, 0.06);
+                    }
+                    maybeReactToEmotion(name, now);
+                }
+            } else if (stable === '?') {
+                const bigEnough = curRatio > 0.11;
+                if (!busy && bigEnough && faceQualityOk && !RonState.isSilentMode && now > (RonState.learnCooldownUntil || 0)) {
+                    RonState.currentUser = null;
+                    votes.length = 0;
+                    id.startLearning(curDesc);
+                }
+            }
+        } catch (e) {
+            console.error("Error visión:", e);
+        } finally {
+            processing = false;
+        }
+    }, 650);
+}
+
+function nagToMove() {
+    const name = RonState.currentUser || 'amiga';
+    setExpression('thinking');
+    const nags = [
+        `¡Bip! ${name}, ¡llevas mucho rato quieta! Mis sensores exigen que te levantes a dar tres saltos.`,
         `¡Alerta de sofá! ${name}, ¡o te mueves un poco o mis circuitos se oxidan de verte quieta!`,
         `¡Bop! Mis cálculos dicen que toca estirar las piernas. ¿Hacemos una carrera rápida hasta la puerta?`
     ];
@@ -428,7 +574,12 @@ function trackFace(detection, vw, vh) {
     import('./follow.js').then(f => {
         if (!f.isFollowing() && Math.abs(errX) > 0.1) {
             RonState.ble.lastPan = Math.max(0, Math.min(180, RonState.ble.lastPan - errX * 20));
-            sendMove(`P${Math.round(RonState.ble.lastPan)}\n`); } }).catch(() => {});  if (Math.abs(errY) > 0.1) { RonState.ble.lastTilt = Math.max(0, Math.min(180, RonState.ble.lastTilt + errY * 20)); sendMove(`T${Math.round(RonState.ble.lastTilt)}\n`);
+            sendMove(`P${Math.round(RonState.ble.lastPan)}\n`);
+        }
+    }).catch(() => {});
+    if (Math.abs(errY) > 0.1) {
+        RonState.ble.lastTilt = Math.max(0, Math.min(180, RonState.ble.lastTilt + errY * 20));
+        sendMove(`T${Math.round(RonState.ble.lastTilt)}\n`);
     }
 }
 
@@ -439,3 +590,20 @@ setInterval(() => {
         sendMove(`P${pan}\n`); setTimeout(() => sendMove(`T${tilt}\n`), 400);
     }
 }, 30000);
+
+// ── Calibración (Ajustes) ─────────────────────────────────────────────────────
+export function getVisionDebug() {
+    const d = RonState.visionDebug;
+    return { ...d, fresh: Date.now() - (d.updated || 0) < 2500, thresholds: { MATCH_MAX, UNKNOWN_MIN, SAMPLE_MAX } };
+}
+// Guarda como muestra de `name` el promedio actual, solo si la imagen es buena
+export async function saveCurrentSample(name) {
+    const d = RonState.visionDebug;
+    if (!name) return { ok: false, msg: 'Elige una persona.' };
+    if (Date.now() - (d.updated || 0) > 2500 || !d.quality) return { ok: false, msg: 'No veo ninguna cara ahora mismo.' };
+    if (!d.quality.ok) return { ok: false, msg: 'La imagen no es buena: ' + d.quality.reasons.join(', ') + '.' };
+    if (!lastGoodAvg || averager.count < 2) return { ok: false, msg: 'Quédate quieta un segundo y vuelve a pulsar.' };
+    const id = await import('./identity.js');
+    id.addSamples(name, [lastGoodAvg.slice()]);
+    return { ok: true, msg: `Muestra guardada para ${name}.` };
+}

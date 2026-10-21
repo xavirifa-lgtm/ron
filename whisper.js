@@ -18,7 +18,7 @@ import { RonState, RonConfig, log, changeState } from './core.js';
 
 const ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const MODELS = ['whisper-large-v3-turbo', 'whisper-large-v3'];
-const ALLOWED = ['IDLE', 'LISTENING', 'SLEEPING', 'STORY', 'MATH_GAME', 'READING_GAME', 'NIGHT'];
+const ALLOWED = ['IDLE', 'LISTENING', 'SLEEPING', 'STORY', 'MATH_GAME', 'READING_GAME', 'CHALLENGE', 'NIGHT'];
 
 const PREROLL_MS     = 500;   // audio previo que se conserva al detectar voz
 const ONSET_MS       = 110;   // voz continua necesaria para empezar a grabar

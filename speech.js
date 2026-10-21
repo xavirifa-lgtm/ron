@@ -278,7 +278,7 @@ export function speak(text, { remember = true } = {}) {
         if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
 
         const restState = RonState.activityState === 'NIGHT' ? 'NIGHT' 
-                        : RonState.activityState === 'CHALLENGE' ? 'CHALLENGE' 
+                        : (RonState.activityState === 'CHALLENGE' || RonState.challengeActive) ? 'CHALLENGE' 
                         : 'IDLE';
         changeState('SPEAKING');
         if (restState === 'NIGHT') setExpression('flat');
