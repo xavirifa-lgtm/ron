@@ -1,7 +1,7 @@
 {
   "name": "Ron B*Bot",
   "short_name": "Ron",
-  "id": "./",
+  "id": "/ron/",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
