@@ -7,8 +7,10 @@ import { speak } from './speech.js';
 const FACES_KEY = 'ron_known_faces';
 const ANCHOR_SAMPLES = 8;
 const ADAPTIVE_SAMPLES = 10;
-const LEARN_TIMEOUT_MS = 35000;
+const LEARN_TIMEOUT_MS = 45000;
 const MAX_ATTEMPTS = 3;
+const FACE_SAMPLES_WANTED = 3;     // muestras buenas de la cara antes de guardar
+const FACE_WAIT_MS = 12000;        // tras decir el nombre, tiempo para verle bien la cara
 
 const NOT_NAMES = new Set(['si','sí','no','vale','hola','adios','adiós','nada','ron','bip','que','qué',
     'yo','tu','tú','eh','ah','pues','bueno','ok','okay','nombre','llamo','soy','me','mi','una','un','el','la',
@@ -86,6 +88,22 @@ function similarRecent(ref, maxDist = 0.55) {
 
 function cap(w) { return w.charAt(0).toUpperCase() + w.slice(1); }
 
+// Palabras habituales que NO son nombres (respuestas sueltas durante el alta)
+const COMMON_WORDS = new Set(['hazme','haz','dime','cuentame','cuéntame','cuenta','juega','jugar','jugamos','juego','juegos',
+    'vamos','quiero','quieres','puedes','puedo','foto','fotos','selfie','chiste','chistes','cuento','cuentos','musica','música',
+    'baila','bailar','canta','cantar','mira','mírame','mirame','ayuda','ayudame','ayúdame','como','cómo','donde','dónde',
+    'cuando','cuándo','porque','por','favor','tengo','hambre','sueño','oyes','oye','estas','estás','esta','está','bien','mal',
+    'muy','genial','guay','perdona','espera','venga','otra','vez','chao','buenas','noches','dias','días','tardes','calla',
+    'silencio','apaga','para','sigue','repite','escucha','hablame','háblame','habla','cual','cuál','quien','quién','todo',
+    'mucho','poco','ahora','luego','despues','después','tambien','también','vale','gracias','jo','jope','uf','vaya','guau',
+    'sumas','restas','matematicas','matemáticas','leer','lectura','escondite','dibujo','dibujar','casa','cole','colegio',
+    'mamá','papá','perro','gato','hola','adios','adiós','ron','bip','vale']);
+const FILLER = new Set(['hola','ron','pues','bueno','vale','eh','ah','mmm','oye','bip','yo']);
+
+// Extrae un nombre de lo que se ha oído o escrito. Con "me llamo / soy / mi nombre es"
+// se fía; con una respuesta suelta solo acepta 1 palabra que no sea común, o 2 palabras
+// con la segunda en mayúscula ("Ana María"). Así "hazme un selfie" o "¿me oyes?" no
+// acaban guardados como nombre.
 export function extractName(text) {
     if (!text) return null;
     const t = text.toLowerCase().replace(/[.,!¡?¿;:"]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -93,12 +111,18 @@ export function extractName(text) {
     const m = t.match(/(?:me llamo|mi nombre es|ll[aá]mame|me dicen|me llaman|soy)\s+([a-záéíóúüñ]+)(?:\s+([a-záéíóúüñ]+))?/);
     let words;
     if (m) {
+        if (NOT_NAMES.has(m[1]) || COMMON_WORDS.has(m[1])) return null;      // "soy un dinosaurio", "me llamo jugar"
+        // Con "soy" el nombre debe ir en mayúscula ("Soy Laia"); "soy feliz" no es un nombre
+        if (/(?:^|\s)soy\s/.test(t) && !/(?:me llamo|mi nombre es|ll[aá]mame|me dicen|me llaman)/.test(t)
+            && !/[Ss]oy\s+[A-ZÁÉÍÓÚÑ]/.test(text)) return null;
         words = [m[1]];
-        if (m[2] && !STOP_AFTER.has(m[2]) && !NOT_NAMES.has(m[2]) && t.split(' ').length <= 6) words.push(m[2]);
+        if (m[2] && !STOP_AFTER.has(m[2]) && !NOT_NAMES.has(m[2]) && !COMMON_WORDS.has(m[2]) && t.split(' ').length <= 6) words.push(m[2]);
     } else {
-        const ws = t.split(' ').filter(w => w && !NOT_NAMES.has(w));
-        if (ws.length === 0 || ws.length > 2) return null;
-        words = ws;
+        const raw = text.replace(/[.,!¡?¿;:"]/g, ' ').trim().split(/\s+/).filter(w => w && !FILLER.has(w.toLowerCase()));
+        if (raw.length === 0 || raw.length > 2) return null;
+        if (raw.some(w => NOT_NAMES.has(w.toLowerCase()) || COMMON_WORDS.has(w.toLowerCase()))) return null;
+        if (raw.length === 2 && !/^[A-ZÁÉÍÓÚÑ]/.test(raw[1])) return null;   // "Ana María" sí; "quiero jugar" no
+        words = raw.map(w => w.toLowerCase());
     }
     words = words.filter(w => /^[a-záéíóúüñ]{2,15}$/.test(w) && !NOT_NAMES.has(w));
     if (!words.length) return null;
@@ -169,6 +193,10 @@ function ensureStats(name) {
     vaultSet('ron_user_stats', RonState.userStats);
 }
 
+// ── ALTA DE USUARIO ─────────────────────────────────────────────────────────
+// Cara desconocida (o primer arranque sin nadie guardado): Ron pide el nombre.
+// Se puede decir en voz alta o escribir en el cuadro de la pantalla. Al recibirlo
+// contesta "¡Hola, X!" y guarda nombre + cara (sin preguntar "¿sí o no?").
 export function startLearning(firstDescriptor) {
     RonState.isLearningFace = true;
     const pool = similarRecent(firstDescriptor).slice(-6);
@@ -176,7 +204,85 @@ export function startLearning(firstDescriptor) {
     RonState.learningDescriptors = pool;
     RonState.nameFlow = { mode: 'learn', pending: null, attempts: 0, startedAt: Date.now() };
     import('./ui.js').then(ui => ui.startScanningUI());
-    speak("¡Bip bip! ¡Un humano nuevo! Yo soy Ron. ¿Cómo te llamas?");
+    showNamePanel();
+    speak("¡Hola! Soy Ron. Introduce tu nombre de usuario: dime cómo te llamas, o escríbelo aquí abajo.");
+}
+
+// Primer arranque: si no hay nadie guardado, Ron lo pide aunque aún no vea bien la cara
+export function maybeFirstRunOnboarding() {
+    if (RonState.knownFaces?.length || RonState.nameFlow) return false;
+    if (!['IDLE', 'LISTENING'].includes(RonState.activityState)) return false;
+    log('Primer arranque sin usuarios: alta de nombre.');
+    startLearning(RonState.lastDescriptor || null);
+    return true;
+}
+
+// Acepta un nombre (dicho o escrito) dentro del alta
+async function acceptName(name) {
+    const flow = RonState.nameFlow;
+    if (!flow) return;
+    flow.pending = name;
+    flow.startedAt = Date.now();
+    hideNamePanel();
+    const samples = RonState.learningDescriptors || [];
+    if (samples.length >= FACE_SAMPLES_WANTED || !visionRunning()) return commitName(name);
+    // Aún no tiene bien vista la cara: la guarda en cuanto la vea (máx. FACE_WAIT_MS)
+    flow.waitFace = Date.now();
+    await speak(`¡Hola, ${name}! Mírame de frente un momentito para que guarde tu cara.`);
+}
+
+function visionRunning() {      // ¿la cámara está funcionando (aunque ahora no vea a nadie)?
+    return Date.now() - (RonState.visionDebug?.loopTs || 0) < 5000;
+}
+
+// La llama la visión en cada fotograma mientras hay un alta en curso
+export function learningTick() {
+    const flow = RonState.nameFlow;
+    if (!flow || flow.mode !== 'learn' || !flow.pending || !flow.waitFace) return;
+    const n = (RonState.learningDescriptors || []).length;
+    if (n >= FACE_SAMPLES_WANTED) { flow.waitFace = 0; commitName(flow.pending); return; }
+    if (Date.now() - flow.waitFace > FACE_WAIT_MS) {
+        flow.waitFace = 0;
+        if (n >= 1) commitName(flow.pending);
+        else commitNameOnly(flow.pending);
+    }
+}
+
+// Sin cara (cámara apagada o no se ve bien): guarda el nombre para hablar con ella
+async function commitNameOnly(name) {
+    ensureStats(name);
+    RonState.currentUser = name;
+    RonState.conversationOwner = name;
+    RonState.isLearningFace = false;
+    RonState.learningDescriptors = [];
+    RonState.nameFlow = null;
+    RonState.learnCooldownUntil = Date.now() + 120000;
+    hideNamePanel();
+    import('./ui.js').then(ui => ui.stopScanningUI());
+    await speak(`¡Hola, ${name}! No he podido ver bien tu cara. Cuando me mires de frente con luz, dime: aprende mi cara.`);
+}
+
+// Nombre escrito en el cuadro de la pantalla
+export function submitTypedName(raw) {
+    const words = String(raw || '').replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s-]/g, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+    const name = words.map(w => cap(w.toLowerCase())).join(' ');
+    if (!name || name.length < 2) return false;
+    if (!RonState.nameFlow) startLearning(RonState.lastDescriptor || null);
+    log(`Nombre escrito: ${name}`);
+    acceptName(name);
+    return true;
+}
+
+function showNamePanel() {
+    const p = document.getElementById('name-panel');
+    if (!p) return;
+    p.classList.remove('hidden');
+    const inp = document.getElementById('name-input');
+    if (inp) inp.value = '';
+}
+function hideNamePanel() {
+    const p = document.getElementById('name-panel');
+    if (p) p.classList.add('hidden');
 }
 
 export function startRename(newName) {
@@ -189,9 +295,9 @@ export function volunteerName(name, descriptor) {
     const pool = similarRecent(descriptor).slice(-6);
     if (descriptor) pool.push(descriptor);
     RonState.learningDescriptors = pool;
-    RonState.nameFlow = { mode: 'learn', pending: name, attempts: 0, startedAt: Date.now() };
+    RonState.nameFlow = { mode: 'learn', pending: null, attempts: 0, startedAt: Date.now() };
     import('./ui.js').then(ui => ui.startScanningUI());
-    return speak(`¡Bip! ¿Te llamas ${name}? Dime sí o no, y mírame un segundo para guardar tu cara para siempre.`);
+    return acceptName(name);
 }
 
 export function cancelNameFlow(sayIt = false) {
@@ -200,17 +306,27 @@ export function cancelNameFlow(sayIt = false) {
     RonState.learningDescriptors = [];
     RonState.nameFlow = null;
     RonState.learnCooldownUntil = Date.now() + 90000;
+    hideNamePanel();
     import('./ui.js').then(ui => ui.stopScanningUI());
     if (sayIt && wasLearning) speak("¡Vale! Cuando quieras me dices cómo te llamas. ¡Bip!");
 }
 
 export function nameFlowExpired() {
-    return RonState.nameFlow && (Date.now() - RonState.nameFlow.startedAt > LEARN_TIMEOUT_MS);
+    const f = RonState.nameFlow;
+    return f && !f.waitFace && (Date.now() - f.startedAt > LEARN_TIMEOUT_MS);
 }
 
 export async function handleNameReply(text) {
     const flow = RonState.nameFlow;
     if (!flow) return false;
+    if (flow.waitFace) return false;          // ya tiene el nombre; esperando la cara → conversación normal
+    // Alta: si es un nombre se guarda; si no (p. ej. "hazme un selfie"), se atiende con
+    // normalidad y el alta sigue abierta hasta que caduque (sin reiniciar el plazo).
+    if (flow.mode === 'learn') {
+        const name = extractName(text);
+        if (name) { await acceptName(name); return true; }
+        return false;
+    }
     flow.startedAt = Date.now();
 
     if (flow.pending && isYes(text)) { await commitName(flow.pending); return true; }
@@ -230,6 +346,7 @@ export async function handleNameReply(text) {
         return true;
     }
     if (heard) {
+        if (flow.mode === 'learn') { await acceptName(heard); return true; }
         flow.pending = heard;
         await speak(`¿Te llamas ${heard}? Dime sí o no.`);
         return true;
@@ -247,7 +364,7 @@ async function commitName(name) {
         const samples = [...new Set([...similarRecent(learned[0]), ...learned].map(d => JSON.stringify(d)))]
             .map(d => JSON.parse(d)).slice(-12);
         if (!samples.length && RonState.lastDescriptor) samples.push(RonState.lastDescriptor);
-        if (!samples.length) { cancelNameFlow(); return speak("¡Bip! No pude ver bien tu cara. ¡Mírame de frente y lo intentamos otra vez!"); }
+        if (!samples.length) return commitNameOnly(name);
         addSamples(name, samples);
         RonState.recentUnknownDescriptors = [];
     } else {
@@ -270,9 +387,10 @@ async function commitName(name) {
     RonState.isLearningFace = false;
     RonState.learningDescriptors = [];
     RonState.nameFlow = null;
+    hideNamePanel();
     import('./ui.js').then(ui => ui.stopScanningUI());
     import('./sounds.js').then(s => s.playMemorySaveSound && s.playMemorySaveSound()).catch(() => {});
     return speak(flow.mode === 'learn'
-        ? `¡Bip bip! ¡Encantado, ${name}! Ya tengo tu cara grabada para siempre en mi memoria blindada.`
+        ? `¡Hola, ${name}! Ya tengo tu nombre y tu cara guardados. ¡Te reconoceré siempre!`
         : `¡Hecho! A partir de ahora eres ${name}. ¡Bip!`);
 }

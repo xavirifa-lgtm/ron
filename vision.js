@@ -23,8 +23,27 @@ let lastFaceLum = null;          // luz de la cara en el último fotograma (para
 let procCanvas = null;
 let procCtx = null;
 
+// Motor de cálculo de la librería de caras: WebGL (rápido) → WASM → CPU (lento pero siempre va).
+// Antes no se esperaba a que estuviera listo y, si WebGL fallaba, la visión entera se caía.
+async function ensureTfBackend() {
+    const tf = faceapi.tf;
+    if (!tf) return 'desconocido';
+    for (const be of ['webgl', 'wasm', 'cpu']) {
+        try {
+            const ok = await Promise.race([tf.setBackend(be), new Promise(r => setTimeout(() => r(false), 8000))]);
+            if (ok) { await tf.ready(); return be; }
+        } catch (e) { log(`Visión: motor ${be} no disponible (${e.message}).`); }
+    }
+    return 'ninguno';
+}
+
 export async function loadModels() {
-    const URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+    if (typeof faceapi === 'undefined') throw new Error('no se pudo descargar la librería de caras (¿sin internet?)');
+    const backend = await ensureTfBackend();
+    RonState.visionDebug.backend = backend;
+    log(`Visión: motor ${backend}.`);
+    if (backend === 'ninguno') throw new Error('ningún motor de cálculo disponible');
+    const URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/model/';
     await Promise.all([
         faceapi.nets.tinyFaceDetector.loadFromUri(URL),
         faceapi.nets.faceLandmark68Net.loadFromUri(URL),
@@ -208,6 +227,7 @@ export function startVisionLoop() {
         try {
             const inputEl = getNormalizedInput();
             if (!inputEl) return;
+            RonState.visionDebug.loopTs = Date.now();     // la cámara y la visión están en marcha
 
             const detections = await faceapi
                 .detectAllFaces(inputEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.35 }))
@@ -269,6 +289,7 @@ export function startVisionLoop() {
                         RonState.learningDescriptors.push(sample);
                     }
                 }
+                id.learningTick();   // guarda en cuanto tiene nombre + cara suficiente
                 return;
             }
 

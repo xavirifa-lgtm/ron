@@ -5,8 +5,10 @@ import { startListening, speak } from './speech.js';
 import { startCuriosityLoop } from './curiosity.js';
 import * as Sounds from './sounds.js';
 
+window.__ronLoaded = true;   // el aviso "Ron no ha podido cargar" de index.html comprueba esto
+
 async function preInit() {
-    log("Iniciando Ron v29.0...");
+    log("Iniciando Ron v29.1...");
     initUI();
     setChestIcon('wifi');
 
@@ -110,7 +112,7 @@ async function init() {
     requestWakeLock();
 
     await waitForVoices();
-    speak(
+    const greeting = speak(
         "¡Bip! B-Bot Unidad Ron, identificador 5-IND iniciando. " +
         "Pero me puedes llamar Ron. " +
         "Conexión a la red Bubble: fallida. " +
@@ -132,6 +134,11 @@ async function init() {
 
     Sounds.playStartupSound();
     goFullscreen();
+
+    // Primer arranque sin nadie guardado: pedir el nombre en cuanto termine el saludo
+    greeting.then(() => setTimeout(() => {
+        import('./identity.js').then(id => id.maybeFirstRunOnboarding()).catch(e => log('Alta: ' + e.message));
+    }, 1200));
 }
 
 function waitForVoices() {
@@ -162,6 +169,36 @@ async function requestWakeLock() {
 
 function setupInteractions() {
     const $ = id => document.getElementById(id);
+
+    // Alta de usuario: nombre escrito en el cuadro de la pantalla
+    $('name-form').onsubmit = async (ev) => {
+        ev.preventDefault();
+        const id = await import('./identity.js');
+        if (!id.submitTypedName($('name-input').value)) $('name-input').focus();
+    };
+
+    // Autodiagnóstico
+    $('selftest-btn').onclick = async () => {
+        const outEl = $('selftest-out');
+        outEl.textContent = '';
+        $('selftest-btn').disabled = true;
+        const wasMic = RonState.isMicEnabled;
+        RonState.isMicEnabled = false;                       // que Ron no conteste mientras se prueba
+        try { (await import('./whisper.js')).stopWhisper(); } catch (e) {}
+        try {
+            const st = await import('./selftest.js');
+            await st.runSelfTest(l => { outEl.textContent += l + '\n'; outEl.scrollTop = outEl.scrollHeight; }, { micWasEnabled: wasMic });
+        } catch (e) { outEl.textContent += '❌ El autodiagnóstico falló: ' + e.message + '\n'; }
+        RonState.isMicEnabled = wasMic;
+        if (wasMic) startListening();
+        $('selftest-btn').disabled = false;
+    };
+    $('selftest-copy').onclick = async () => {
+        const t = $('selftest-out').textContent;
+        try { await navigator.clipboard.writeText(t); $('selftest-copy').textContent = '¡Copiado!'; }
+        catch (e) { const r = document.createRange(); r.selectNodeContents($('selftest-out')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $('selftest-copy').textContent = 'Selecciónalo y copia'; }
+        setTimeout(() => { $('selftest-copy').textContent = 'Copiar resultado'; }, 2500);
+    };
     const fill = async () => {
         const { RonConfig } = await import('./core.js');
         $('groq-key-input').value       = RonState.apiKey || '';

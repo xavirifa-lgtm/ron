@@ -38,7 +38,7 @@ export function needsWakeWord() {
     if (['MATH_GAME', 'READING_GAME'].includes(st)) return false;
     if (st === 'STORY' && RonState.storyPendingNextChapter) return false;
     if (st === 'CHALLENGE') return true;
-    if (RonState.nameFlow) return false;
+    // (el alta de nombre ya no salta esta regla: el nombre se atiende antes, en processTranscript)
     if (st === 'NIGHT' || st === 'SLEEPING') return true;
     if (!RonState.isWaitingForWakeWord) return false;
     if ((RonConfig.listenMode || 'cara') === 'cara' && faceIsHere()) return false;
@@ -69,17 +69,21 @@ export function processTranscript(rawText) {
     RonState.lastHeardTs = Date.now();
     log(`Oído: ${text}`);
 
+    // Alta / cambio de nombre: si lo dicho es un nombre se guarda; si no, sigue el
+    // camino normal (con sus reglas de "Ron"), no se atiende siempre.
     if (RonState.nameFlow) {
         showCaption(text, 'heard');
-        if (convTimeout) clearTimeout(convTimeout);
         rememberTurn('user', text);
         import('./identity.js').then(async id => {
             const handled = await id.handleNameReply(text);
-            if (!handled) handleInput(text);
+            if (!handled) routeTranscript(text, t);
         });
         return;
     }
+    routeTranscript(text, t);
+}
 
+function routeTranscript(text, t) {
     const saidRon = WAKE_RE.test(t);
     if (needsWakeWord()) {
         if (!saidRon) {

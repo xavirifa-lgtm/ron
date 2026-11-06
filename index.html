@@ -15,13 +15,13 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=29.0">
+    <link rel="stylesheet" href="styles.css?v=29.1">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <!-- Librería de Visión IA -->
-    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
 </head>
 <body>
     <div id="ron-app" class="ron-container">
@@ -31,7 +31,7 @@
         
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v29.0 - ARRANCAR SISTEMA</button>
+            <button id="power-btn">B-BOT v29.1 - ARRANCAR SISTEMA</button>
         </div>
 
         <!-- Botones de Control -->
@@ -83,6 +83,15 @@
                 </label><br><br>
                 <label><input type="checkbox" id="captions-input"> Subtítulos (lo que oye y lo que dice)</label><br>
                 <label><input type="checkbox" id="diag-input"> Diagnóstico en pantalla (registro técnico)</label><br><br>
+
+                <!-- Autodiagnóstico -->
+                <div style="border:2px solid #0a6aa8;border-radius:10px;padding:8px;margin-bottom:10px">
+                    <strong style="font-size:13px">🔧 Autodiagnóstico</strong>
+                    <div style="font-size:12px;color:#555;margin:4px 0">Comprueba micro, Whisper, Groq, voz y cámara en este móvil. Tarda unos 30 s; cuando lo pida, habla.</div>
+                    <button id="selftest-btn" type="button" style="font-size:13px;padding:8px 12px">Ejecutar autodiagnóstico</button>
+                    <button id="selftest-copy" type="button" style="font-size:13px;padding:8px 12px">Copiar resultado</button>
+                    <div id="selftest-out" style="font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:#f3f6f9;border-radius:8px;padding:8px;margin-top:6px;white-space:pre-wrap;max-height:40vh;overflow:auto;user-select:text"></div>
+                </div>
 
                 <!-- Calibración del reconocimiento facial -->
                 <div style="border-top:1px solid #ddd;padding-top:10px;margin-bottom:10px">
@@ -167,6 +176,16 @@
             <div id="story-text"></div>
         </div>
 
+        <!-- Alta de usuario: nombre escrito (alternativa a decirlo en voz alta) -->
+        <div id="name-panel" class="name-panel hidden">
+            <div class="name-title">¿Cómo te llamas?</div>
+            <form id="name-form" autocomplete="off">
+                <input id="name-input" type="text" maxlength="30" placeholder="Escribe tu nombre" enterkeyhint="done">
+                <button type="submit">Guardar</button>
+            </form>
+            <div class="name-hint">o díselo a Ron en voz alta</div>
+        </div>
+
         <!-- Burbuja de estado de ánimo -->
         <div id="mood-bubble" class="mood-bubble hidden"></div>
 
@@ -174,7 +193,7 @@
         <div id="face-wrapper"></div>
     </div>
     <script>
-        const CACHE_NAME = 'ron-bot-v29.0';
+        const CACHE_NAME = 'ron-bot-v29.1';
         window.addEventListener('DOMContentLoaded', () => {
             const expBtn = document.getElementById('export-memory-btn');
             const impBtn = document.getElementById('import-memory-btn');
@@ -247,6 +266,31 @@
             }
         });
     </script>
-    <script type="module" src="app.js?v=29.0"></script>
+    <script type="module" src="app.js?v=29.1" onerror="window.__ronLoadError = 'no se pudo cargar el código (falta algún archivo en la web o no hay internet)'"></script>
+    <script>
+        // Si el código principal no llega a ejecutarse (archivo que falta, caché vieja mezclada
+        // con archivos nuevos, error de sintaxis...), el botón de encendido no haría nada y no
+        // habría ninguna pista. Esto lo detecta y ofrece reparar.
+        (function () {
+            var errs = [];
+            window.addEventListener('error', function (e) { errs.push((e.message || 'error') + (e.filename ? ' (' + e.filename.split('/').pop() + ')' : '')); }, true);
+            window.addEventListener('unhandledrejection', function (e) { errs.push(String(e.reason && e.reason.message || e.reason)); });
+            setTimeout(function () {
+                if (window.__ronLoaded) return;
+                var box = document.getElementById('boot-screen');
+                if (!box) return;
+                var div = document.createElement('div');
+                div.style.cssText = 'margin-top:16px;padding:12px;background:#fff3f3;border:2px solid #d33;border-radius:12px;color:#600;font:14px/1.4 sans-serif;max-width:90vw;text-align:left';
+                div.innerHTML = '<b>Ron no ha podido cargar.</b><br><small></small><br><button style="margin-top:8px;font-size:16px;padding:10px 14px">Reparar y recargar</button>';
+                div.querySelector('small').textContent = (window.__ronLoadError || errs.slice(-2).join(' · ') || 'motivo desconocido') + (navigator.onLine ? '' : ' · SIN INTERNET');
+                div.querySelector('button').onclick = async function () {
+                    try { var regs = await navigator.serviceWorker.getRegistrations(); for (var r of regs) await r.unregister(); } catch (e) {}
+                    try { var ks = await caches.keys(); for (var k of ks) await caches.delete(k); } catch (e) {}
+                    location.reload();
+                };
+                box.appendChild(div);
+            }, 7000);
+        })();
+    </script>
 </body>
 </html>

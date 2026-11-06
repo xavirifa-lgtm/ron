@@ -479,3 +479,18 @@ body.night-mode .caption { opacity: 0 !important; }
 /* Anillo del micro que sigue el volumen */
 .mic-toggle-btn { --mic: 0; outline: calc(var(--mic) * 9px) solid rgba(0,170,120,0.35); outline-offset: 2px; transition: outline-width .1s linear, background .2s; }
 .mic-toggle-btn.off { outline-width: 0; }
+
+/* Alta de usuario: cuadro para escribir el nombre */
+.name-panel {
+    position: absolute; left: 50%; bottom: max(70px, calc(env(safe-area-inset-bottom) + 60px)); transform: translateX(-50%);
+    width: min(92vw, 420px); z-index: 9600; text-align: center;
+    background: rgba(255,255,255,0.95); border-radius: 18px; padding: 14px 14px 10px;
+    box-shadow: 0 6px 24px rgba(0,60,120,0.22);
+}
+.name-panel.hidden { display: none; }
+.name-panel .name-title { font-size: 18px; font-weight: 600; color: #10202e; margin-bottom: 8px; }
+.name-panel form { display: flex; gap: 8px; }
+.name-panel input { flex: 1; min-width: 0; font-size: 18px; padding: 10px 12px; border-radius: 12px; border: 2px solid #b9d3e8; outline: none; }
+.name-panel input:focus { border-color: #0a6aa8; }
+.name-panel button { font-size: 16px; padding: 10px 16px; border-radius: 12px; border: 0; background: #0a6aa8; color: #fff; }
+.name-panel .name-hint { font-size: 12px; color: #6b7c8a; margin-top: 6px; }

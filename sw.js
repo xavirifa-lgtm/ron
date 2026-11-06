@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v29.0';
+const CACHE_NAME = 'ron-bot-v29.1';
 const ASSETS = [
   './',
   'index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   'ui.js',
   'vision.js',
   'facequality.js',
+  'selftest.js',
   'speech.js',
   'ai.js',
   'games.js',
@@ -37,7 +38,8 @@ const ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => Promise.allSettled(ASSETS.map(a => cache.add(a))))
+      // cache: 'reload' → descarga real, nunca una copia vieja de la caché HTTP del navegador
+      .then(cache => Promise.allSettled(ASSETS.map(a => cache.add(new Request(a, { cache: 'reload' })))))
       .then(() => self.skipWaiting())
   );
 });
@@ -57,8 +59,10 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || !url.startsWith(self.location.origin)) {
     return;
   }
+  // Red primero y siempre revalidando (no-cache): evita mezclar archivos viejos y nuevos
   event.respondWith(
-    fetch(event.request)
+    // (una navegación no admite opciones extra: Chrome lanzaría error)
+    (event.request.mode === 'navigate' ? fetch(event.request) : fetch(event.request, { cache: 'no-cache' }))
       .then(response => {
         if (response && response.status === 200) {
           const clone = response.clone();
