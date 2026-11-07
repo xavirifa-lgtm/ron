@@ -127,6 +127,16 @@ export function splitForSpeech(text) {
     return [m[1], m[2]];
 }
 
+// Volumen BRUTO (RMS) de lo que está sonando ahora: referencia para distinguir el eco de
+// Ron de la voz de quien le interrumpe. -1 si no suena audio de Gemini.
+export function outputRms() {
+    if (!current || !analyser) return -1;
+    analyser.getFloatTimeDomainData(levelBuf);
+    let sum = 0;
+    for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i];
+    return Math.sqrt(sum / levelBuf.length);
+}
+
 // Volumen actual de la voz (0..1) para animar la boca; -1 si no suena audio de Gemini
 export function voiceLevel() {
     if (!current || !analyser) return -1;

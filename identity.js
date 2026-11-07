@@ -204,8 +204,7 @@ export function startLearning(firstDescriptor) {
     RonState.learningDescriptors = pool;
     RonState.nameFlow = { mode: 'learn', pending: null, attempts: 0, startedAt: Date.now() };
     import('./ui.js').then(ui => ui.startScanningUI());
-    showNamePanel();
-    speak("¡Hola! Soy Ron. Introduce tu nombre de usuario: dime cómo te llamas, o escríbelo aquí abajo.");
+    speak("¡Hola! Soy Ron. Introduce tu nombre de usuario: dime cómo te llamas.");
 }
 
 // Primer arranque: si no hay nadie guardado, Ron lo pide aunque aún no vea bien la cara
@@ -248,9 +247,13 @@ export function learningTick() {
     }
 }
 
+// La primera persona registrada es la amiga principal (la niña); el resto, "personas conocidas"
+function markMain(name) { import('./memory.js').then(m => m.ensureMainFriend(name)).catch(() => {}); }
+
 // Sin cara (cámara apagada o no se ve bien): guarda el nombre para hablar con ella
 async function commitNameOnly(name) {
     ensureStats(name);
+    markMain(name);
     RonState.currentUser = name;
     RonState.conversationOwner = name;
     RonState.isLearningFace = false;
@@ -380,6 +383,7 @@ async function commitName(name) {
         try { (await import('./memory.js')).renamePerson(old, name); } catch (e) {}
     }
     ensureStats(name);
+    markMain(name);
     RonState.currentUser = name;
     RonState.conversationOwner = name;
     RonState.userLastSeen = RonState.userLastSeen || {};

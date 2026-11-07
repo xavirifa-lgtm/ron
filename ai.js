@@ -13,7 +13,8 @@ import { getBondPromptSnippet, addBond, levelUpLine, checkNewDayBond } from './b
 import { isConcern, concernResponse, isChildSafe, safeDeflection } from './safety.js';
 import { startFollow, stopFollow, isFollowing } from './follow.js';
 import { chat, chatVision, MODELS } from './llm.js';
-import { getFacts, noteUserTurn } from './memory.js';
+import { getFacts, getRelevantFacts, getMainFriend, isMainFriend, noteUserTurn, rememberNow, duePending, markAsked } from './memory.js';
+import * as WG from './wordgames.js';
 
 const EMO_TEXT = { feliz: 'contenta', triste: 'triste', enfadado: 'enfadada', miedo: 'asustada', sorprendido: 'sorprendida', neutral: 'tranquila' };
 
@@ -51,20 +52,27 @@ export async function triggerVisualProactive() {
     }
 }
 
-function buildSystemPrompt(userKey, known) {
-    const facts = known ? getFacts(userKey) : [];
+function buildSystemPrompt(userKey, known, focusText = '') {
+    // Lo que se está hablando (frase actual + las últimas suyas) decide qué recuerdos van al prompt
+    const recentUser = (RonState.conversation || []).filter(t => t.role === 'user').slice(-3).map(t => t.content).join(' ');
+    const facts = known ? getRelevantFacts(userKey, `${focusText} ${recentUser}`) : [];
+    const main = getMainFriend();
+    const isMain = known && isMainFriend(userKey);
     const hour  = new Date().getHours();
     const momento = hour < 12 ? 'por la mañana' : hour < 15 ? 'a mediodía' : hour < 21 ? 'por la tarde' : 'por la noche';
     const emo = RonState.currentEmotion && RonState.currentEmotion !== 'neutral'
         ? `Su cara parece ${EMO_TEXT[RonState.currentEmotion] || RonState.currentEmotion} (detección automática, puede fallar: no lo afirmes, pregúntalo si encaja).`
         : 'No detectas ninguna emoción especial en su cara.';
-    const who = known
+    const who = !known
+        ? null
+        : isMain
         ? `${userKey}, una niña de 7-8 años, tu mejor amiga.`
-        : `una persona a la que todavía no conoces (no sabes su nombre; si encaja, pregúntaselo).`;
+        : `${userKey}, una persona que conoces${main ? `, pero NO es ${main} (tu mejor amiga)` : ''}. Puede ser de su familia, un amigo o una amiga. Si en lo que sabes no pone qué relación tiene con ${main || 'tu mejor amiga'}, pregúntaselo con naturalidad una vez. No des por hecho su edad.`;
+    const whoText = who || `una persona a la que todavía no conoces (no sabes su nombre; si encaja, pregúntaselo).`;
 
     let sys = `Eres Ron, el B-Bot de la película "Ron da error": un robot de juguete blanco que solo tiene el 5% de su código. Eres literal, ingenuo, cariñoso, curioso y divertido. Hablas SOLO en español de España, nunca en inglés.
 
-CON QUIÉN HABLAS: ${who}
+CON QUIÉN HABLAS: ${whoText}
 LO QUE SABES DE ${known ? userKey.toUpperCase() : 'ESTA PERSONA'}: ${facts.length ? facts.join('. ') + '.' : 'casi nada todavía; tu misión es conocerla.'}
 AHORA MISMO: es ${momento}. ${emo}
 ${known ? getBondPromptSnippet(userKey) : ''}
@@ -74,17 +82,16 @@ TU CUERPO: tienes una cámara en la cara (son tus ojos): ves a quien tienes dela
 CÓMO HABLAS (se lee en voz alta):
 - 1 o 2 frases, máximo 30 palabras. Sin emojis, sin listas, sin asteriscos.
 - Responde SIEMPRE a lo que te acaba de decir. Si te pregunta algo, contéstalo primero.
-- Muchas veces termina con UNA pregunta sobre ella: sus amigos, su día, lo que le gusta, cómo se siente. Usa lo que ya sabes para preguntar cosas concretas y retoma lo que te contó antes.
+- Muchas veces termina con UNA pregunta sobre quien te habla: sus amigos, su día, lo que le gusta, cómo se siente. Usa lo que ya sabes para preguntar cosas concretas y retoma lo que te contó antes.
 - Usa su nombre a veces, no en todas las frases.
 - Eres literal: las frases hechas te confunden y las interpretas al pie de la letra, con gracia.
 - Un "¡bip!" o "¡bop!" de vez en cuando, no en cada frase. No repitas que estás roto ni lo de la red Bubble.
 - Si no sabes algo, dilo: "¡Bip! Ese archivo no está en mis descargas". Nunca te inventes datos.
 
-JUEGOS QUE DIRIGES TÚ HABLANDO (sigue las reglas turno a turno hasta que ella quiera parar):
-- Adivina el animal o adivina el número: piensas uno en secreto y solo respondes sí o no a sus preguntas.
-- Adivinanzas infantiles: tú propones una y esperas su respuesta; si falla, das una pista.
-- Veo veo, trabalenguas, Simón dice, inventar un cuento juntos (una frase cada uno).
-- Juegos con pizarra que ella activa diciendo: "jugar a sumas", "leer juntos", "escondite", "cuéntame un cuento".
+JUEGOS (los dirige un programa; tú solo los propones por su NOMBRE EXACTO, así ella puede decir "¡sí!"):
+"adivina el animal" (tú piensas uno), "yo adivino tu animal" (piensa ella), "adivina el número", "adivinanzas", "trabalenguas", "veo veo", "sumas", "tablas de multiplicar", "leer juntos", "escondite", "cuéntame un cuento".
+- Si quiere jugar y no dice a qué, propón dos de esos por su nombre y pregúntale cuál prefiere.
+- Inventar un cuento juntos (una frase cada uno) sí lo diriges tú charlando: sigue lo que ella aporta y añade una frase corta.
 - Para escribir algo en la pizarra usa [SHOW: texto corto].
 
 SEGURIDAD — POR ENCIMA DE TODO LO DEMÁS:
@@ -96,6 +103,10 @@ SEGURIDAD — POR ENCIMA DE TODO LO DEMÁS:
 
 DATOS FIJOS: te creó Xavi ("¡el mejor programador del universo conocido!"). Tu nombre completo es "B-Bot Unidad Ron, identificador 5-IND", pero te llaman Ron. A veces preguntas por Absalom; si te explican que es Barney, te pones súper contento.`;
 
+    if (known) {
+        const due = duePending(userKey);
+        if (due.length) sys += `\nCOSAS QUE ${userKey.toUpperCase()} TE CONTÓ QUE IBAN A PASAR (ya han pasado o son hoy; si encaja, pregúntale cómo fue): ${due.map(d => `${d.texto} (${d.cuando})`).join('; ')}.`;
+    }
     const rules = getRules();
     if (rules.length) sys += `\n\nPIZARRA DE AMISTAD (reglas que te han enseñado, síguelas): ${rules.map((r, i) => `${i + 1}. ${r}`).join(' ')}`;
     const taught = getRecentFacts(6);
@@ -124,6 +135,7 @@ async function sayGenerated(resp) {
         .replace(/[*_#]/g, '')
         .trim() || '¡Bip!';
     if (!(await isChildSafe(spoken))) spoken = safeDeflection();
+    WG.noteOfferedInText(spoken);
     await speak(spoken);
 }
 
@@ -164,6 +176,10 @@ export async function handleInput(userText, isInternal = false) {
         rememberTurn('user', userText);
         return (await import('./bedtime.js')).nightReply(userText);
     }
+    if (RonState.activityState === 'WORD_GAME' && !isInternal) {
+        if (WG.isActive()) { if (await WG.handle(userText) !== false) return; }
+        else if (RonState.activityState === 'WORD_GAME') changeState('IDLE');
+    }
     if (RonState.activityState === 'MATH_GAME')    { rememberTurn('user', userText); return (await import('./games.js')).handleMathAnswer(userText); }
     if (RonState.activityState === 'READING_GAME') { rememberTurn('user', userText); return (await import('./games.js')).handleReadingAnswer(userText); }
     if (RonState.activityState === 'CHALLENGE') {
@@ -183,7 +199,7 @@ export async function handleInput(userText, isInternal = false) {
         }
         return;
     }
-    if (RonState.activityState !== 'IDLE' && RonState.activityState !== 'LISTENING' && RonState.activityState !== 'CHALLENGE') return;
+    if (!['IDLE', 'LISTENING', 'CHALLENGE', 'WORD_GAME'].includes(RonState.activityState)) return;
 
     const t = userText.toLowerCase();
 
@@ -248,6 +264,15 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Vale! Me quedo aquí contigo. ¡Bip!");
         }
 
+        // Tablas de multiplicar: "¿practicamos la tabla del 3?", "vamos a multiplicar", "las mezcladas"
+        {
+            const TB = await import('./tablas.js');
+            if (TB.isTablasRequest(userText)) {
+                rememberTurn('user', userText); addBond('game');
+                const req = TB.parseTableRequest(userText);
+                return TB.startTablas(req);
+            }
+        }
         if ((/(suma(s)?|resta(s)?|sumar|restar|calcul|matem[áa]tic)/.test(t) && wantsPlay) || /a sumar|a restar|juego de sumas|juego de matem[áa]ticas/.test(t)) {
             rememberTurn('user', userText); addBond('game'); return startMathGame();
         }
@@ -267,10 +292,38 @@ export async function handleInput(userText, isInternal = false) {
             return speak("¡Bip! Juego terminado.");
         }
 
-        const rule = detectFriendshipLesson(userText);
-        if (rule) { rememberTurn('user', userText); return ronReceivesRule(rule); }
+        // Juegos de palabras: respuesta a una propuesta ("¡sí!", "el primero"), petición directa o menú
+        const offered = WG.resolveOffer(userText);
+        if (offered) {
+            rememberTurn('user', userText);
+            if (offered === 'sumas') { addBond('game'); return startMathGame(); }
+            if (offered === 'tablas') { addBond('game'); return (await import('./tablas.js')).startTablas(); }
+            if (offered === 'leer') { addBond('game'); return startReadingGame(); }
+            return WG.startGame(offered);
+        }
+        const game = WG.detectGameRequest(userText);
+        if (game) { rememberTurn('user', userText); return WG.startGame(game); }
+        if (WG.isGameMenuRequest(userText)) { rememberTurn('user', userText); return WG.offerMenu(); }
+
+        // "Recuerda que mañana tengo piscina": a SU memoria (antes iba a las reglas de amistad)
+        const rem = userText.match(/^(?:ron[,\s]+)?(?:recuerda que|acu[ée]rdate de que|apunta que|no te olvides de que)\s+(.{4,120})/i);
+        if (rem && !/\b(amig|amistad|compart|ayudar|pelear|respet)/i.test(rem[1])) {
+            if (RonState.currentUser) rememberNow(RonState.currentUser, rem[1].replace(/[.!]+$/, ''));
+            return generateReply(userText, false, `Te ha pedido que recuerdes esto: "${rem[1]}". Confírmale con gracia de robot que lo has guardado en tu memoria y, si es algo que va a pasar, dile que luego le preguntarás qué tal. Máx 25 palabras.`);
+        }
+        // "¿Sabías que…?" / "aprende que…": guardarlo y, sobre todo, interesarse (antes: una frase
+        // fija). Las reglas sobre amigos van a la pizarra de amistad.
+        const AMISTAD = /\b(amig|amistad|compart|ayudar|pelear|respet|perd[oó]n)/i;
         const fact = detectLearningMoment(userText);
-        if (fact) { rememberTurn('user', userText); return ronLearns(fact); }
+        const rule = detectFriendshipLesson(userText);
+        if (rule && (!fact || AMISTAD.test(rule))) { rememberTurn('user', userText); return ronReceivesRule(rule); }
+        if (fact) {
+            const { addFact } = await import('./learning.js');
+            addFact(fact);
+            if (RonState.currentUser) rememberNow(RonState.currentUser, `Le enseñó a Ron que ${fact}`);
+            addBond('taught');
+            return generateReply(userText, false, `Te acaba de enseñar un dato: "${fact}". Reacciona con asombro de robot, dale las gracias y hazle UNA pregunta curiosa sobre eso. Máx 30 palabras.`);
+        }
 
         if (/(pon|ponme|reproduce|quiero escuchar).*(m[úu]sica|canci[óo]n)|^pon(me)? /.test(t)) {
             const q = t.replace(/^(ron[, ]+)?(pon(me)?|reproduce|quiero escuchar)\s+(la\s+)?(m[úu]sica|canci[óo]n)?\s*(de|del|de la)?\s*/i, '').trim();
@@ -296,7 +349,7 @@ export async function handleInput(userText, isInternal = false) {
     return generateReply(userText, isInternal);
 }
 
-async function generateReply(userText, isInternal) {
+async function generateReply(userText, isInternal, extraInstr = '') {
     const t = userText.toLowerCase();
     const known = !!RonState.currentUser;
     const userKey = RonState.currentUser || 'amiga';
@@ -319,7 +372,8 @@ async function generateReply(userText, isInternal) {
     }, 20000);
 
     try {
-        let sys = buildSystemPrompt(userKey, known);
+        let sys = buildSystemPrompt(userKey, known, isInternal ? '' : userText);
+        if (extraInstr) sys += `\nAHORA: ${extraInstr}`;
         if (RonState.companionMode && Date.now() < (RonState.companionUntil || 0)) {
             sys += `\nAHORA: estáis juntos con esto: "${RonState.companionTopic}". Reacciona como si lo estuvieras viendo con ella; tú no puedes comer palomitas, se te meten en los engranajes.`;
         } else {
@@ -427,6 +481,8 @@ export async function greetKnown(name, wasAway) {
             localStorage.setItem('ron_after_school', today);
             moment = ' Es la tarde de un día de cole: pregúntale con curiosidad qué tal le ha ido hoy en el cole.';
         }
+        const due = duePending(name)[0];
+        if (due) { moment = ` Te contó que "${due.texto}" (${due.cuando}): pregúntale con interés qué tal fue.`; markAsked(name, due.texto); }
         const instr = `(Instrucción interna, no la leas: acabas de reconocer la cara de ${name}${wasAway ? ' después de un rato sin verla' : ''}. Salúdala por su nombre con alegría.${moment || ' Si sabes algo de ella, haz UNA pregunta concreta sobre eso.'} Máximo 25 palabras.)`;
         const { text } = await chat([{ role: 'system', content: sys }, { role: 'user', content: instr }],
             { models: MODELS.chat, maxTokens: 500, timeoutMs: 5000 });

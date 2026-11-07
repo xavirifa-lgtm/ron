@@ -1,10 +1,11 @@
+import { slog } from './sessionlog.js';
 import { RonState, RonConfig, log, changeState, rememberTurn } from './core.js';
 import { setExpression, updateMouth, shiftEyes, showCaption } from './ui.js';
 import { handleInput } from './ai.js';
 import * as Sounds from './sounds.js';
 
 // Incluye CHALLENGE en los estados donde el micro tiene permiso para escuchar
-const MIC_ALLOWED_STATES = ['IDLE', 'SLEEPING', 'STORY', 'MATH_GAME', 'READING_GAME', 'CHALLENGE', 'NIGHT'];
+const MIC_ALLOWED_STATES = ['IDLE', 'SLEEPING', 'STORY', 'MATH_GAME', 'READING_GAME', 'WORD_GAME', 'CHALLENGE', 'NIGHT'];
 const RESTART_DELAY = 700;
 const CONV_WINDOW   = 25000;
 const FACE_RECENT   = 6000;
@@ -35,7 +36,7 @@ function faceIsHere() {
 
 export function needsWakeWord() {
     const st = RonState.activityState;
-    if (['MATH_GAME', 'READING_GAME'].includes(st)) return false;
+    if (['MATH_GAME', 'READING_GAME', 'WORD_GAME'].includes(st)) return false;     // en un juego no hace falta decir "Ron"
     if (st === 'STORY' && RonState.storyPendingNextChapter) return false;
     if (st === 'CHALLENGE') return true;
     // (el alta de nombre ya no salta esta regla: el nombre se atiende antes, en processTranscript)
@@ -62,12 +63,13 @@ function attentionChirp() {
     showCaption('Te escucho…', 'hint');
 }
 
-export function processTranscript(rawText) {
+export function processTranscript(rawText, src = 'otro') {
     let text = (rawText || '').trim();
-    if (!text || text.length < 2) return;
+    if (!text || (text.length < 2 && !/^\d$/.test(text))) { if (text) slog('drop', { why: 'texto de 1 letra', text }); return; }      // una cifra suelta ("8") sí vale: es una respuesta
     const t = text.toLowerCase();
     RonState.lastHeardTs = Date.now();
     log(`Oído: ${text}`);
+    slog('heard', { text, src, state: RonState.activityState, user: RonState.currentUser || '', face: faceIsHere() ? 'sí' : 'no' });
 
     // Alta / cambio de nombre: si lo dicho es un nombre se guarda; si no, sigue el
     // camino normal (con sus reglas de "Ron"), no se atiende siempre.
@@ -88,6 +90,7 @@ function routeTranscript(text, t) {
     if (needsWakeWord()) {
         if (!saidRon) {
             showCaption(text, 'ignored');
+            slog('ignored', { why: faceIsHere() ? 'sin decir Ron' : 'sin decir Ron (no ve cara)' });
             return;
         }
         if (RonState.activityState === 'SLEEPING') {
@@ -104,8 +107,9 @@ function routeTranscript(text, t) {
         changeState('IDLE');
     }
     showCaption(text, 'heard');
-    if (!['IDLE', 'LISTENING', 'STORY', 'MATH_GAME', 'READING_GAME', 'CHALLENGE', 'NIGHT'].includes(RonState.activityState)) {
+    if (!['IDLE', 'LISTENING', 'STORY', 'MATH_GAME', 'READING_GAME', 'WORD_GAME', 'CHALLENGE', 'NIGHT'].includes(RonState.activityState)) {
         log(`(Ignorado: Ron estaba ${RonState.activityState})`);
+        slog('ignored', { why: 'ocupado: ' + RonState.activityState });
         return;
     }
     if (convTimeout) clearTimeout(convTimeout);
@@ -121,8 +125,8 @@ export function startListening() {
     if (RonState.activityState === 'LISTENING') return;
     if (!MIC_ALLOWED_STATES.includes(RonState.activityState)) { scheduleListen(500); return; }
     if (window.speechSynthesis && window.speechSynthesis.speaking) { scheduleListen(300); return; }
-    if (RonState.isRecognitionActive || recognitionStarting) return;
     useWhisper().then(async whisper => {
+        if (!whisper && (RonState.isRecognitionActive || recognitionStarting)) return;
         if (whisper) {
             const w = await import('./whisper.js');
             if (await w.ensureWhisper()) return;
@@ -142,7 +146,10 @@ function startBrowserRecognition() {
     recognitionStarting = true;
     RonState.recognition = new SpeechRecognition();
     RonState.recognition.lang           = 'es-ES';
-    RonState.recognition.continuous     = false;
+    // Android pita cada vez que arranca el reconocimiento: en modo continuo arranca muchas
+    // menos veces. (En otros sistemas, sesión corta, más estable.)
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    RonState.recognition.continuous     = isAndroid;
     RonState.recognition.interimResults = false;
     RonState.recognition.maxAlternatives = 3;
 
@@ -154,20 +161,29 @@ function startBrowserRecognition() {
     };
 
     RonState.recognition.onresult = (e) => {
-        if (Date.now() - getLastSpeakEndTs() < ECHO_GUARD_MS) { log("Ignorado (eco propio)."); return; }
+        if (Date.now() - getLastSpeakEndTs() < ECHO_GUARD_MS) { log("Ignorado (eco propio)."); slog('drop', { why: 'eco propio (navegador)' }); return; }
         let text = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
             if (!e.results[i].isFinal) continue;
             const alts = Array.from(e.results[i]).map(a => a.transcript);
             text += (needsWakeWord() && alts.find(a => WAKE_RE.test(a))) || alts[0];
         }
+        // Modo continuo en Android: a veces repite el texto anterior o lo acumula
+        text = text.trim();
+        const prev = RonState._lastFinal || '';
+        if (prev && Date.now() - (RonState._lastFinalTs || 0) < 8000) {
+            if (text === prev) { return; }
+            if (text.startsWith(prev)) text = text.slice(prev.length).trim();
+        }
+        RonState._lastFinal = text; RonState._lastFinalTs = Date.now();
         if (text.trim().length >= 2) quickEndCount = 0;
-        processTranscript(text);
+        processTranscript(text, 'navegador');
     };
 
     RonState.recognition.onerror = (e) => {
         recognitionStarting = false;
         RonState.isRecognitionActive = false;
+        if (e.error === 'network') slog('stterr', { model: 'navegador', err: 'network' });
         if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') scheduleListen(RESTART_DELAY);
         else { log(`Error mic: ${e.error}`); scheduleListen(1500); }
     };
@@ -197,14 +213,19 @@ function startBrowserRecognition() {
     }
 }
 
-export function interruptSpeaking() {
+// quiet: interrupción por voz (ella ya está hablando: sin pitidos, solo cara de escuchar)
+let interruptedFlag = false;
+export function interruptSpeaking({ quiet = false } = {}) {
     if (RonState.activityState !== 'SPEAKING' || !currentFinish) return false;
     speakSeq++;
     import('./tts.js').then(t => t.stopAudio()).catch(() => {});
     try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {}
     log('Ron interrumpido: te escucho.');
+    slog('barge', { afterMs: Date.now() - (RonState.speakStartTs || Date.now()), quiet: quiet ? 'voz' : 'botón/palabra' });
+    interruptedFlag = true;
     currentFinish();
-    attentionChirp();
+    if (quiet) { setExpression('surprise'); showCaption('Te escucho…', 'hint'); }
+    else attentionChirp();
     return true;
 }
 
@@ -257,6 +278,7 @@ export function speak(text, { remember = true } = {}) {
         const mySeq = ++speakSeq;
 
         let tts = null, first = null, restP = null, parts = [text];
+        const ttsT0 = Date.now();
         try {
             tts = await import('./tts.js');
             tts.stopAudio();
@@ -281,10 +303,14 @@ export function speak(text, { remember = true } = {}) {
         if (RonState.recognition) { try { RonState.recognition.abort(); } catch (e) {} }
         if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
 
-        const restState = RonState.activityState === 'NIGHT' ? 'NIGHT' 
-                        : (RonState.activityState === 'CHALLENGE' || RonState.challengeActive) ? 'CHALLENGE' 
-                        : 'IDLE';
+        // Al terminar de hablar, volver al modo en el que estaba (antes, cualquier frase en mitad
+        // del escondite o de un juego lo devolvía a reposo y el juego dejaba de funcionar)
+        const KEEP = ['NIGHT', 'HIDE_SEEK', 'HIDE_SEEK_SEARCH', 'MATH_GAME', 'READING_GAME', 'WORD_GAME', 'STORY', 'CHALLENGE'];
+        const restState = KEEP.includes(RonState.activityState) ? RonState.activityState : (RonState.challengeActive ? 'CHALLENGE' : 'IDLE');
         changeState('SPEAKING');
+        RonState.speakStartTs = Date.now();
+        interruptedFlag = false;
+        slog('say', { text, engine: first ? 'gemini' : 'navegador', ttsMs: ttsT0 ? Date.now() - ttsT0 : 0, state: restState, parts: parts.length });
         if (restState === 'NIGHT') setExpression('flat');
         else if (!['happy', 'star', 'sad', 'surprise', 'recognised'].includes(RonState.expressionState)) setExpression('neutral');
         showCaption(text, 'ron');
@@ -304,6 +330,7 @@ export function speak(text, { remember = true } = {}) {
             if (activeMouthInterval) { clearInterval(activeMouthInterval); activeMouthInterval = null; }
             if (RonState.ui.mouthContainer) RonState.ui.mouthContainer.classList.remove('mouth-vibrate');
             RonState.lastSpeakEndTs = Date.now();
+            slog('sayend', { ms: Date.now() - RonState.speakStartTs, cut: interruptedFlag ? 'sí' : '' });
             changeState(restState);
             if (restState === 'NIGHT') { RonState.isWaitingForWakeWord = true; setExpression('flat'); }
             else openConversationWindow();

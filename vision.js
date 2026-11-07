@@ -294,7 +294,8 @@ export function startVisionLoop() {
             }
 
             if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
-                if (d) { changeState('IDLE'); setExpression('star'); speak("¡TE PILLÉ! ¡Bip bip! ¡Eres increíble escondiéndote!"); }
+                if (!d) RonState.hideSeekArmed = true;                     // ya se ha escondido
+                else if (RonState.hideSeekArmed) { changeState('IDLE'); setExpression('star'); speak("¡TE PILLÉ! ¡Bip bip! ¡Eres increíble escondiéndote!"); }
                 return;
             }
 
@@ -319,7 +320,7 @@ export function startVisionLoop() {
             import('./follow.js').then(f => f.updateFollow(d.detection.box, vw, vh)).catch(() => {});
 
             // Ocupado real (quitamos LISTENING de aquí para que sí pueda reconocerte aunque el micro esté abierto)
-            const busy = ['THINKING','SPEAKING','HIDE_SEEK','MATH_GAME','READING_GAME','STORY','CHALLENGE'].includes(RonState.activityState)
+            const busy = ['THINKING','SPEAKING','HIDE_SEEK','MATH_GAME','READING_GAME','WORD_GAME','STORY','CHALLENGE'].includes(RonState.activityState)
                 || now - (RonState.lastHeardTs || 0) < 3500;
 
             // ── INTERACTIVIDAD FÍSICA 1: Efecto "Peekaboo" ──

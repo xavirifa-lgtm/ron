@@ -1,4 +1,5 @@
 // core.js v26 - Estado Central
+import { slog, tallyFace } from './sessionlog.js';
 
 // ── Configuración (se guarda en el dispositivo; se edita con pulsación larga en 📡) ──
 const DEFAULT_CONFIG = {
@@ -15,6 +16,7 @@ const DEFAULT_CONFIG = {
     captions: true,          // subtítulos en pantalla
     diagnostics: false,      // registro técnico en pantalla
     faceQualityGate: true,   // solo fotogramas buenos para reconocer caras
+    bargeIn: true,           // se le puede interrumpir hablándole (con Whisper)
     cerebrasKey: '',         // opcional: segundo proveedor de IA
     openrouterKey: '',       // opcional: tercer proveedor de IA
 };
@@ -90,8 +92,11 @@ export const RonState = {
     ui: {}
 };
 
+// Líneas que ya tienen su propio evento en el registro de sesión (no duplicar)
+const SLOG_SKIP = /^(Oído: |Whisper \(\d+ ms\)|🎙️ Escuchando)/;
 export function log(msg) {
     console.log('[Ron]', msg);
+    try { const m = String(msg); if (!SLOG_SKIP.test(m) && !tallyFace(m)) slog('log', { msg: m }); } catch (e) {}
     const el = RonState.ui.fixedLog || document.getElementById('debug-info');
     if (el) {
         const div = document.createElement('div');
@@ -199,6 +204,12 @@ function bestFriendQuestion() {
 // Construye una iniciativa PERSONALIZADA usando lo que Ron sabe de ella
 async function buildProactivePrompt() {
     const name = RonState.currentUser || 'tu amiga';
+    // Lo que le contó que iba a pasar (examen, cumple...) tiene prioridad: preguntar cómo fue
+    try {
+        const mem = await import('./memory.js');
+        const due = RonState.currentUser ? mem.duePending(RonState.currentUser)[0] : null;
+        if (due) { mem.markAsked(RonState.currentUser, due.texto); return `${name} te contó que "${due.texto}" (${due.cuando}). Pregúntale con interés qué tal fue, como un amigo que se acuerda.`; }
+    } catch (e) {}
     const bf = bestFriendQuestion();
     if (bf) return `Activa tu "protocolo de mejor amigo" para conocer mejor a ${name} y pregúntale esto a tu manera, con curiosidad de robot: "${bf}"`;
     let facts = [];
@@ -210,7 +221,7 @@ async function buildProactivePrompt() {
         opts.push(`Sabes esto de ${name}: "${f}". Propón un juego o una adivinanza relacionada con eso.`);
     }
     opts.push(`Pregúntale a ${name} qué ha hecho hoy o a qué ha jugado. Una sola pregunta, cortita.`);
-    opts.push(`Propón con entusiasmo un juego de palabras: adivinanza, veo veo o "adivina en qué animal pienso".`);
+    opts.push(`Propón con entusiasmo UNO de estos juegos por su nombre exacto y pregúntale si quiere: "adivina el animal", "adivinanzas", "veo veo", "trabalenguas" o "adivina el número".`);
     opts.push(`Hazle a ${name} una pregunta curiosa y literal de robot sobre los humanos y pídele su opinión.`);
     return opts[Math.floor(Math.random() * opts.length)];
 }

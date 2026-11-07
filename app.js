@@ -8,7 +8,7 @@ import * as Sounds from './sounds.js';
 window.__ronLoaded = true;   // el aviso "Ron no ha podido cargar" de index.html comprueba esto
 
 async function preInit() {
-    log("Iniciando Ron v29.1...");
+    log("Iniciando Ron v30.3...");
     initUI();
     setChestIcon('wifi');
 
@@ -98,7 +98,43 @@ async function preInit() {
     setupInteractions();
 }
 
+// Registro de sesión: datos del arranque (sin claves) y una foto del estado cada minuto
+const RON_VERSION = 'v30.3';
+async function startSessionLog() {
+    try {
+        const SL = await import('./sessionlog.js');
+        const { RonConfig } = await import('./core.js');
+        const ua = navigator.userAgent;
+        SL.startSession({
+            version: RON_VERSION,
+            device: (ua.match(/\(([^)]+)\)/) || [])[1] || ua.slice(0, 80),
+            chrome: (ua.match(/Chrome\/([\d.]+)/) || [])[1],
+            screen: `${screen.width}x${screen.height}@${devicePixelRatio}`,
+            stt: RonConfig.sttEngine, voz: RonConfig.voiceEngine, escucha: RonConfig.listenMode,
+            bargeIn: RonConfig.bargeIn ? 'sí' : 'no', filtroCaras: RonConfig.faceQualityGate ? 'sí' : 'no', iniciativa: RonConfig.initiative,
+            groq: RonState.apiKey ? 'sí' : 'NO', gemini: RonConfig.geminiKey ? 'sí' : 'no',
+            caras: (RonState.knownFaces || []).map(f => `${f.label}(${(f.descriptors || []).length})`).join(' ') || 'ninguna',
+        });
+        let battery = null;
+        try { battery = await navigator.getBattery?.(); } catch (e) {}
+        setInterval(async () => {
+            let w = {};
+            try { w = (await import('./whisper.js')).whisperDiag(); } catch (e) {}
+            SL.slog('env', {
+                state: RonState.activityState, user: RonState.currentUser || '—',
+                mic: RonState.isMicEnabled ? (w.running ? 'whisper' : (RonState.isRecognitionActive ? 'navegador' : 'parado')) : 'APAGADO',
+                ruido: w.noise, eco: w.echoK, pausaWhisper: w.paused,
+                caras: SL.takeFaceStats() || 'ninguna vista',
+                bateria: battery ? Math.round(battery.level * 100) + '%' + (battery.charging ? '⚡' : '') : '',
+                red: navigator.onLine ? '' : 'SIN RED',
+                memMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : '',
+            });
+        }, 60000);
+    } catch (e) { console.warn('registro de sesión:', e); }
+}
+
 async function init() {
+    startSessionLog();
     changeState('IDLE');
     setExpression('neutral');
     startBlinkCycle();
@@ -170,13 +206,6 @@ async function requestWakeLock() {
 function setupInteractions() {
     const $ = id => document.getElementById(id);
 
-    // Alta de usuario: nombre escrito en el cuadro de la pantalla
-    $('name-form').onsubmit = async (ev) => {
-        ev.preventDefault();
-        const id = await import('./identity.js');
-        if (!id.submitTypedName($('name-input').value)) $('name-input').focus();
-    };
-
     // Autodiagnóstico
     $('selftest-btn').onclick = async () => {
         const outEl = $('selftest-out');
@@ -213,6 +242,7 @@ function setupInteractions() {
         $('robot-effect-input').checked = RonConfig.robotEffect !== false;
         $('listen-mode-input').value    = RonConfig.listenMode || 'cara';
         $('captions-input').checked     = RonConfig.captions !== false;
+        $('bargein-input').checked      = RonConfig.bargeIn !== false;
         $('diag-input').checked         = !!RonConfig.diagnostics;
         $('quality-gate-input').checked = RonConfig.faceQualityGate !== false;
         const { VOICES } = await import('./tts.js');
@@ -262,8 +292,78 @@ function setupInteractions() {
         saveConfig({ faceQualityGate: $('quality-gate-input').checked });
     };
 
+    // Memoria: quién es la mejor amiga y qué sabe Ron de cada persona (se puede borrar un recuerdo)
+    const opt = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; };
+    const fillMemory = async () => {
+        const mem = await import('./memory.js');
+        const people = [...new Set([...(RonState.knownFaces || []).map(f => f.label), ...mem.listPeople()])];
+        const mainSel = $('main-friend-sel'), perSel = $('mem-person-sel');
+        const main = mem.getMainFriend();
+        mainSel.replaceChildren(...(people.length ? people.map(p => opt(p, p)) : [opt('', '(nadie todavía)')]));
+        if (main && people.includes(main)) mainSel.value = main;
+        const cur = perSel.value;
+        perSel.replaceChildren(...(people.length ? people.map(p => opt(p, p)) : [opt('', '(nadie todavía)')]));
+        if (cur && people.includes(cur)) perSel.value = cur;
+        renderFacts();
+    };
+    const renderFacts = async () => {
+        const mem = await import('./memory.js');
+        const name = $('mem-person-sel').value;
+        const facts = name ? mem.getFacts(name) : [];
+        $('mem-count').textContent = name ? `${facts.length} recuerdos` : '';
+        const ul = $('mem-facts');
+        ul.replaceChildren(...facts.slice().reverse().map(f => {
+            const li = document.createElement('li');
+            li.style.cssText = 'display:flex;gap:6px;align-items:flex-start;padding:3px 0;border-bottom:1px solid #eee';
+            const sp = document.createElement('span'); sp.style.flex = '1'; sp.textContent = f;
+            const b = document.createElement('button'); b.type = 'button'; b.textContent = '✕'; b.title = 'Borrar este recuerdo';
+            b.style.cssText = 'font-size:11px;padding:2px 7px;background:#9ca3af';
+            b.onclick = () => { if (confirm('¿Borrar este recuerdo?\n\n' + f)) { mem.deleteFact(name, f); renderFacts(); } };
+            li.append(sp, b);
+            return li;
+        }));
+    };
+    $('mem-person-sel').onchange = renderFacts;
+    $('main-friend-sel').onchange = async () => {
+        const v = $('main-friend-sel').value;
+        if (v) (await import('./memory.js')).setMainFriend(v);
+    };
+
+    // Registro de sesión
+    const slogStatus = async () => {
+        const SL = await import('./sessionlog.js');
+        $('slog-on').checked = SL.isLogging();
+        const ev = SL.rawEvents();
+        const turns = SL.computeTurns(ev).length;
+        $('slog-status').textContent = ev.length
+            ? `${ev.length} eventos · ${turns} frases oídas · desde ${new Date(ev[0].t).toLocaleString('es-ES')}`
+            : 'Vacío.';
+    };
+    $('slog-on').onchange = async () => { (await import('./sessionlog.js')).setLogging($('slog-on').checked); slogStatus(); };
+    $('slog-clear').onclick = async () => {
+        if (!confirm('¿Borrar el registro de sesión?')) return;
+        (await import('./sessionlog.js')).clearLog(); slogStatus();
+    };
+    $('slog-copy').onclick = async () => {
+        const txt = (await import('./sessionlog.js')).exportText({ version: RON_VERSION });
+        try { await navigator.clipboard.writeText(txt); $('slog-status').textContent = '✅ Copiado: pégalo en el chat con Claude.'; }
+        catch (e) { $('slog-status').textContent = 'No se pudo copiar: usa Compartir.'; }
+    };
+    $('slog-share').onclick = async () => {
+        const txt = (await import('./sessionlog.js')).exportText({ version: RON_VERSION });
+        const d = new Date();
+        const name = `registro_ron_${d.toISOString().slice(0, 10)}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.txt`;
+        const file = new File([txt], name, { type: 'text/plain' });
+        try {
+            if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Registro de Ron' }); return; }
+        } catch (e) { if (e.name === 'AbortError') return; }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file); a.download = name; a.click();
+        $('slog-status').textContent = `✅ Descargado: ${name}`;
+    };
+
     const open = () => {
-        fill(); fillPeople(); RonState.ui.apiModal.classList.remove('hidden');
+        fill(); fillPeople(); fillMemory(); slogStatus(); RonState.ui.apiModal.classList.remove('hidden');
         if (calibTimer) clearInterval(calibTimer);
         renderCalib(); calibTimer = setInterval(renderCalib, 500);
     };
@@ -292,6 +392,7 @@ function setupInteractions() {
             robotEffect:   $('robot-effect-input').checked,
             listenMode:    $('listen-mode-input').value || 'cara',
             captions:      $('captions-input').checked,
+            bargeIn:       $('bargein-input').checked,
             diagnostics:   $('diag-input').checked,
             faceQualityGate: $('quality-gate-input').checked,
         });

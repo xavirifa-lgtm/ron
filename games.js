@@ -5,6 +5,8 @@ import { logGame, logStory } from './diary.js';
 import { isChildSafe } from './safety.js';
 import { chat, MODELS } from './llm.js';
 import { getFacts } from './memory.js';
+import { parseSpokenNumber } from './numbers.js';
+import { handleTablas, stopTablas } from './tablas.js';
 
 let currentAnswer  = null;
 let targetPhrase   = null;
@@ -17,6 +19,8 @@ const userName = () => RonState.currentUser || 'amiga';
 // ── CERRAR CUALQUIER JUEGO LIMPIAMENTE (Evita congelar Ron al pulsar la X) ───
 export function stopAnyGame() {
     if (RonState.ui?.gamePanel) RonState.ui.gamePanel.classList.add('hidden');
+    stopTablas();
+    if (RonState.wordGame) { RonState.wordGame = null; if (RonState.activityState === 'WORD_GAME') changeState('IDLE'); }
     currentAnswer = null;
     targetPhrase = null;
     if (challengeTimer) { clearTimeout(challengeTimer); challengeTimer = null; }
@@ -62,58 +66,108 @@ export async function stopChallenge() {
     await speak("¡Reto cancelado! Descanso de circuitos activado. ¡Bip!");
 }
 
-// ── SUMAS Y RESTAS ────────────────────────────────────────────────────────────
-export async function startMathGame() {
-    const isSum = Math.random() > 0.3;
-    let n1 = Math.floor(Math.random() * 10) + 1;
-    let n2 = Math.floor(Math.random() * 10) + 1;
-    if (!isSum) {
-        if (n1 < n2) { const t = n1; n1 = n2; n2 = t; }
-        currentAnswer = n1 - n2;
-    } else {
-        currentAnswer = n1 + n2;
-    }
+// ── SUMAS Y RESTAS (v30) ─────────────────────────────────────────────────────
+// Entiende los números dichos en palabras ("diecisiete", "son dieciocho"), da pistas,
+// se adapta al nivel (sube tras 3 aciertos seguidos, baja si le cuesta) y va por rondas.
+const LEVELS = [
+    { max: 5,  sub: false },   // 1: sumas hasta 10 (sumandos 1-5)
+    { max: 10, sub: false },   // 2: sumas hasta 20
+    { max: 10, sub: true  },   // 3: sumas y restas hasta 10
+    { max: 15, sub: true  },   // 4: hasta 15
+    { max: 20, sub: true  },   // 5: hasta 20
+];
+const ROUND = 5;
+let math = { level: 1, n1: 0, n2: 0, op: '+', tries: 0, streak: 0, done: 0, ok: 0, awaitingContinue: false, idle: 0 };
+function loadLevel() { try { return Math.min(LEVELS.length, Math.max(1, parseInt(localStorage.getItem('ron_math_level_' + userName()) || '1', 10))); } catch (e) { return 1; } }
+function saveLevel() { try { localStorage.setItem('ron_math_level_' + userName(), String(math.level)); } catch (e) {} }
+
+export async function startMathGame(first = true) {
+    if (first) stopTablas();
+    if (first) math = { level: loadLevel(), tries: 0, streak: 0, done: 0, ok: 0, awaitingContinue: false, idle: 0 };
+    const L = LEVELS[math.level - 1];
+    const isSub = L.sub && Math.random() < 0.4;
+    let n1 = 1 + Math.floor(Math.random() * L.max), n2 = 1 + Math.floor(Math.random() * L.max);
+    if (isSub && n1 < n2) [n1, n2] = [n2, n1];
+    Object.assign(math, { n1, n2, op: isSub ? '−' : '+', tries: 0, idle: 0 });
+    currentAnswer = isSub ? n1 - n2 : n1 + n2;
     changeState('MATH_GAME');
     RonState.ui.gamePanel.classList.remove('hidden');
-    logGame('sumas y restas');
-
-    const emojis = ['🍎','🦄','⭐','🎈','🤖','🍭','🌸','🐶','🦋'];
-    const e = emojis[Math.floor(Math.random() * emojis.length)];
-    RonState.ui.gameText.innerHTML =
-        `${n1} ${isSum ? '+' : '−'} ${n2} = ?<br>` +
-        `<span style="font-size:clamp(16px,4.5vw,26px);line-height:1.9">` +
-        `${e.repeat(Math.min(n1, 12))} ${isSum ? '+' : '−'} ${e.repeat(Math.min(n2, 12))}</span>`;
-    await speak(`¡Bip! Reto matemático: ¿Cuánto es ${n1} ${isSum ? 'más' : 'menos'} ${n2}?`);
+    if (first) logGame('sumas y restas');
+    drawMath();
+    const intro = first ? `¡Bip! ¡Reto matemático, nivel ${math.level}! ` : '';
+    await speak(`${intro}¿Cuánto es ${n1} ${isSub ? 'menos' : 'más'} ${n2}?`);
     if (RonState.activityState === 'IDLE') changeState('MATH_GAME');
 }
 
+function drawMath(showHint = false) {
+    const emojis = ['🍎','🦄','⭐','🎈','🤖','🍭','🌸','🐶','🦋'];
+    const e = emojis[(math.n1 + math.n2) % emojis.length];
+    const dots = showHint
+        ? `<br><span style="font-size:clamp(16px,4.5vw,26px);line-height:1.9">${e.repeat(Math.min(math.n1, 20))} ${math.op} ${e.repeat(Math.min(math.n2, 20))}</span>`
+        : (math.n1 + math.n2 <= 12 ? `<br><span style="font-size:clamp(16px,4.5vw,26px);line-height:1.9">${e.repeat(math.n1)} ${math.op} ${e.repeat(math.n2)}</span>` : '');
+    RonState.ui.gameText.innerHTML = `${math.n1} ${math.op} ${math.n2} = ?${dots}` +
+        `<div style="font-size:clamp(12px,3vw,16px);opacity:.7;margin-top:6px">Nivel ${math.level} · ⭐ ${math.ok}</div>`;
+}
+
+const keep = async () => { if (RonState.activityState === 'IDLE') changeState('MATH_GAME'); };
+
 export async function handleMathAnswer(text) {
-    if (/salir|para(r)?|stop|cierra|cancel/i.test(text)) {
-        stopAnyGame();
-        return speak("¡Entendido! Guardando la pizarra.");
-    }
+    if (RonState.tablas) return handleTablas(text);     // mismo estado MATH_GAME, otro juego
     const t = text.toLowerCase();
-    const wordToNum = { cero:0,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,'dieciséis':16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20 };
-    let num = parseInt(text.replace(/[^0-9]/g, ''), 10);
-    if (isNaN(num)) {
-        for (const [w, n] of Object.entries(wordToNum)) {
-            if (t.includes(w)) { num = n; break; }
+    if (/\b(salir|para(mos)?|stop|cierra|cancel|basta|no quiero (jugar|seguir|mas)|ya no)\b/i.test(t) && !/^\s*(no )?(se|sé)\b/.test(t)) {
+        stopAnyGame();
+        return speak(`¡Entendido! Has acertado ${math.ok}. ¡Guardando la pizarra!`);
+    }
+    if (math.awaitingContinue) {
+        math.awaitingContinue = false;
+        if (/\b(no|ya|basta|paramos)\b/.test(t) && !/\bsi\b|\bsí\b/.test(t)) {
+            stopAnyGame();
+            return speak(`¡Vale! ¡Has acertado ${math.ok} de ${math.done}! ¡Mis circuitos están orgullosos!`);
         }
+        return startMathGame(false);
     }
+    const num = parseSpokenNumber(text);
+    if (num === null) {
+        if (/no (lo )?s[ée]|ni idea|ayuda|pista|no me sale/.test(t)) return giveHint();
+        math.idle++;
+        if (math.idle >= 2) { await speak(`¿Seguimos con las sumas? Dime el número, o di: paramos.`); return keep(); }
+        await speak(`Dime un número, por ejemplo: siete. ¿Cuánto es ${math.n1} ${math.op === '+' ? 'más' : 'menos'} ${math.n2}?`);
+        return keep();
+    }
+    math.idle = 0;
     if (num === currentAnswer) {
+        math.ok++; math.done++; math.streak++;
         setExpression('star');
-        const cheers = [
-            "¡CORRECTO! ¡Eres un genio de las matemáticas! ¡Bip bip!",
-            `¡${currentAnswer}! ¡Exacto! ¡Tu cerebro funciona a máxima velocidad!`,
-            "¡BIEN! ¡Mi detector de respuestas correctas al 100%!"
-        ];
-        await speak(cheers[Math.floor(Math.random() * cheers.length)]);
-        await startMathGame();
-    } else if (!isNaN(num)) {
-        setExpression('sad');
-        await speak(`Mmm... no creo que sea ${num}. ¡Inténtalo otra vez, ${userName()}!`);
-        if (RonState.activityState === 'IDLE') changeState('MATH_GAME');
+        const cheers = ["¡CORRECTO! ¡Eres un genio de las matemáticas!", `¡${currentAnswer}! ¡Exacto!`, "¡BIEN! ¡Mi detector de respuestas correctas al cien por cien!", "¡Bip bip! ¡Perfecto!"];
+        let extra = '';
+        if (math.streak >= 3 && math.level < LEVELS.length) { math.level++; math.streak = 0; saveLevel(); extra = ` ¡Subes al nivel ${math.level}!`; }
+        await speak(cheers[Math.floor(Math.random() * cheers.length)] + extra);
+        if (math.done % ROUND === 0) {
+            math.awaitingContinue = true;
+            await speak(`¡Llevas ${math.ok} de ${math.done}! ¿Seguimos?`);
+            return keep();
+        }
+        return startMathGame(false);
     }
+    math.tries++; math.streak = 0;
+    if (math.tries === 1) { setExpression('thinking'); await speak(`Mmm... ${num} no es. ¡Prueba otra vez!`); return keep(); }
+    if (math.tries === 2) return giveHint(num);
+    // Tercer fallo: la solución, con cariño, y bajar de nivel si hace falta
+    math.done++;
+    if (math.level > 1) { math.level--; saveLevel(); }
+    setExpression('happy');
+    await speak(`¡Era ${currentAnswer}! ${math.n1} ${math.op === '+' ? 'más' : 'menos'} ${math.n2} son ${currentAnswer}. ¡No pasa nada, ahí va otra!`);
+    return startMathGame(false);
+}
+
+async function giveHint(wrong = null) {
+    drawMath(true);
+    setExpression('thinking');
+    const how = math.op === '+'
+        ? `Empieza en ${math.n1} y cuenta ${math.n2} más con los dedos.`
+        : `Empieza en ${math.n1} y cuenta ${math.n2} hacia atrás.`;
+    await speak(`${wrong !== null ? `${wrong} no es. ` : ''}¡Pista! ${how} También puedes contar los dibujos de la pizarra.`);
+    return keep();
 }
 
 // ── LECTURA ───────────────────────────────────────────────────────────────────
@@ -169,17 +223,23 @@ export async function startHideAndSeek() {
     );
     if (RonState.activityState !== 'HIDE_SEEK') return;
     changeState('HIDE_SEEK_SEARCH');
+    RonState.hideSeekArmed = false;             // la busca solo cuando ha dejado de verla
+    RonState.hideSeekSince = Date.now();
     setExpression('neutral');
+    setTimeout(() => {
+        if (RonState.activityState === 'HIDE_SEEK_SEARCH' && !RonState.hideSeekArmed)
+            speak("¡Eh! ¡Te estoy viendo! ¡Así no vale, escóndete! Te doy unos segundos más.");
+    }, 4000);
     setTimeout(() => {
         if (RonState.activityState === 'HIDE_SEEK_SEARCH')
             speak("¡Escaneando habitación... mis sensores dicen que estás por aquí!");
-    }, 2000);
+    }, 12000);
     setTimeout(() => {
         if (RonState.activityState === 'HIDE_SEEK_SEARCH') {
-            speak("¡Me rindo! ¡Eres la campeona del escondite! ¡Sal ya, por favor!");
             changeState('IDLE');
+            speak("¡Me rindo! ¡Eres la campeona del escondite! ¡Sal ya, por favor!");
         }
-    }, 25000);
+    }, 40000);
 }
 
 // ── HISTORIA PERSONALIZADA ────────────────────────────────────────────────────

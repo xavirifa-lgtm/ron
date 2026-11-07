@@ -7,6 +7,7 @@
 //    ⚠ Sin probar con este código: IDs de modelo y límites sacados de terceros.
 // Si un modelo devuelve 429, se "enfría" el tiempo indicado y se salta al siguiente.
 
+import { slog } from './sessionlog.js';
 import { RonState, RonConfig, log } from './core.js';
 
 const PROVIDERS = {
@@ -106,6 +107,9 @@ export async function chat(messages, { models = MODELS.chat, maxTokens = 500, te
         const extra = paramsFor(provider, model);
         const base = { model, messages, max_tokens: maxTokens, temperature };
         if (json) base.response_format = { type: 'json_object' };
+        const tReq = Date.now();
+        const sysLen = (messages[0] && typeof messages[0].content === 'string') ? messages[0].content.length : 0;
+        const kind = json ? 'json' : 'chat';
         try {
             let r = await post(prov.url, key, { ...base, ...extra }, timeoutMs);
             if (!r.ok && r.status === 400 && (Object.keys(extra).length || json)) {
@@ -115,7 +119,7 @@ export async function chat(messages, { models = MODELS.chat, maxTokens = 500, te
             countUse(entry);
             if (r.ok) {
                 const text = cleanOutput(r.data?.choices?.[0]?.message?.content);
-                if (text) return { text, model: entry };
+                if (text) { slog('llm', { model: entry, ms: Date.now() - tReq, ok: 1, kind, sysChars: sysLen, tok: r.data?.usage?.total_tokens }); return { text, model: entry }; }
                 lastErr = `${entry}: respuesta vacía`;
             } else if (r.status === 429) {
                 const secs = Math.min(Math.max(r.retryAfter || 30, 5), 3600);
@@ -134,6 +138,7 @@ export async function chat(messages, { models = MODELS.chat, maxTokens = 500, te
             lastErr = `${entry}: ${e.name === 'AbortError' ? 'timeout' : e.message}`;
         }
         log(`IA → ${lastErr}`);
+        slog('llm', { model: entry, ms: Date.now() - tReq, ok: 0, kind, err: lastErr.replace(entry + ': ', '') });
     }
     throw new Error(lastErr);
 }

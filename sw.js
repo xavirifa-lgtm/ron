@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ron-bot-v29.1';
+const CACHE_NAME = 'ron-bot-v30.3';
 const ASSETS = [
   './',
   'index.html',
@@ -8,6 +8,10 @@ const ASSETS = [
   'vision.js',
   'facequality.js',
   'selftest.js',
+  'numbers.js',
+  'wordgames.js',
+  'tablas.js',
+  'sessionlog.js',
   'speech.js',
   'ai.js',
   'games.js',

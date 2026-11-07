@@ -80,7 +80,9 @@ export async function runSelfTest(out, { micWasEnabled = RonState.isMicEnabled }
     }
     try {
         const w = await import('./whisper.js');
-        line(null, `Oído en uso: ${w.isWhisperRunning() ? 'Whisper' : RonState.isRecognitionActive ? 'reconocimiento del navegador' : 'ninguno escuchando ahora mismo'} (ajuste: ${RonConfig.sttEngine})`);
+        const usingBrowser = !w.isWhisperRunning() && RonState.isRecognitionActive;
+        line(usingBrowser ? false : null, `Oído en uso: ${w.isWhisperRunning() ? 'Whisper (sin pitidos)' : usingBrowser ? 'reconocimiento del navegador (pita en Android)' : 'ninguno escuchando ahora mismo'} (ajuste: ${RonConfig.sttEngine})${usingBrowser && RonState.sttFallbackReason ? ' · motivo: ' + RonState.sttFallbackReason : ''}`);
+        line(null, `Interrumpir hablándole: ${RonConfig.bargeIn !== false ? 'activado (solo con Whisper)' : 'desactivado'}`);
     } catch (e) {}
 
     // 4. Voz del navegador

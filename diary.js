@@ -2,6 +2,7 @@
 // Ron recuerda y narra lo que hizo con el niño. "¿Te acuerdas cuando...?"
 // En la película Ron acumula experiencias y las trata como tesoros.
 
+import { slog } from './sessionlog.js';
 import { RonState, log } from './core.js';
 import { speak } from './speech.js';
 import { setExpression } from './ui.js';
@@ -74,6 +75,7 @@ export async function ronRemembersSomething() {
 // ── Registrar eventos automáticamente (llamado desde otros módulos) ───────────
 
 export function logGame(gameName) {
+    slog('game', { name: gameName });
     addEntry('game', `jugasteis a ${gameName}`);
 }
 

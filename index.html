@@ -15,7 +15,7 @@
         }
     </script>
     <script src="https://www.youtube.com/iframe_api"></script>
-    <link rel="stylesheet" href="styles.css?v=29.1">
+    <link rel="stylesheet" href="styles.css?v=30.3">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#e6f0f8">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,7 +31,7 @@
         
         <!-- Pantalla de Inicio -->
         <div id="boot-screen" class="boot-screen">
-            <button id="power-btn">B-BOT v29.1 - ARRANCAR SISTEMA</button>
+            <button id="power-btn">B-BOT v30.3 - ARRANCAR SISTEMA</button>
         </div>
 
         <!-- Botones de Control -->
@@ -82,6 +82,7 @@
                     </select>
                 </label><br><br>
                 <label><input type="checkbox" id="captions-input"> Subtítulos (lo que oye y lo que dice)</label><br>
+                <label><input type="checkbox" id="bargein-input"> Se le puede interrumpir hablándole (desactívalo si se corta solo)</label><br>
                 <label><input type="checkbox" id="diag-input"> Diagnóstico en pantalla (registro técnico)</label><br><br>
 
                 <!-- Autodiagnóstico -->
@@ -110,6 +111,18 @@
                 <div style="border-top:1px solid #ddd;padding-top:10px;margin-bottom:10px">
                     <strong style="font-size:13px">Memoria Permanente (Caras y Recuerdos)</strong>
                     <div id="known-faces-list" style="font-size:12px;color:#333;margin:6px 0"></div>
+                    <div style="font-size:12px;margin:6px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <label for="main-friend-sel">Mejor amiga de Ron:</label>
+                        <select id="main-friend-sel" style="font-size:12px;padding:4px"></select>
+                    </div>
+                    <details id="mem-viewer" style="font-size:12px;margin:6px 0">
+                        <summary style="cursor:pointer">🧠 Lo que Ron sabe de cada persona</summary>
+                        <div style="display:flex;gap:6px;align-items:center;margin:6px 0">
+                            <select id="mem-person-sel" style="font-size:12px;padding:4px"></select>
+                            <span id="mem-count" style="color:#555"></span>
+                        </div>
+                        <ul id="mem-facts" style="list-style:none;padding:0;margin:0;max-height:35vh;overflow:auto"></ul>
+                    </details>
                     <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
                         <button id="export-memory-btn" type="button" style="background:#0a6aa8;font-size:12px;padding:7px;flex:1">💾 Exportar</button>
                         <button id="import-memory-btn" type="button" style="background:#4b5563;font-size:12px;padding:7px;flex:1">📂 Restaurar</button>
@@ -117,6 +130,19 @@
                         <input type="file" id="import-memory-file" accept=".json" style="display:none">
                     </div>
                     <div id="backup-status" style="font-size:12px;color:#0a6aa8;margin-top:4px"></div>
+                </div>
+
+                <!-- Registro de sesión (para revisar cómo va en el móvil) -->
+                <div style="border-top:1px solid #ddd;padding-top:10px;margin-bottom:10px">
+                    <strong style="font-size:13px">📋 Registro de sesión</strong>
+                    <div style="font-size:12px;color:#555;margin:4px 0">Apunta lo que Ron oye, lo que tarda y lo que contesta, para revisarlo. Se queda en este móvil hasta que lo compartas. No guarda claves ni audio.</div>
+                    <label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="slog-on"> Grabar registro</label>
+                    <div id="slog-status" style="font-size:12px;color:#0a6aa8;margin:4px 0"></div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        <button id="slog-share" type="button" style="background:#0a6aa8;font-size:12px;padding:7px;flex:1">📤 Compartir / descargar</button>
+                        <button id="slog-copy" type="button" style="background:#4b5563;font-size:12px;padding:7px;flex:1">📋 Copiar</button>
+                        <button id="slog-clear" type="button" style="background:#9ca3af;font-size:12px;padding:7px;flex:1">🗑️ Borrar</button>
+                    </div>
                 </div>
 
                 <div id="usage-info" style="font-size:12px;color:#555;white-space:pre-line"></div><br>
@@ -176,16 +202,6 @@
             <div id="story-text"></div>
         </div>
 
-        <!-- Alta de usuario: nombre escrito (alternativa a decirlo en voz alta) -->
-        <div id="name-panel" class="name-panel hidden">
-            <div class="name-title">¿Cómo te llamas?</div>
-            <form id="name-form" autocomplete="off">
-                <input id="name-input" type="text" maxlength="30" placeholder="Escribe tu nombre" enterkeyhint="done">
-                <button type="submit">Guardar</button>
-            </form>
-            <div class="name-hint">o díselo a Ron en voz alta</div>
-        </div>
-
         <!-- Burbuja de estado de ánimo -->
         <div id="mood-bubble" class="mood-bubble hidden"></div>
 
@@ -193,7 +209,7 @@
         <div id="face-wrapper"></div>
     </div>
     <script>
-        const CACHE_NAME = 'ron-bot-v29.1';
+        const CACHE_NAME = 'ron-bot-v30.3';
         window.addEventListener('DOMContentLoaded', () => {
             const expBtn = document.getElementById('export-memory-btn');
             const impBtn = document.getElementById('import-memory-btn');
@@ -201,7 +217,7 @@
             const impFile = document.getElementById('import-memory-file');
             const status = document.getElementById('backup-status');
             const facesList = document.getElementById('known-faces-list');
-            const KEYS = ['ron_known_faces', 'ron_memory_v1', 'ron_user_stats', 'ron_diary', 'ron_bond', 'ron_friendship_rules', 'ron_learnt_facts'];
+            const KEYS = ['ron_known_faces', 'ron_memory_v1', 'ron_user_stats', 'ron_diary', 'ron_bond', 'ron_friendship_rules', 'ron_learnt_facts', 'ron_main_friend', 'ron_tablas'];
 
             function updateFacesCount() {
                 try {
@@ -231,7 +247,8 @@
             if (expBtn) expBtn.onclick = () => {
                 const dump = { ts: new Date().toISOString(), data: {} };
                 KEYS.forEach(k => {
-                    try { dump.data[k] = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
+                    const raw = localStorage.getItem(k);
+                    try { dump.data[k] = JSON.parse(raw || 'null'); } catch (e) { dump.data[k] = raw; }
                 });
                 const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a');
@@ -253,7 +270,8 @@
                         const idMod = await import('./identity.js');
                         for (const k of KEYS) {
                             if (parsed.data[k] !== undefined && parsed.data[k] !== null) {
-                                localStorage.setItem(k, JSON.stringify(parsed.data[k]));
+                                const v = parsed.data[k];
+                                localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
                                 if (idMod.vaultSet) await idMod.vaultSet(k, parsed.data[k]);
                             }
                         }
@@ -266,7 +284,7 @@
             }
         });
     </script>
-    <script type="module" src="app.js?v=29.1" onerror="window.__ronLoadError = 'no se pudo cargar el código (falta algún archivo en la web o no hay internet)'"></script>
+    <script type="module" src="app.js?v=30.3" onerror="window.__ronLoadError = 'no se pudo cargar el código (falta algún archivo en la web o no hay internet)'"></script>
     <script>
         // Si el código principal no llega a ejecutarse (archivo que falta, caché vieja mezclada
         // con archivos nuevos, error de sintaxis...), el botón de encendido no haría nada y no
